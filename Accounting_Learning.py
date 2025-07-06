@@ -228,7 +228,7 @@ def logout():
 def mostrar_portada():
     st.image("https://i.ibb.co/MDwk0bmw/Gemini-Generated-Image-kdwslvkdwslvkdws.png", use_container_width=True)
     if st.button("Entrar", key="btn_enter_portada"):
-        st.session_state.show_portada = False
+        enter_app()
 
 # Sección Teoría: Valoración de Inventarios
 def mostrar_valoracion_inventarios():
@@ -266,7 +266,7 @@ def mostrar_valoracion_inventarios():
             st.session_state.devoluciones = devoluciones
             st.session_state.invf = invf
 
-        if st.button("Valores aleatorios"):
+        if st.button("Valores aleatorios", on_click=randomize, key="btn_randomize"):
             randomize()
 
         inv0 = st.number_input(
@@ -630,7 +630,7 @@ def main_app():
 
     # AQUI: Botón Cerrar Sesión sin doble clic
     if st.sidebar.button("Cerrar Sesión", key="btn_logout"):
-        logout()
+            logout()
 
 # Entry
 def main():
