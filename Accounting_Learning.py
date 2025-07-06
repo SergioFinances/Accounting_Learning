@@ -9,6 +9,12 @@ import io
 import os
 from dotenv import load_dotenv
 
+st.set_page_config(
+    page_title="Herramienta Contable",
+    layout="wide",
+    initial_sidebar_state="auto"
+)
+
 load_dotenv()
 
 # Configuración segura de OpenRouter
@@ -45,14 +51,13 @@ def enter_app():
 # Callback para Login "Ingresar"
 def do_login():
     user = st.session_state.login_raw_user.strip().lower()
-    pwd = st.session_state.login_password
+    pwd  = st.session_state.login_password
     if not user or not pwd:
         st.session_state.login_error = "Por favor, ingresa usuario y contraseña."
     elif user in st.session_state.users and st.session_state.users[user]["password"] == pwd:
-        st.session_state.authenticated = True
-        st.session_state.username = user
-        st.session_state.show_portada = True
-        st.session_state.login_error = ""
+        st.session_state.authenticated = True    # AQUI SE HIZO CAMBIO: seteamos autenticación
+        st.session_state.username      = user
+        st.session_state.login_error   = ""
     else:
         st.session_state.login_error = "Credenciales incorrectas."
 
@@ -224,6 +229,7 @@ def logout():
     st.session_state.authenticated = False
     st.session_state.username = ""
     st.session_state.show_portada = False
+    st.session_state.login_error = ""
 
 def mostrar_portada():
     st.image("https://i.ibb.co/MDwk0bmw/Gemini-Generated-Image-kdwslvkdwslvkdws.png", use_container_width=True)
@@ -341,7 +347,8 @@ def mostrar_valoracion_inventarios():
     # Navegación con un solo clic
     col1, col2 = st.columns(2)
     with col1:
-        st.button("Anterior", on_click=inv_go_prev, key="inv_prev_btn")
+        if st.session_state.inv_slide_index > 0:
+            st.button("Anterior", on_click=inv_go_prev, key="inv_prev_btn")
     with col2:
         if not slide.get("sim_peps"):
             st.button("Siguiente", on_click=inv_go_next, args=(slides,), key="inv_next_btn")
@@ -628,25 +635,39 @@ def main_app():
     else:
         admin_panel()
 
-    # AQUI: Botón Cerrar Sesión sin doble clic
-    if st.sidebar.button("Cerrar Sesión", key="btn_logout"):
-            logout()
+    st.sidebar.button(
+        "Cerrar Sesión",
+        on_click=logout,    # AQUI SE HIZO CAMBIO
+        key="btn_logout"
+    )
 
 # Entry
 def main():
-    init_session()  # AQUI: asegura inicialización de login_error
+    init_session()
+    if not st.session_state.authenticated:
+        col_login, col_image = st.columns([1, 1])
+        with col_login:
+            st.header("Iniciar Sesión")
+            with st.form("login_form"):
+                st.text_input("Usuario", key="login_raw_user")
+                st.text_input("Contraseña", type="password", key="login_password")
+                st.form_submit_button("Ingresar", on_click=do_login)
+
+            # Si hubo error, mostrarlo
+            if st.session_state.login_error:
+                st.error(st.session_state.login_error)
+
+        with col_image:
+            # Ocupa toda su mitad
+            st.image(
+                "https://i.ibb.co/MDwk0bmw/Gemini-Generated-Image-kdwslvkdwslvkdws.png",
+                use_container_width=True
+            )
+
+    # ——— 2) Si ya está autenticado, arrancamos la app ———
     if st.session_state.authenticated:
         main_app()
-    else:
-        st.title("Iniciar Sesión")
-        with st.form(key="login_form"):
-            st.text_input("Usuario", key="login_raw_user")
-            st.text_input("Contraseña", type="password", key="login_password")
-            submitted = st.form_submit_button("Ingresar")
-            if submitted:
-                do_login()
-        if st.session_state.login_error:
-            st.error(st.session_state.login_error)
+
 
 if __name__ == '__main__':
     main()
