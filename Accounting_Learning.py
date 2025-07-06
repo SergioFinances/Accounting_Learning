@@ -532,7 +532,11 @@ def chat_contable():
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=12)
-            pdf.multi_cell(0, 10, f"Pregunta:\n{pregunta}\n\nRespuesta:\n{respuesta}")
+
+            texto = f"Pregunta:\n{pregunta}\n\nRespuesta:\n{respuesta}"
+            texto_seguro = texto.encode("latin-1", errors="ignore").decode("latin-1")
+
+            pdf.multi_cell(0, 10, texto_seguro)
 
             # Dest="S" devuelve el PDF como str; luego lo codificamos ignorando caracteres no Latin-1
             pdf_str = pdf.output(dest="S")
