@@ -576,22 +576,37 @@ def chat_contable():
 def admin_panel():
     st.header("Administrador de Usuarios")
 
-    # — 1) Mostrar usuarios con contraseña (hash) —
+    # Inicializa el flag show_passwords
+    if "show_passwords" not in st.session_state:
+        st.session_state.show_passwords = False
+
+    # Botón para alternar visibilidad de contraseñas
+    if st.button("Mostrar/Ocultar contraseñas"):
+        st.session_state.show_passwords = not st.session_state.show_passwords
+
+    st.markdown("---")
+
+    # 1) Mostrar usuarios con columna de contraseña
     all_users = list(users_collection.find(
         {}, 
         {"_id": 0, "username": 1, "role": 1, "password_hash": 1}
     ))
+    # Construye DataFrame
     df = pd.DataFrame(all_users).rename(columns={
         "username": "Usuario",
         "role": "Rol",
         "password_hash": "Contraseña"
     })
+    # Si no queremos mostrar hashes, los enmascaramos
+    if not st.session_state.show_passwords:
+        df["Contraseña"] = df["Contraseña"].apply(lambda _: "••••••••••")
+
     st.subheader("Usuarios actuales")
     st.dataframe(df)
 
     st.markdown("---")
 
-    # — 2) Crear usuario en formulario —
+    # 2) Crear usuario en formulario
     st.subheader("Crear nuevo usuario")
     with st.form("create_user_form"):
         new_user = st.text_input("Nombre de usuario", key="admin_new_user")
@@ -613,7 +628,7 @@ def admin_panel():
 
     st.markdown("---")
 
-    # — 3) Editar usuario en formulario —
+    # 3) Editar usuario en formulario
     st.subheader("Editar usuario")
     edit_user = st.selectbox(
         "Selecciona usuario",
@@ -644,7 +659,7 @@ def admin_panel():
 
     st.markdown("---")
 
-    # — 4) Eliminar usuario en formulario —
+    # 4) Eliminar usuario en formulario
     st.subheader("Eliminar usuario")
     del_user = st.selectbox(
         "Selecciona usuario a eliminar",
@@ -659,6 +674,7 @@ def admin_panel():
             else:
                 users_collection.delete_one({"username": del_user})
                 st.success(f"Usuario '{del_user}' eliminado.")
+
 
 
 # App principal
