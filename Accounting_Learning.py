@@ -198,17 +198,18 @@ def get_peps_table_html():
 
 # Inicialización de estado de sesión
 def init_session():
+    # Inicializa las variables de sesión necesarias
     st.session_state.setdefault("authenticated", False)
     st.session_state.setdefault("login_error", "")
+    st.session_state.setdefault("show_portada", False)
 
-    # — Inserta admin inicial en Mongo si no existe — 
-    admin_user = st.secrets["ADMIN_USER"]
+    # Inserta el admin inicial (si no existe)
+    admin_user = st.secrets["ADMIN_USER"].strip().lower()
     admin_pass = st.secrets["ADMIN_PASSWORD"]
     if users_collection.count_documents({"username": admin_user}) == 0:
-        hash_pw = pwd_ctx.hash(admin_pass)
         users_collection.insert_one({
             "username": admin_user,
-            "password_hash": hash_pw,
+            "password_hash": pwd_ctx.hash(admin_pass),
             "role": "admin"
         })
 
