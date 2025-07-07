@@ -244,13 +244,7 @@ def login():
 def logout():
     st.session_state.authenticated = False
     st.session_state.username = ""
-    st.session_state.show_portada = False
     st.session_state.login_error = ""
-
-def mostrar_portada():
-    st.image("https://i.ibb.co/MDwk0bmw/Gemini-Generated-Image-kdwslvkdwslvkdws.png", use_container_width=True)
-    if st.button("Entrar", key="btn_enter_portada"):
-        enter_app()
 
 # Sección Teoría: Valoración de Inventarios
 def mostrar_valoracion_inventarios():
@@ -680,47 +674,29 @@ def admin_panel():
 
 # App principal
 def main_app():
-    # Si estás aún en la portada:
-    if st.session_state.show_portada:
-        mostrar_portada()
-        return
+    # ELIMINADO: ya no existe check de show_portada
+    st.sidebar.title("Menú")
 
-    # Construye el menú base
     opts = ["Teoría", "Práctica", "Chat Contable"]
-
-    # Obtén el documento del usuario actual de MongoDB
     current = users_collection.find_one({"username": st.session_state.username})
     if current and current.get("role") == "admin":
         opts.append("Administrador")
 
     sel = st.sidebar.radio("Categoría", opts)
-
     if sel == "Teoría":
-        sub = st.sidebar.radio("Opciones", ["Valoración de inventarios", "Depreciaciones"])
-        if sub == "Valoración de inventarios":
-            mostrar_valoracion_inventarios()
-        else:
-            mostrar_depreciaciones_teoria()
-
+        mostrar_valoracion_inventarios()
     elif sel == "Práctica":
-        sub = st.sidebar.radio("Opciones", ["Ejercicios inventarios", "Ejercicios depreciaciones"])
-        if sub == "Ejercicios inventarios":
+        sub = st.sidebar.radio("Opciones", ["Inventarios", "Depreciaciones"])
+        if sub == "Inventarios":
             ejercicios_valoracion_inventarios()
         else:
             ejercicios_depreciaciones_grafico()
-
     elif sel == "Chat Contable":
         chat_contable()
-
-    else:  # Administrador
+    else:
         admin_panel()
 
-    st.sidebar.button(
-        "Cerrar Sesión",
-        on_click=logout,
-        key="btn_logout"
-    )
-
+    st.sidebar.button("Cerrar Sesión", on_click=logout, key="btn_logout")
 
 # Entry
 def main():
