@@ -201,7 +201,7 @@ def init_session():
     # Inicializa las variables de sesión necesarias
     st.session_state.setdefault("authenticated", False)
     st.session_state.setdefault("login_error", "")
-    st.session_state.setdefault("show_portada", False)
+    #st.session_state.setdefault("show_portada", False)
 
     # Inserta el admin inicial (si no existe)
     admin_user = st.secrets["ADMIN_USER"].strip().lower()
@@ -725,6 +725,7 @@ def main_app():
 # Entry
 def main():
     init_session()
+
     if not st.session_state.authenticated:
         col_login, col_image = st.columns([1, 1])
         with col_login:
@@ -732,23 +733,17 @@ def main():
             with st.form("login_form"):
                 st.text_input("Usuario", key="login_raw_user")
                 st.text_input("Contraseña", type="password", key="login_password")
-                st.form_submit_button("Ingresar", on_click=do_login)
-
-            # Si hubo error, mostrarlo
+                st.form_submit_button("Ingresar", on_click=do_login)  # ← UN SOLO CLICK
             if st.session_state.login_error:
                 st.error(st.session_state.login_error)
 
         with col_image:
-            # Ocupa toda su mitad
             st.image(
                 "https://i.ibb.co/MDwk0bmw/Gemini-Generated-Image-kdwslvkdwslvkdws.png",
                 use_container_width=True
             )
-
-    # ——— 2) Si ya está autenticado, arrancamos la app ———
-    if st.session_state.authenticated:
-        main_app()
-
+    else:
+        main_app()  # ← ENTRA DIRECTO A LA APP CON UN SOLO CLICK
 
 if __name__ == '__main__':
     main()
