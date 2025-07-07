@@ -17,6 +17,18 @@ st.set_page_config(
 
 load_dotenv()
 
+# Conexión a MongoDB y hashing de contraseñas
+from pymongo import MongoClient
+from passlib.context import CryptContext
+
+# Contexto bcrypt
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Cliente MongoDB (lee URI de Streamlit Secrets)
+client = MongoClient(st.secrets["mongodb"]["uri"])
+db     = client["accounting_app"]
+users_collection = db["users"]
+
 # Configuración segura de OpenRouter
 api_key = os.getenv("OPENROUTER_API_KEY")
 openai.api_key = api_key
@@ -54,8 +66,10 @@ def do_login():
     pwd  = st.session_state.login_password
     if not user or not pwd:
         st.session_state.login_error = "Por favor, ingresa usuario y contraseña."
-    elif user in st.session_state.users and st.session_state.users[user]["password"] == pwd:
-        st.session_state.authenticated = True    # AQUI SE HIZO CAMBIO: seteamos autenticación
+        return
+    doc = users_collection.find_one({"username": user})
+    if doc and pwd_ctx.verify(pwd, doc["password_hash"]):
+        st.session_state.authenticated = True
         st.session_state.username      = user
         st.session_state.login_error   = ""
     else:
@@ -184,18 +198,19 @@ def get_peps_table_html():
 
 # Inicialización de estado de sesión
 def init_session():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-    if "show_portada" not in st.session_state:
-        st.session_state.show_portada = False
-    if "users" not in st.session_state:
-        st.session_state.users = {
-            "admin": {"password": "admin123", "role": "admin"},
-            "user":  {"password": "user123",  "role": "user"}
-        }
-    # AQUI: inicializar login_error para evitar KeyError
-    if "login_error" not in st.session_state:
-        st.session_state.login_error = ""
+    st.session_state.setdefault("authenticated", False)
+    st.session_state.setdefault("login_error", "")
+
+    # — Inserta admin inicial en Mongo si no existe — 
+    admin_user = st.secrets["ADMIN_USER"]
+    admin_pass = st.secrets["ADMIN_PASSWORD"]
+    if users_collection.count_documents({"username": admin_user}) == 0:
+        hash_pw = pwd_ctx.hash(admin_pass)
+        users_collection.insert_one({
+            "username": admin_user,
+            "password_hash": hash_pw,
+            "role": "admin"
+        })
 
 def check_credentials(user, password):
     return user in st.session_state.users and st.session_state.users[user]["password"] == password
@@ -559,18 +574,15 @@ def chat_contable():
 # Panel Admin completo
 def admin_panel():
     st.header("Administrador de Usuarios")
-    users = st.session_state.users
 
-    # Mostrar usuarios actuales
-    df = pd.DataFrame([
-        {"Usuario": u, "Contraseña": info["password"], "Rol": info["role"]}
-        for u, info in users.items()
-    ])
+    # 1) Mostrar usuarios
+    all_users = list(users_collection.find({}, {"_id":0, "username":1, "role":1}))
+    df = pd.DataFrame(all_users)
     st.subheader("Usuarios actuales")
     st.dataframe(df)
 
     st.markdown("---")
-    # Crear usuario
+    # 2) Crear usuario
     st.subheader("Crear nuevo usuario")
     new_user = st.text_input("Nombre de usuario", key="admin_new_user")
     new_pass = st.text_input("Contraseña", type="password", key="admin_new_pass")
@@ -578,35 +590,47 @@ def admin_panel():
     if st.button("Agregar usuario"):
         if not new_user or not new_pass:
             st.error("Completa todos los campos.")
-        elif new_user in users:
+        elif users_collection.count_documents({"username": new_user}) > 0:
             st.error("El usuario ya existe.")
         else:
-            st.session_state.users[new_user] = {"password": new_pass, "role": new_role}
+            users_collection.insert_one({
+                "username": new_user,
+                "password_hash": pwd_ctx.hash(new_pass),
+                "role": new_role
+            })
             st.success(f"Usuario '{new_user}' agregado.")
+            st.experimental_rerun()
 
     st.markdown("---")
-    # Editar usuario
+    # 3) Editar usuario
     st.subheader("Editar usuario")
-    edit_user = st.selectbox("Selecciona usuario", list(users.keys()), key="admin_edit_select")
+    edit_user = st.selectbox("Selecciona usuario", [u["username"] for u in all_users], key="admin_edit_select")
     if edit_user:
-        edit_pass = st.text_input("Nueva contraseña", value=users[edit_user]["password"], key="admin_edit_pass")
+        user_doc = users_collection.find_one({"username": edit_user})
+        edit_pass = st.text_input("Nueva contraseña (dejar vacío para no cambiar)", key="admin_edit_pass")
         edit_role = st.selectbox("Nuevo rol", ["user", "admin"],
-                                 index=0 if users[edit_user]["role"] == "user" else 1,
+                                 index=0 if user_doc["role"]=="user" else 1,
                                  key="admin_edit_role")
         if st.button("Actualizar usuario"):
-            st.session_state.users[edit_user] = {"password": edit_pass, "role": edit_role}
+            update = {"role": edit_role}
+            if edit_pass:
+                update["password_hash"] = pwd_ctx.hash(edit_pass)
+            users_collection.update_one({"username": edit_user}, {"$set": update})
             st.success(f"Usuario '{edit_user}' actualizado.")
+            st.experimental_rerun()
 
     st.markdown("---")
-    # Eliminar usuario
+    # 4) Eliminar usuario
     st.subheader("Eliminar usuario")
-    del_user = st.selectbox("Selecciona usuario a eliminar", list(users.keys()), key="admin_del_select")
+    del_user = st.selectbox("Selecciona usuario a eliminar", [u["username"] for u in all_users], key="admin_del_select")
     if st.button("Eliminar usuario"):
         if del_user == st.session_state.username:
-            st.error("No puedes eliminar la cuenta con la que estás conectado.")
+            st.error("No puedes eliminar tu propia cuenta.")
         else:
-            del st.session_state.users[del_user]
+            users_collection.delete_one({"username": del_user})
             st.success(f"Usuario '{del_user}' eliminado.")
+            st.experimental_rerun()
+
 
 # App principal
 def main_app():
