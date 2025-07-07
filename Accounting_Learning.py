@@ -733,7 +733,7 @@ def main():
             with st.form("login_form"):
                 st.text_input("Usuario", key="login_raw_user")
                 st.text_input("Contraseña", type="password", key="login_password")
-                st.form_submit_button("Ingresar", on_click=do_login)  # ← UN SOLO CLICK
+                st.form_submit_button("Ingresar", on_click=do_login)
             if st.session_state.login_error:
                 st.error(st.session_state.login_error)
 
@@ -743,7 +743,7 @@ def main():
                 use_container_width=True
             )
     else:
-        main_app()  # ← ENTRA DIRECTO A LA APP CON UN SOLO CLICK
+        main_app()
 
 if __name__ == '__main__':
     main()
