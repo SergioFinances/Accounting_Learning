@@ -600,7 +600,6 @@ def admin_panel():
                 "role": new_role
             })
             st.success(f"Usuario '{new_user}' agregado.")
-            st.experimental_rerun()
 
     st.markdown("---")
     # 3) Editar usuario
@@ -618,7 +617,6 @@ def admin_panel():
                 update["password_hash"] = pwd_ctx.hash(edit_pass)
             users_collection.update_one({"username": edit_user}, {"$set": update})
             st.success(f"Usuario '{edit_user}' actualizado.")
-            st.experimental_rerun()
 
     st.markdown("---")
     # 4) Eliminar usuario
@@ -630,7 +628,6 @@ def admin_panel():
         else:
             users_collection.delete_one({"username": del_user})
             st.success(f"Usuario '{del_user}' eliminado.")
-            st.experimental_rerun()
 
 
 # App principal
