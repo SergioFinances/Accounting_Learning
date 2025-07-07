@@ -576,58 +576,89 @@ def chat_contable():
 def admin_panel():
     st.header("Administrador de Usuarios")
 
-    # 1) Mostrar usuarios
-    all_users = list(users_collection.find({}, {"_id":0, "username":1, "role":1}))
-    df = pd.DataFrame(all_users)
+    # — 1) Mostrar usuarios con contraseña (hash) —
+    all_users = list(users_collection.find(
+        {}, 
+        {"_id": 0, "username": 1, "role": 1, "password_hash": 1}
+    ))
+    df = pd.DataFrame(all_users).rename(columns={
+        "username": "Usuario",
+        "role": "Rol",
+        "password_hash": "Contraseña"
+    })
     st.subheader("Usuarios actuales")
     st.dataframe(df)
 
     st.markdown("---")
-    # 2) Crear usuario
+
+    # — 2) Crear usuario en formulario —
     st.subheader("Crear nuevo usuario")
-    new_user = st.text_input("Nombre de usuario", key="admin_new_user")
-    new_pass = st.text_input("Contraseña", type="password", key="admin_new_pass")
-    new_role = st.selectbox("Rol", ["user", "admin"], key="admin_new_role")
-    if st.button("Agregar usuario"):
-        if not new_user or not new_pass:
-            st.error("Completa todos los campos.")
-        elif users_collection.count_documents({"username": new_user}) > 0:
-            st.error("El usuario ya existe.")
-        else:
-            users_collection.insert_one({
-                "username": new_user,
-                "password_hash": pwd_ctx.hash(new_pass),
-                "role": new_role
-            })
-            st.success(f"Usuario '{new_user}' agregado.")
+    with st.form("create_user_form"):
+        new_user = st.text_input("Nombre de usuario", key="admin_new_user")
+        new_pass = st.text_input("Contraseña", type="password", key="admin_new_pass")
+        new_role = st.selectbox("Rol", ["user", "admin"], key="admin_new_role")
+        submitted = st.form_submit_button("Agregar usuario")
+        if submitted:
+            if not new_user or not new_pass:
+                st.error("Completa todos los campos.")
+            elif users_collection.count_documents({"username": new_user}) > 0:
+                st.error("El usuario ya existe.")
+            else:
+                users_collection.insert_one({
+                    "username": new_user,
+                    "password_hash": pwd_ctx.hash(new_pass),
+                    "role": new_role
+                })
+                st.success(f"Usuario '{new_user}' agregado.")
 
     st.markdown("---")
-    # 3) Editar usuario
+
+    # — 3) Editar usuario en formulario —
     st.subheader("Editar usuario")
-    edit_user = st.selectbox("Selecciona usuario", [u["username"] for u in all_users], key="admin_edit_select")
-    if edit_user:
+    edit_user = st.selectbox(
+        "Selecciona usuario",
+        [u["username"] for u in all_users],
+        key="admin_edit_select"
+    )
+    with st.form("edit_user_form"):
         user_doc = users_collection.find_one({"username": edit_user})
-        edit_pass = st.text_input("Nueva contraseña (dejar vacío para no cambiar)", key="admin_edit_pass")
-        edit_role = st.selectbox("Nuevo rol", ["user", "admin"],
-                                 index=0 if user_doc["role"]=="user" else 1,
-                                 key="admin_edit_role")
-        if st.button("Actualizar usuario"):
+        edit_pass = st.text_input(
+            "Nueva contraseña (vacío = no cambiar)", 
+            key="admin_edit_pass"
+        )
+        edit_role = st.selectbox(
+            "Nuevo rol", ["user", "admin"],
+            index=0 if user_doc["role"] == "user" else 1,
+            key="admin_edit_role"
+        )
+        submitted = st.form_submit_button("Actualizar usuario")
+        if submitted:
             update = {"role": edit_role}
             if edit_pass:
                 update["password_hash"] = pwd_ctx.hash(edit_pass)
-            users_collection.update_one({"username": edit_user}, {"$set": update})
+            users_collection.update_one(
+                {"username": edit_user},
+                {"$set": update}
+            )
             st.success(f"Usuario '{edit_user}' actualizado.")
 
     st.markdown("---")
-    # 4) Eliminar usuario
+
+    # — 4) Eliminar usuario en formulario —
     st.subheader("Eliminar usuario")
-    del_user = st.selectbox("Selecciona usuario a eliminar", [u["username"] for u in all_users], key="admin_del_select")
-    if st.button("Eliminar usuario"):
-        if del_user == st.session_state.username:
-            st.error("No puedes eliminar tu propia cuenta.")
-        else:
-            users_collection.delete_one({"username": del_user})
-            st.success(f"Usuario '{del_user}' eliminado.")
+    del_user = st.selectbox(
+        "Selecciona usuario a eliminar",
+        [u["username"] for u in all_users],
+        key="admin_del_select"
+    )
+    with st.form("delete_user_form"):
+        submitted = st.form_submit_button("Eliminar usuario")
+        if submitted:
+            if del_user == st.session_state.username:
+                st.error("No puedes eliminar tu propia cuenta.")
+            else:
+                users_collection.delete_one({"username": del_user})
+                st.success(f"Usuario '{del_user}' eliminado.")
 
 
 # App principal
