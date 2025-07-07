@@ -635,36 +635,47 @@ def admin_panel():
 
 # App principal
 def main_app():
+    # Si estás aún en la portada:
     if st.session_state.show_portada:
         mostrar_portada()
         return
-    st.sidebar.title("Menú")
-    opts=["Teoría","Práctica","Chat Contable"]
-    if st.session_state.users[st.session_state.username]["role"]=="admin":
+
+    # Construye el menú base
+    opts = ["Teoría", "Práctica", "Chat Contable"]
+
+    # Obtén el documento del usuario actual de MongoDB
+    current = users_collection.find_one({"username": st.session_state.username})
+    if current and current.get("role") == "admin":
         opts.append("Administrador")
+
     sel = st.sidebar.radio("Categoría", opts)
-    if sel=="Teoría":
-        sub = st.sidebar.radio("Opciones", ["Valoración de inventarios","Depreciaciones"])
-        if sub=="Valoración de inventarios":
+
+    if sel == "Teoría":
+        sub = st.sidebar.radio("Opciones", ["Valoración de inventarios", "Depreciaciones"])
+        if sub == "Valoración de inventarios":
             mostrar_valoracion_inventarios()
         else:
             mostrar_depreciaciones_teoria()
-    elif sel=="Práctica":
-        sub = st.sidebar.radio("Opciones", ["Ejercicios inventarios","Ejercicios depreciaciones"])
-        if sub=="Ejercicios inventarios":
+
+    elif sel == "Práctica":
+        sub = st.sidebar.radio("Opciones", ["Ejercicios inventarios", "Ejercicios depreciaciones"])
+        if sub == "Ejercicios inventarios":
             ejercicios_valoracion_inventarios()
         else:
             ejercicios_depreciaciones_grafico()
-    elif sel=="Chat Contable":
+
+    elif sel == "Chat Contable":
         chat_contable()
-    else:
+
+    else:  # Administrador
         admin_panel()
 
     st.sidebar.button(
         "Cerrar Sesión",
-        on_click=logout,    # AQUI SE HIZO CAMBIO
+        on_click=logout,
         key="btn_logout"
     )
+
 
 # Entry
 def main():
