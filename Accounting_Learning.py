@@ -670,8 +670,6 @@ def admin_panel():
                 users_collection.delete_one({"username": del_user})
                 st.success(f"Usuario '{del_user}' eliminado.")
 
-
-
 # App principal
 def main_app():
 
