@@ -674,29 +674,42 @@ def admin_panel():
 
 # App principal
 def main_app():
-    # ELIMINADO: ya no existe check de show_portada
-    st.sidebar.title("Menú")
 
+    # Construye el menú base
     opts = ["Teoría", "Práctica", "Chat Contable"]
+
+    # Obtén el documento del usuario actual de MongoDB
     current = users_collection.find_one({"username": st.session_state.username})
     if current and current.get("role") == "admin":
         opts.append("Administrador")
 
     sel = st.sidebar.radio("Categoría", opts)
+
     if sel == "Teoría":
-        mostrar_valoracion_inventarios()
+        sub = st.sidebar.radio("Opciones", ["Valoración de inventarios", "Depreciaciones"])
+        if sub == "Valoración de inventarios":
+            mostrar_valoracion_inventarios()
+        else:
+            mostrar_depreciaciones_teoria()
+
     elif sel == "Práctica":
-        sub = st.sidebar.radio("Opciones", ["Inventarios", "Depreciaciones"])
-        if sub == "Inventarios":
+        sub = st.sidebar.radio("Opciones", ["Ejercicios inventarios", "Ejercicios depreciaciones"])
+        if sub == "Ejercicios inventarios":
             ejercicios_valoracion_inventarios()
         else:
             ejercicios_depreciaciones_grafico()
+
     elif sel == "Chat Contable":
         chat_contable()
-    else:
+
+    else:  # Administrador
         admin_panel()
 
-    st.sidebar.button("Cerrar Sesión", on_click=logout, key="btn_logout")
+    st.sidebar.button(
+        "Cerrar Sesión",
+        on_click=logout,
+        key="btn_logout"
+    )
 
 # Entry
 def main():
