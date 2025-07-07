@@ -609,7 +609,8 @@ def admin_panel():
     # 2) Crear usuario en formulario
     st.subheader("Crear nuevo usuario")
     with st.form("create_user_form"):
-        new_user = st.text_input("Nombre de usuario", key="admin_new_user")
+        raw_user = st.text_input("Nombre de usuario", key="admin_new_user")
+        new_user = raw_user.strip().lower()                   # ← normalizar aquí
         new_pass = st.text_input("Contraseña", type="password", key="admin_new_pass")
         new_role = st.selectbox("Rol", ["user", "admin"], key="admin_new_role")
         submitted = st.form_submit_button("Agregar usuario")
@@ -620,7 +621,7 @@ def admin_panel():
                 st.error("El usuario ya existe.")
             else:
                 users_collection.insert_one({
-                    "username": new_user,
+                    "username": new_user,                     # almacena lowercase
                     "password_hash": pwd_ctx.hash(new_pass),
                     "role": new_role
                 })
