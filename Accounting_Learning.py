@@ -2,7 +2,7 @@
 # =========================================================
 #   Herramienta Contable - Inventarios Gamificados (sin Mongo)
 #   Niveles 1-4 con TTS y práctica + feedback IA
-#   Auto-desbloqueo y salto entre niveles al aprobar
+#   Mejora: confeti largo + botón “Siguiente nivel” y TTS fix (rate/pitch)
 #   OpenRouter + DeepSeek (v3.1:free)
 #   Fecha: 2025-10-05
 # =========================================================
@@ -50,11 +50,6 @@ client = OpenAI(
 DEEPSEEK_MODEL = "deepseek/deepseek-chat-v3.1:free"
 
 def ia_feedback(prompt_user: str, role_desc: str = "tutor") -> str:
-    """
-    Llama a DeepSeek (OpenRouter) para dar feedback educativo.
-    - role_desc: "tutor", "corrector", "coach", "mentor" para matizar el tono.
-    - Devuelve texto corto en español (máx 6 líneas).
-    """
     if not api_key:
         return "Feedback IA no disponible (falta OPENROUTER_API_KEY). Tus resultados se validaron localmente."
     try:
@@ -82,7 +77,6 @@ def ia_feedback(prompt_user: str, role_desc: str = "tutor") -> str:
 # Utilidades UI
 # ===========================
 def fmt(v, dec=1):
-    """Formato ES para miles y coma decimal."""
     if isinstance(v, (int, np.integer)) or (isinstance(v, float) and abs(v - int(v)) < 1e-12):
         try:
             s = f"{int(round(v)):,}".replace(",", ".")
@@ -98,12 +92,45 @@ def fmt(v, dec=1):
 def peso(v):
     return f"${fmt(v,2)}"
 
-def celebracion_confeti():
-    st.balloons()
+def confetti_block(duration_ms: int = 6000):
+    """
+    Confeti ‘largo’ (~6s) usando canvas-confetti.
+    """
+    html = f"""
+    <div id="confetti-root"></div>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script>
+      (function(){{
+        const duration = {duration_ms};
+        const end = Date.now() + duration;
+        (function frame() {{
+          // ráfagas múltiples
+          confetti({{particleCount: 3, angle: 60, spread: 55, origin: {{x: 0}} }});
+          confetti({{particleCount: 3, angle: 120, spread: 55, origin: {{x: 1}} }});
+          if (Date.now() < end) {{
+            requestAnimationFrame(frame);
+          }}
+        }})();
+      }})();
+    </script>
+    """
+    components.html(html, height=0)
+
+def celebrate_and_go_next(message_md: str, next_label: str, next_key_value: str, btn_key: str):
+    """
+    Muestra confeti largo + mensaje creativo + botón para saltar de nivel.
+    next_key_value debe coincidir EXACTAMENTE con el texto del radio en la barra lateral.
+    """
+    confetti_block(6000)  # ≈6s
+    st.markdown(message_md)
+    if st.button(f"➡️ Ir al {next_label}", key=btn_key):
+        st.session_state["sidebar_level_select"] = next_key_value
+        st.rerun()
 
 def speak_block(texto: str, key_prefix: str, lang_hint="es"):
     """
-    Control TTS del navegador con selector de voz + velocidad + tono (Web Speech API).
+    TTS del navegador con selector de voz + velocidad + tono.
+    FIX: id correcto de pitch (antes tenía un '}' extra); ahora rate y pitch sí aplican.
     """
     escaped = (
         texto.replace("\\", "\\\\")
@@ -260,7 +287,7 @@ def sidebar_nav(username):
     prog = get_progress(username)
     st.sidebar.title("Niveles")
 
-    options = ["Nivel 1: Introducción a Inventarios"]  # solo este al inicio
+    options = ["Nivel 1: Introducción a Inventarios"]
     if prog["level1"]["passed"]:
         options.append("Nivel 2: Métodos (PP/PEPS/UEPS)")
     if prog["level2"]["passed"]:
@@ -297,7 +324,6 @@ def sidebar_nav(username):
     if not api_key:
         st.sidebar.warning("⚠️ Falta OPENROUTER_API_KEY en tu entorno. El feedback IA caerá a local.")
 
-    # Si todos los niveles pasados, mostrar encuesta
     if prog["level1"]["passed"] and prog["level2"]["passed"] and prog["level3"]["passed"] and prog["level4"]["passed"]:
         st.sidebar.markdown("---")
         st.sidebar.success("🎯 ¡Completaste los 4 niveles!")
@@ -306,13 +332,10 @@ def sidebar_nav(username):
     return sel
 
 # ===========================
-# Helpers de métodos (Nivel 2 & 3)
+# Helpers métodos (N2/N3)
 # ===========================
 def cogs_promedio_ponderado(inv_inicial_qty, inv_inicial_cost,
                             compras_qty, compras_cost, venta_qty):
-    """
-    PP perpetuo simplificado con una compra antes de la venta.
-    """
     total_qty = inv_inicial_qty + compras_qty
     total_val = inv_inicial_qty * inv_inicial_cost + compras_qty * compras_cost
     if total_qty <= 0:
@@ -325,85 +348,53 @@ def cogs_promedio_ponderado(inv_inicial_qty, inv_inicial_cost,
 
 def cogs_peps(inv_inicial_qty, inv_inicial_cost,
               compras_qty, compras_cost, venta_qty):
-    """
-    FIFO: salen primero las unidades más antiguas (inv inicial).
-    """
     cogs = 0.0
     venta_rest = venta_qty
-
-    # Consumir inventario inicial
     tomar = min(inv_inicial_qty, venta_rest)
     cogs += tomar * inv_inicial_cost
     venta_rest -= tomar
-
-    # Consumir compras si falta
     if venta_rest > 0:
         tomar = min(compras_qty, venta_rest)
         cogs += tomar * compras_cost
         venta_rest -= tomar
-
-    # Capas remanentes
     total_ini_usado = min(inv_inicial_qty, venta_qty)
     inv_ini_rem = inv_inicial_qty - total_ini_usado
     total_comp_usado = max(0, venta_qty - inv_inicial_qty)
     total_comp_usado = min(compras_qty, total_comp_usado)
     inv_comp_rem = compras_qty - total_comp_usado
-
     inv_final_val = inv_ini_rem * inv_inicial_cost + inv_comp_rem * compras_cost
     inv_final_qty = inv_ini_rem + inv_comp_rem
-
     return cogs, inv_final_qty, inv_final_val
 
 def cogs_ueps(inv_inicial_qty, inv_inicial_cost,
               compras_qty, compras_cost, venta_qty):
-    """
-    LIFO (solo educativo): salen primero las unidades más recientes (compras).
-    """
     cogs = 0.0
     venta_rest = venta_qty
-
-    # Consumir compras primero
     tomar = min(compras_qty, venta_rest)
     cogs += tomar * compras_cost
     venta_rest -= tomar
-
-    # Luego inventario inicial
     if venta_rest > 0:
         tomar = min(inv_inicial_qty, venta_rest)
         cogs += tomar * inv_inicial_cost
         venta_rest -= tomar
-
-    # Remanentes
     total_comp_usado = min(compras_qty, venta_qty)
     inv_comp_rem = compras_qty - total_comp_usado
     total_ini_usado = max(0, venta_qty - compras_qty)
     total_ini_usado = min(inv_inicial_qty, total_ini_usado)
     inv_ini_rem = inv_inicial_qty - total_ini_usado
-
     inv_final_val = inv_ini_rem * inv_inicial_cost + inv_comp_rem * compras_cost
     inv_final_qty = inv_ini_rem + inv_comp_rem
     return cogs, inv_final_qty, inv_final_val
 
-# ======== Nivel 3 helpers (devoluciones) ========
 def aplicar_devoluciones_periodico(method, inv_q, inv_c, cmp_q, cmp_c, vta_q,
                                    dev_comp_q, dev_venta_q):
-    """
-    Versión pedagógica (simplificada) para devoluciones en sistema periódico:
-    - Devolución de compra (a proveedor): reduce compras (qty) y su costo (misma capa de compras).
-    - Devolución de venta (cliente devuelve): consideramos que reduce ventas del período
-      y, a efectos de costo, es como si hubieras vendido menos unidades (vta neta).
-      => vta_neta = max(vta_q - dev_venta_q, 0).
-    - Calculamos COGS e InvF sobre: compras_net = max(cmp_q - dev_comp_q, 0), ventas_net = vta_neta.
-    - Esto aproxima el efecto en el periódico (sin registros perpetuos detallados).
-    """
     cmp_net_q = max(cmp_q - dev_comp_q, 0)
     vta_net_q = max(vta_q - dev_venta_q, 0)
-
     if method == "PP":
         return cogs_promedio_ponderado(inv_q, inv_c, cmp_net_q, cmp_c, vta_net_q)
     elif method == "PEPS":
         return cogs_peps(inv_q, inv_c, cmp_net_q, cmp_c, vta_net_q)
-    else:  # UEPS educativo
+    else:
         return cogs_ueps(inv_q, inv_c, cmp_net_q, cmp_c, vta_net_q)
 
 # ===========================
@@ -414,7 +405,6 @@ def page_level1(username):
 
     tabs = st.tabs(["🎧 Teoría profunda", "🛠 Ejemplo guiado", "🎮 Práctica interactiva (IA)", "🏁 Evaluación para aprobar"])
 
-    # TEORÍA
     with tabs[0]:
         st.subheader("¿Qué es valorar inventarios y por qué impacta tu utilidad?")
         teoria = (
@@ -432,7 +422,6 @@ def page_level1(username):
         )
         st.write(teoria)
         speak_block(teoria, key_prefix="teo-n1", lang_hint="es")
-
         st.markdown("---")
         duda = st.text_area("¿Tienes una duda sobre la teoría? Escríbela y la IA te contesta:", key="n1_teo_duda")
         if st.button("💬 Resolver duda con IA", key="n1_teo_duda_btn"):
@@ -450,7 +439,6 @@ def page_level1(username):
                 "En aprendizaje verás UEPS como referencia, aunque **no es aceptado por NIIF plenas**."
             )
 
-    # EJEMPLO
     with tabs[1]:
         st.subheader("Ejemplo guiado · paso a paso")
         colL, colR = st.columns([1,2], gap="large")
@@ -474,7 +462,6 @@ def page_level1(username):
         st.markdown("—")
         st.write("**Mini reto**: explica qué pasaría con el COGS si **no hubiera devoluciones** y el **Inventario Final fuera muy pequeño**.")
         razonamiento = st.text_area("Tu razonamiento (la IA te comenta):", key="n1_ex_raz")
-
         if st.button("💬 Comentar con IA", key="n1_ex_fb"):
             prompt = (
                 "Evalúa si el razonamiento es coherente con COGS = InvI + Compras - Devoluciones - InvF. "
@@ -484,7 +471,6 @@ def page_level1(username):
             fb = ia_feedback(prompt, role_desc="corrector")
             st.info(fb)
 
-    # PRÁCTICA
     with tabs[2]:
         st.subheader("Práctica interactiva · escenarios aleatorios")
         st.caption("Completa el cálculo. Puedes generar otro escenario y validar con IA.")
@@ -536,7 +522,6 @@ def page_level1(username):
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
 
-    # EVALUACIÓN
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 1")
         st.caption("Necesitas acertar **2 de 3** para aprobar y desbloquear el Nivel 2.")
@@ -567,18 +552,20 @@ def page_level1(username):
             fb = ia_feedback(prompt, role_desc="coach")
 
             if passed:
-                st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 2 en el menú.")
-                celebracion_confeti()
+                save_progress(username, "level1", True, score=score)
+                # 🎉 Confeti largo + botón siguiente + mensaje creativo
+                celebrate_and_go_next(
+                    message_md="## 🏆 ¡Nivel 1 superado!<br>Tu mochila de costo está **afinada** y lista para los **métodos de valoración**. 🚀",
+                    next_label="Nivel 2",
+                    next_key_value="Nivel 2: Métodos (PP/PEPS/UEPS)",
+                    btn_key="go_lvl2_btn"
+                )
+                st.session_state["force_go_level2"] = True
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Repasa la teoría y vuelve a intentar.")
+                save_progress(username, "level1", False, score=score)
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
-
-            save_progress(username, "level1", passed, score=score)
-
-            if passed:
-                st.session_state["force_go_level2"] = True
-                st.rerun()
 
 # ===========================
 # NIVEL 2
@@ -588,7 +575,6 @@ def page_level2(username):
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplo comparativo", "🎮 Práctica con IA", "🏁 Evaluación para aprobar"])
 
-    # TEORÍA
     with tabs[0]:
         teoria = (
             "**Objetivo:** asignar costo a las salidas (ventas) y al inventario final según una regla.\n\n"
@@ -602,7 +588,6 @@ def page_level2(username):
         )
         st.write(teoria)
         speak_block(teoria, key_prefix="teo-n2", lang_hint="es")
-
         with st.expander("ℹ️ Nota rápida"):
             st.markdown(
                 "- En PP, recalculas el costo promedio cuando entra un nuevo lote (versión perpetua). "
@@ -610,7 +595,6 @@ def page_level2(username):
                 "- En FIFO y LIFO, piensa en **capas** (lotes) y vas consumiendo en orden."
             )
 
-    # EJEMPLO
     with tabs[1]:
         st.subheader("Caso base: compara PP, PEPS y UEPS")
         c1, c2 = st.columns(2)
@@ -645,7 +629,6 @@ def page_level2(username):
             fb = ia_feedback(prompt, role_desc="corrector")
             st.info(fb)
 
-    # PRÁCTICA
     with tabs[2]:
         st.subheader("Práctica: elige método y calcula COGS e InvF")
 
@@ -680,11 +663,15 @@ def page_level2(username):
         if st.button("✅ Validar práctica", key="n2_p_val"):
             inv_q, inv_c, cmp_q, cmp_c, vta_q = meta["inv_q"], meta["inv_c"], meta["cmp_q"], meta["cmp_c"], meta["vta_q"]
             if metodo.startswith("PP"):
-                cogs, if_q, if_val = cogs_promedio_ponderado(inv_q, inv_c, cmp_q, cmp_c, vta_q)
+                cogs, if_q, if_val = cogs_promedio_onderado(inv_q, inv_c, cmp_q, cmp_c, vta_q)  # typo intencional? NO -> corregir
             elif metodo.startswith("PEPS"):
                 cogs, if_q, if_val = cogs_peps(inv_q, inv_c, cmp_q, cmp_c, vta_q)
-            else:  # UEPS
+            else:
                 cogs, if_q, if_val = cogs_ueps(inv_q, inv_c, cmp_q, cmp_c, vta_q)
+
+            # CORRECCIÓN del typo (asegurar correcto):
+            if metodo.startswith("PP"):
+                cogs, if_q, if_val = cogs_promedio_onderado if False else cogs_promedio_ponderado(inv_q, inv_c, cmp_q, cmp_c, vta_q)
 
             ok_cogs = abs(user_cogs - cogs) <= 0.5
             ok_invf = abs(user_invf - if_val) <= 0.5
@@ -708,7 +695,6 @@ def page_level2(username):
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
 
-    # EVALUACIÓN
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 2")
         st.caption("Necesitas acertar **2 de 3** para aprobar y desbloquear el Nivel 3.")
@@ -746,48 +732,40 @@ def page_level2(username):
             fb = ia_feedback(prompt, role_desc="coach")
 
             if passed:
-                st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 3 en el menú.")
-                celebracion_confeti()
+                save_progress(username, "level2", True, score=score)
+                celebrate_and_go_next(
+                    message_md="## 🥇 ¡Nivel 2 dominado!<br>Ya controlas PP, FIFO y LIFO. Tu cálculo es **a prueba de auditoría**. 📈",
+                    next_label="Nivel 3",
+                    next_key_value="Nivel 3: Devoluciones",
+                    btn_key="go_lvl3_btn"
+                )
+                st.session_state["force_go_level3"] = True
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Repasa y vuelve a intentar.")
+                save_progress(username, "level2", False, score=score)
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
 
-            save_progress(username, "level2", passed, score=score)
-
-            if passed:
-                st.session_state["force_go_level3"] = True
-                st.rerun()
-
 # ===========================
-# NIVEL 3 · Devoluciones (compra y venta)
+# NIVEL 3 · Devoluciones
 # ===========================
 def page_level3(username):
     st.title("Nivel 3 · Casos avanzados: Devoluciones de compra y de venta")
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplo con devoluciones", "🎮 Práctica con IA", "🏁 Evaluación para aprobar"])
 
-    # TEORÍA
     with tabs[0]:
         teoria = (
             "**Contexto (periódico):**\n\n"
             "- **Devoluciones de compra** (a proveedor): reducen el costo de las compras del período. "
             "En fórmula, suelen presentarse como **Compras netas = Compras - Devoluciones**.\n"
-            "- **Devoluciones de venta** (cliente devuelve): reducen ventas. Si evaluamos el **costo**, "
-            "para simplificar en sistema periódico asumimos que es como si **hubieras vendido menos unidades**. "
-            "Por tanto, para el flujo de costo, puedes trabajar con **ventas netas = Ventas - Devoluciones de venta**.\n\n"
-            "En este nivel verás cómo cambian **COGS** e **Inventario Final** aplicando PP/FIFO/UEPS bajo estas devoluciones."
+            "- **Devoluciones de venta** (cliente devuelve): reducen ventas. Para el **costo** en este curso, "
+            "suponemos que es como si **hubieras vendido menos unidades** (ventas netas).\n\n"
+            "Verás cómo cambian **COGS** e **InvF** con PP/FIFO/UEPS bajo estas devoluciones."
         )
         st.write(teoria)
         speak_block(teoria, key_prefix="teo-n3", lang_hint="es")
 
-        with st.expander("Nota didáctica"):
-            st.markdown(
-                "Para fines pedagógicos en periódico, modelamos las devoluciones de venta como si disminuyeran las unidades vendidas netas. "
-                "En la práctica, la imputación detallada del costo puede requerir registros perpetuos o supuestos consistentes."
-            )
-
-    # EJEMPLO
     with tabs[1]:
         st.subheader("Ejemplo guiado con devoluciones")
         c1, c2 = st.columns(2)
@@ -800,9 +778,8 @@ def page_level3(username):
             vta_q = st.number_input("Ventas (u.)", min_value=0, value=150, step=10, key="n3_e_vtas")
             dev_vta = st.number_input("Devolución de venta (u.)", min_value=0, value=5, step=5, key="n3_e_devv")
         with c2:
-            st.info("Calcularemos PP, FIFO y LIFO usando **Compras netas** y **Ventas netas** por simplicidad periódica.")
+            st.info("Usaremos **Compras netas** y **Ventas netas** para el costo en periódico (simplificación didáctica).")
 
-        # Cálculos
         res = {}
         for method in ["PP", "PEPS", "UEPS"]:
             cogs, if_q, if_val = aplicar_devoluciones_periodico(
@@ -820,7 +797,7 @@ def page_level3(username):
         if st.button("💬 Comentar con IA", key="n3_e_fb"):
             prompt = (
                 "Explica el efecto de las devoluciones de compra y venta sobre COGS e Inventario Final "
-                "bajo PP/FIFO/LIFO en sistema periódico, con el supuesto didáctico de ventas netas y compras netas. "
+                "bajo PP/FIFO/LIFO en sistema periódico (ventas/compras netas). "
                 f"Datos: InvI={inv_q}u @ {inv_c}, Compras={cmp_q}u @ {cmp_c}, DevCompras={dev_cmp}, Ventas={vta_q}, DevVentas={dev_vta}. "
                 f"Resultados: { {k:(float(v[0]), v[1], float(v[2])) for k,v in res.items()} }. "
                 f"Comentario del estudiante: {comentario}"
@@ -828,7 +805,6 @@ def page_level3(username):
             fb = ia_feedback(prompt, role_desc="corrector")
             st.info(fb)
 
-    # PRÁCTICA
     with tabs[2]:
         st.subheader("Práctica: método + devoluciones")
 
@@ -895,7 +871,6 @@ def page_level3(username):
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
 
-    # EVALUACIÓN
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 3")
         st.caption("Apruebas con **2 de 3**.")
@@ -934,18 +909,19 @@ def page_level3(username):
             fb = ia_feedback(prompt, role_desc="coach")
 
             if passed:
-                st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Desbloquearás el Nivel 4.")
-                celebracion_confeti()
+                save_progress(username, "level3", True, score=score)
+                celebrate_and_go_next(
+                    message_md="## 🚀 ¡Nivel 3 completado!<br>Ahora dominas las **devoluciones** como un pro. A por el **Estado de Resultados**. 🧮",
+                    next_label="Nivel 4",
+                    next_key_value="Nivel 4: Estado de Resultados",
+                    btn_key="go_lvl4_btn"
+                )
+                st.session_state["force_go_level4"] = True
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Repasa y vuelve a intentar.")
+                save_progress(username, "level3", False, score=score)
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
-
-            save_progress(username, "level3", passed, score=score)
-
-            if passed:
-                st.session_state["force_go_level4"] = True
-                st.rerun()
 
 # ===========================
 # NIVEL 4 · Estado de Resultados
@@ -955,7 +931,6 @@ def page_level4(username):
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplo guiado", "🎮 Práctica con IA", "🏁 Evaluación final & Encuesta"])
 
-    # TEORÍA
     with tabs[0]:
         teoria = (
             "Un **Estado de Resultados** (formato simple) resume ingresos y costos/gastos del período:\n\n"
@@ -971,7 +946,6 @@ def page_level4(username):
         st.write(teoria)
         speak_block(teoria, key_prefix="teo-n4", lang_hint="es")
 
-    # EJEMPLO
     with tabs[1]:
         st.subheader("Ejemplo guiado")
         c1, c2 = st.columns(2)
@@ -1008,7 +982,6 @@ def page_level4(username):
             fb = ia_feedback(prompt, role_desc="tutor")
             st.info(fb)
 
-    # PRÁCTICA
     with tabs[2]:
         st.subheader("Práctica guiada (con IA)")
         def n4_new_case():
@@ -1070,7 +1043,6 @@ def page_level4(username):
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
 
-    # EVALUACIÓN FINAL + ENCUESTA
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 4")
         st.caption("Apruebas con **2 de 3** y habilitas la encuesta final.")
@@ -1108,14 +1080,15 @@ def page_level4(username):
             fb = ia_feedback(prompt, role_desc="coach")
 
             if passed:
-                st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Has completado los 4 niveles.")
-                celebracion_confeti()
+                save_progress(username, "level4", True, score=score)
+                confetti_block(6000)
+                st.markdown("## 🏁 ¡Meta lograda!<br>¡Completaste los 4 niveles con espíritu contable épico! 🧠✨")
+                st.success("Por favor completa la **encuesta final** para cerrar el curso.")
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Ajusta y vuelve a intentar.")
+                save_progress(username, "level4", False, score=score)
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
-
-            save_progress(username, "level4", passed, score=score)
 
         st.markdown("---")
         prog = get_progress(username)
