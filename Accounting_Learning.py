@@ -1,736 +1,518 @@
-import streamlit as st
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import openai
-import random
-from fpdf import FPDF
-import io
+# -*- coding: utf-8 -*-
+# =========================================================
+#   Herramienta Contable - Inventarios Gamificados (sin Mongo)
+#   Niveles por página · Nivel 1 con TTS y práctica + feedback IA
+#   Auto-desbloqueo y salto a Nivel 2 al aprobar Nivel 1
+#   OpenRouter + DeepSeek (v3.1:free) con headers recomendados
+#   Fecha: 2025-10-05
+# =========================================================
+
 import os
+import random
+from datetime import datetime
+
+import numpy as np
+import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
+# ===========================
+# Configuración Streamlit
+# ===========================
 st.set_page_config(
-    page_title="Herramienta Contable",
+    page_title="Herramienta Contable - Inventarios",
     layout="wide",
-    initial_sidebar_state="auto"
+    initial_sidebar_state="expanded"
 )
 
+# ===========================
+# Carga variables de entorno
+# ===========================
 load_dotenv()
 
-# Conexión a MongoDB y hashing de contraseñas
-from pymongo import MongoClient
-from passlib.context import CryptContext
+# ===========================
+# IA (DeepSeek vía OpenRouter)
+# ===========================
+from openai import OpenAI
 
-# Contexto bcrypt
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Cliente MongoDB (lee URI de Streamlit Secrets)
-client = MongoClient(st.secrets["mongodb"]["uri"])
-db     = client["accounting_app"]
-users_collection = db["users"]
-
-# Configuración segura de OpenRouter
 api_key = os.getenv("OPENROUTER_API_KEY")
-openai.api_key = api_key
-openai.api_base = "https://openrouter.ai/api/v1"
 
-# Función para dar formato español de números
-def fmt(v):
-    s = f"{v:,.1f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    return s
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key,
+    default_headers={
+        "HTTP-Referer": "http://localhost:8501",   # Si despliegas, pon tu dominio
+        "X-Title": "Herramienta Contable"
+    }
+)
 
-# Callbacks para navegación de slides
-def inv_go_prev():
-    if st.session_state.inv_slide_index > 0:
-        st.session_state.inv_slide_index -= 1
+DEEPSEEK_MODEL = "deepseek/deepseek-chat-v3.1:free"
 
-def inv_go_next(slides):
-    if st.session_state.inv_slide_index < len(slides) - 1:
-        st.session_state.inv_slide_index += 1
+def ia_feedback(prompt_user: str, role_desc: str = "tutor") -> str:
+    """
+    Llama a DeepSeek (OpenRouter) para dar feedback educativo.
+    - role_desc: "tutor", "corrector", "coach", "mentor" para matizar el tono.
+    - Devuelve texto corto en español (máx 6 líneas).
+    """
+    if not api_key:
+        return "Feedback IA no disponible (falta OPENROUTER_API_KEY). Tus resultados se validaron localmente."
+    try:
+        completion = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres un " + role_desc + " de contabilidad empático y claro. "
+                        "Responde SIEMPRE en español y en máximo 6 líneas, "
+                        "indicando: (1) qué está bien/mal, (2) por qué, (3) 1 truco útil. "
+                        "Si faltan datos, di qué falta antes de concluir."
+                    )
+                },
+                {"role": "user", "content": prompt_user}
+            ],
+            temperature=0.3,
+        )
+        return completion.choices[0].message.content.strip()
+    except Exception as e:
+        return f"No pude generar feedback con IA ahora. (Detalle: {e})"
 
-def dep_go_prev():
-    if st.session_state.slide_index > 0:
-        st.session_state.slide_index -= 1
+# ===========================
+# Utilidades UI
+# ===========================
+def fmt(v, dec=1):
+    """Formato ES para miles y coma decimal."""
+    if isinstance(v, (int, np.integer)) or (isinstance(v, float) and abs(v - int(v)) < 1e-12):
+        try:
+            s = f"{int(round(v)):,}".replace(",", ".")
+            return s
+        except Exception:
+            return str(v)
+    try:
+        s = f"{v:,.{dec}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return s
+    except Exception:
+        return str(v)
 
-def dep_go_next(total):
-    if st.session_state.slide_index < total - 1:
-        st.session_state.slide_index += 1
+def peso(v):
+    return f"${fmt(v,2)}"
 
-# Callback para Portada "Entrar"
-def enter_app():
-    st.session_state.show_portada = False
+def celebracion_confeti():
+    st.balloons()
 
-# Callback para Login "Ingresar"
+def speak_block(texto: str, key_prefix: str, lang_hint="es"):
+    """
+    Control TTS del navegador con selector de voz + velocidad + tono (Web Speech API).
+    """
+    escaped = (
+        texto.replace("\\", "\\\\")
+             .replace("`", "\\`")
+             .replace("\n", "\\n")
+             .replace('"', '\\"')
+    )
+    html = f"""
+    <div style="padding:8px;border:1px solid #eee;border-radius:10px;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label for="{key_prefix}-voice">Voz:</label>
+        <select id="{key_prefix}-voice"></select>
+
+        <label for="{key_prefix}-rate">Velocidad:</label>
+        <input id="{key_prefix}-rate" type="range" min="0.7" max="1.3" step="0.05" value="1.0" />
+
+        <label for="{key_prefix}-pitch">Tono:</label>
+        <input id="{key_prefix}-pitch" type="range" min="0.7" max="1.3" step="0.05" value="1.0" />
+
+        <button id="{key_prefix}-play">🔊 Escuchar</button>
+        <button id="{key_prefix}-stop">⏹️ Detener</button>
+      </div>
+      <small>Tip: en Chrome suelen aparecer voces como <em>Google español</em> o <em>Microsoft Sabina</em>.</small>
+    </div>
+    <script>
+      (function() {{
+        const text = "{escaped}";
+        const langHint = "{lang_hint}".toLowerCase();
+        const sel = document.getElementById("{key_prefix}-voice");
+        const rate = document.getElementById("{key_prefix}-rate");
+        const pitch = document.getElementById("{key_prefix}-pitch");
+        const btnPlay = document.getElementById("{key_prefix}-play");
+        const btnStop = document.getElementById("{key_prefix}-stop");
+
+        function populateVoices() {{
+          const voices = window.speechSynthesis.getVoices();
+          sel.innerHTML = "";
+          const score = (v) => {{
+            const n = (v.name + " " + v.lang).toLowerCase();
+            let s = 0;
+            if (n.includes("es")) s += 5;
+            if (n.includes("spanish")) s += 4;
+            if (n.includes("mex")) s += 3;
+            if (n.includes("col")) s += 3;
+            if (n.includes("sabina")) s += 3;
+            if (n.includes("google")) s += 2;
+            if (n.includes(langHint)) s += 2;
+            return s;
+          }};
+          voices.sort((a,b)=>score(b)-score(a));
+          voices.forEach((v, i) => {{
+            const opt = document.createElement("option");
+            opt.value = i;
+            opt.textContent = v.name + " (" + v.lang + ")";
+            sel.appendChild(opt);
+          }});
+        }}
+
+        populateVoices();
+        if (typeof speechSynthesis !== "undefined") {{
+          speechSynthesis.onvoiceschanged = populateVoices;
+        }}
+
+        btnPlay.onclick = () => {{
+          try {{
+            if (speechSynthesis.speaking) speechSynthesis.cancel();
+            const voices = window.speechSynthesis.getVoices();
+            const u = new SpeechSynthesisUtterance(text);
+            const chosen = voices[sel.value] || voices[0];
+            u.voice = chosen;
+            u.rate = parseFloat(rate.value);
+            u.pitch = parseFloat(pitch.value);
+            speechSynthesis.speak(u);
+          }} catch (e) {{}}
+        }};
+        btnStop.onclick = () => speechSynthesis.cancel();
+      }})();
+    </script>
+    """
+    components.html(html, height=120)
+
+def section_title(icon, title):
+    st.markdown(f"### {icon} {title}")
+
+# ===========================
+# Login en memoria (sin Mongo)
+# ===========================
+DEFAULT_USERS = {
+    "admin": {"password": "AdminSeguro#2025", "role": "admin"},
+    "estudiante": {"password": "1234", "role": "user"},
+}
+
+def init_session():
+    st.session_state.setdefault("authenticated", False)
+    st.session_state.setdefault("login_error", "")
+    st.session_state.setdefault("username", "")
+    st.session_state.setdefault("users", DEFAULT_USERS.copy())
+    st.session_state.setdefault("all_progress", {})  # username -> progress
+    st.session_state.setdefault("force_go_level2", False)
+
+def check_credentials(user, password):
+    users = st.session_state.users
+    return user in users and users[user]["password"] == password
+
 def do_login():
     user = st.session_state.login_raw_user.strip().lower()
     pwd  = st.session_state.login_password
     if not user or not pwd:
         st.session_state.login_error = "Por favor, ingresa usuario y contraseña."
         return
-    doc = users_collection.find_one({"username": user})
-    if doc and pwd_ctx.verify(pwd, doc["password_hash"]):
+    if check_credentials(user, pwd):
         st.session_state.authenticated = True
         st.session_state.username      = user
         st.session_state.login_error   = ""
+        if user not in st.session_state.all_progress:
+            st.session_state.all_progress[user] = default_progress()
     else:
         st.session_state.login_error = "Credenciales incorrectas."
-
-# HTML de tabla combinada para simulación Promedio Ponderado
-def get_table_html():
-    return f"""
-    <table style="width:100%; border-collapse: collapse;">
-      <thead>
-        <tr>
-          <th rowspan="2" style="border:1px solid #ddd; padding:8px; text-align:center;">Detalle<br>Concepto</th>
-          <th colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;">Compras</th>
-          <th colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;">Ventas</th>
-          <th colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;">Saldo</th>
-        </tr>
-        <tr>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Cantidad</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Valor unitario</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Total</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Cantidad</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Valor unitario</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Total</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Cantidad</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Valor unitario</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">Inventario inicial</td>
-          <td colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;"></td>
-          <td colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;"></td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(100)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(15)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(1500)}</td>
-        </tr>
-        <tr>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">Compra</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(150)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(18)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(2700)}</td>
-          <td colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;"></td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(250)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(16.8)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(4200)}</td>
-        </tr>
-        <tr>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">Venta</td>
-          <td colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;"></td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(150)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(16.8)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(2520)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(100)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(16.8)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(1680)}</td>
-        </tr>
-      </tbody>
-    </table>
-    """
-
-# HTML de tabla combinada para simulación PEPS personalizada
-def get_peps_table_html():
-    return f"""
-    <table style="width:100%; border-collapse: collapse;">
-      <thead>
-        <tr>
-          <th rowspan="2" style="border:1px solid #ddd; padding:8px; text-align:center;">Detalle<br>Concepto</th>
-          <th colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;">Compras</th>
-          <th colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;">Ventas</th>
-          <th colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;">Saldo</th>
-        </tr>
-        <tr>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Cantidad</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Valor unitario</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Total</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Cantidad</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Valor unitario</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Total</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Cantidad</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Valor unitario</th>
-          <th style="border:1px solid #ddd; padding:8px; text-align:center;">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Inventario inicial -->
-        <tr>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">Inventario inicial</td>
-          <td colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;"></td>
-          <td colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;"></td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(100)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(15)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(1500)}</td>
-        </tr>
-        <!-- Compra -->
-        <tr>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">Compra</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(150)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(18)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(2700)}</td>
-          <td colspan="3" style="border:1px solid #ddd; padding:8px; text-align:center;"></td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(150)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(18)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(2700)}</td>
-        </tr>
-        <!-- Venta con celdas combinadas -->
-        <tr>
-          <td rowspan="2" style="border:1px solid #ddd; padding:8px; text-align:center;">Venta</td>
-          <td colspan="3" rowspan="2" style="border:1px solid #ddd; padding:8px; text-align:center;"></td>
-          <td rowspan="2" style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(50)}</td>
-          <td rowspan="2" style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(15)}</td>
-          <td rowspan="2" style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(750)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(50)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(15)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(750)}</td>
-        </tr>
-        <tr>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(150)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(18)}</td>
-          <td style="border:1px solid #ddd; padding:8px; text-align:center;">{fmt(2700)}</td>
-        </tr>
-      </tbody>
-    </table>
-    """
-
-
-# Inicialización de estado de sesión
-def init_session():
-    # Inicializa las variables de sesión necesarias
-    st.session_state.setdefault("authenticated", False)
-    st.session_state.setdefault("login_error", "")
-    #st.session_state.setdefault("show_portada", False)
-
-    # Inserta el admin inicial (si no existe)
-    admin_user = st.secrets["ADMIN_USER"].strip().lower()
-    admin_pass = st.secrets["ADMIN_PASSWORD"]
-    if users_collection.count_documents({"username": admin_user}) == 0:
-        users_collection.insert_one({
-            "username": admin_user,
-            "password_hash": pwd_ctx.hash(admin_pass),
-            "role": "admin"
-        })
-
-def check_credentials(user, password):
-    return user in st.session_state.users and st.session_state.users[user]["password"] == password
-
-def go_prev():
-    if st.session_state.inv_slide_index > 0:
-        st.session_state.inv_slide_index -= 1
-
-def go_next(slides):
-    if st.session_state.inv_slide_index < len(slides) - 1:
-        st.session_state.inv_slide_index += 1
-
-# Login y portada
-def login():
-    st.title("Iniciar Sesión")
-    with st.form("login_form"):
-        raw_user = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
-        if st.form_submit_button("Ingresar"):
-            user = raw_user.strip().lower()
-            if not user or not password:
-                st.error("Por favor, ingresa usuario y contraseña.")
-            elif check_credentials(user, password):
-                st.session_state.authenticated = True
-                st.session_state.username = user
-                st.session_state.show_portada = True
-            else:
-                st.error("Credenciales incorrectas.")
 
 def logout():
     st.session_state.authenticated = False
     st.session_state.username = ""
     st.session_state.login_error = ""
 
-# Sección Teoría: Valoración de Inventarios
-def mostrar_valoracion_inventarios():
-    st.header("Valoración de Inventarios")
-    slides = [
-        {"video": "https://youtu.be/usCCpByy_Tk"},
-        {"content": "**¿Qué es un sistema de inventarios?**\n\n Un **sistema de inventarios** es el conjunto de procedimientos y registros que una empresa utiliza para controlar la cantidad, el costo y el movimiento de sus bienes (mercancías, materias primas, productos terminados).\n\n**Objetivos:**\n- Mantener niveles óptimos (ni exceso ni desabastecimiento).\n- Valorar correctamente el costo de ventas y el inventario final.\n- Facilitar la toma de decisiones de compra y producción.\n\n**Importancia:** \n- Impacta directamente en el ejercicio del reconocimiento de activos y en la elaboración de estados financieros fiables. \n- Permite cumplir con Normas Internacionales de Información Financiera (NIIF) y requisitos tributarios."},
-        {"content": "**Inventario Periódico**\n\n En el sistema periódico, el conteo físico de inventario se realiza al final de un periodo contable (mensual, trimestral o anual) y los movimientos de compras y ventas NO se registran inmediatamente en la cuenta de “Inventarios”.\n\n**Ventajas:**\n- Simplicidad en pequeñas empresas. \n- Menor control administrativo diario. \n\n**Desventajas:**\n- Menor precisión en el costo de ventas durante el periodo.\n- Dificultad para detectar robos o pérdidas a tiempo.\n\n**Juego de Inventarios Periódico:**\n\n El juego de inventarios es una simulación interactiva donde registras compras, ventas y conteos para calcular el costo de ventas y el valor final de tu inventario de forma práctica y lúdica. \n\n **Fórmula:** \n\n $$Costo~de~Ventas = Inventario~Inicial + Compras - Devoluciones - Inventario~Final$$"},
-        {"simulate_periodic": True},
-        {"content": "**¿Qué es el método de promedio ponderado?**\n\nEl **método de promedio ponderado** es una técnica de valoración de inventarios que asigna un costo uniforme a cada unidad, calculando un promedio del valor total de las existencias dividido por la cantidad total.\n\n**Pasos:**\n- Suma las unidades y valores de cada lote (inventario inicial + compras).\n- Divide el valor total entre la cantidad total para obtener el costo unitario promedio.\n- Valora las salidas (ventas o consumos) con ese costo promedio hasta la siguiente compra.\n- Recalcula el promedio cuando ingresa un nuevo lote.\n\n**Ejemplo práctico:**\n- Inventario inicial: 100 unidades con un valor unitario de \\$10 (valor total \\$1.000).\n- Compra: 50 unidades con un valor unitario de \\$12 (valor total \\$600).\n- Costo promedio = (1.000 + 600) / (100 + 50) = $10,67.\n- Cada unidad vendida se valora a $10,67 hasta la próxima compra.\n\n**Importancia:**\n- Suaviza variaciones de precios entre lotes.\n- Facilita la contabilidad continua y el registro automático.\n- Reduce la necesidad de seguimiento detallado de cada lote."},
-        {"sim_weighted": True},
-        {"content": "**¿Qué es el método PEPS (FIFO)?**\n\nEl **método PEPS** (Primeras en Entrar, Primeras en salir) asume que las unidades más antiguas del inventario son las primeras en venderse o consumirse.\n\n**Pasos:**\n- Organiza los lotes de inventario en orden cronológico (de más antiguo a más reciente).\n- Al registrar una salida (venta o consumo), asigna el costo de las unidades más antiguas disponibles.\n- Resta esas unidades de los lotes iniciales hasta cubrir la cantidad vendida.\n- El inventario final estará compuesto por los lotes más recientes.\n\n**Ejemplo práctico:**\n- Inventario inicial: 100 unidades con un valor unitario de \\$10 (valor total \\$1.000).\n- Compra: 50 unidades con un valor unitario de \\$12 (valor total \\$600).\n- Venta de 120 unidades:\n  - 100 unidades salen del lote inicial a \\$10 → Costo de ventas = \\$1.000. \n  - 20 unidades salen del lote 2 a \\$12 → Costo de ventas = \\$240. \n  - Costo de venta total: \\$1.240 \n- Inventario final:\n  - 30 unidades a \\$12 = \\$360.\n  - Total inventario = \\$360.\n\n**Importancia:**\n- Refleja el flujo físico de productos perecederos o con rotación constante.\n- Bajo inflación, tiende a mostrar un costo de ventas menor y utilidades mayores.\n- Cumple con normas NIIF y facilita la trazabilidad de lotes antiguos."},
-        {"sim_peps": True}
-    ]
-    if "inv_slide_index" not in st.session_state:
-        st.session_state.inv_slide_index = 0
-    slide = slides[st.session_state.inv_slide_index]
+# ===========================
+# Progreso en memoria
+# ===========================
+def default_progress():
+    return {
+        "level1": {"passed": False, "date": None, "score": None},
+        "level2": {"passed": False, "date": None, "score": None},
+        "level3": {"passed": False, "date": None, "score": None},
+        "level4": {"passed": False, "date": None, "score": None},
+        "completed_survey": False
+    }
 
-    if "video" in slide:
-        st.video(slide["video"])
-    elif "content" in slide:
-        st.markdown(slide["content"], unsafe_allow_html=True)
-    elif slide.get("simulate_periodic"):
-        st.subheader("Simulación de inventario periódico")
+def get_progress(username):
+    allp = st.session_state.all_progress
+    if username not in allp:
+        allp[username] = default_progress()
+    return allp[username]
 
-        # Función para generar valores aleatorios lógicos
-        def randomize():
-            inv0 = random.randint(1000, 50000)
-            compras = random.randint(100, 50000)
-            devoluciones = random.randint(0, compras)
-            max_invf = inv0 + compras - devoluciones
-            invf = random.randint(0, max_invf)
-            st.session_state.inv0 = inv0
-            st.session_state.compras = compras
-            st.session_state.devoluciones = devoluciones
-            st.session_state.invf = invf
+def save_progress(username, level_key, passed: bool, score=None):
+    prog = get_progress(username)
+    prog[level_key] = {"passed": passed, "date": datetime.utcnow(), "score": score}
+    st.session_state.all_progress[username] = prog
 
-        if st.button("Valores aleatorios", on_click=randomize, key="btn_randomize"):
-            randomize()
+# ===========================
+# Sidebar navegación por nivel
+# ===========================
+def sidebar_nav(username):
+    prog = get_progress(username)
+    st.sidebar.title("Niveles")
 
-        inv0 = st.number_input(
-            "Inventario inicial", min_value=0,
-            value=st.session_state.get("inv0", 100),
-            key="inv0"
+    options = ["Nivel 1: Introducción a Inventarios"]  # solo este al inicio
+    if prog["level1"]["passed"]:
+        options.append("Nivel 2: Métodos (PP/PEPS/UEPS)")
+    if prog["level2"]["passed"]:
+        options.append("Nivel 3: Devoluciones")
+    if prog["level3"]["passed"]:
+        options.append("Nivel 4: Estado de Resultados")
+
+    # >>> Auto-selección de Nivel 2 al aprobar Nivel 1
+    if prog["level1"]["passed"] and st.session_state.get("force_go_level2"):
+        st.session_state["sidebar_level_select"] = "Nivel 2: Métodos (PP/PEPS/UEPS)"
+        st.session_state["force_go_level2"] = False
+
+    sel = st.sidebar.radio("Ir a:", options, key="sidebar_level_select")
+    st.sidebar.markdown("---")
+    def badge(ok): return "✅" if ok else "🔒"
+    st.sidebar.caption("Progreso:")
+    st.sidebar.write(f"{badge(prog['level1']['passed'])} Nivel 1")
+    st.sidebar.write(f"{badge(prog['level2']['passed'])} Nivel 2")
+    st.sidebar.write(f"{badge(prog['level3']['passed'])} Nivel 3")
+    st.sidebar.write(f"{badge(prog['level4']['passed'])} Nivel 4")
+    st.sidebar.button("Cerrar Sesión", on_click=logout, key="logout_btn")
+
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔍 Probar conexión IA"):
+        fb = ia_feedback("Di 'OK' si recibiste este mensaje.", role_desc="asistente")
+        st.sidebar.info("Respuesta IA: " + fb)
+
+    if not api_key:
+        st.sidebar.warning("⚠️ Falta OPENROUTER_API_KEY en tu entorno. El feedback IA caerá a local.")
+
+    return sel
+
+# ===========================
+# NIVEL 1 (con retroalimentaciones IA)
+# ===========================
+def page_level1(username):
+    st.title("Nivel 1 · Introducción a la valoración de inventarios")
+
+    tabs = st.tabs(["🎧 Teoría profunda", "🛠 Ejemplo guiado", "🎮 Práctica interactiva (IA)", "🏁 Evaluación para aprobar"])
+
+    # ----- TEORÍA PROFUNDA -----
+    with tabs[0]:
+        st.subheader("¿Qué es valorar inventarios y por qué impacta tu utilidad?")
+        teoria = (
+            "Valorar inventarios es asignar un **costo monetario** a las existencias que mantiene una empresa para vender. "
+            "Ese costo aparece como **activo** (Inventarios) y determina el **Costo de Ventas (COGS)** en el estado de resultados, "
+            "afectando la **utilidad bruta**. En un **sistema periódico**, no actualizas inventarios con cada venta: "
+            "acumulas durante el período y cierras con la fórmula base:\n\n"
+            "  **COGS = Inventario Inicial + Compras - Devoluciones - Inventario Final**\n\n"
+            "- **InvI:** lo que tenías al empezar.\n"
+            "- **Compras:** adquisiciones del período (pueden incluir costos necesarios para poner el inventario disponible).\n"
+            "- **Devoluciones:** típicamente restan a Compras cuando devuelves a proveedor.\n"
+            "- **InvF:** lo que queda al cierre; su **valoración** depende del método que uses (verás PP/PEPS/UEPS en el Nivel 2).\n\n"
+            "Regla mental: imagina una **mochila de costo**. Entra InvI y Compras; si devuelves, sacas una parte (Devoluciones). "
+            "Al final miras qué queda dentro (InvF). **Lo que salió** para vender es el **COGS**."
         )
-        compras = st.number_input(
-            "Compras", min_value=0,
-            value=st.session_state.get("compras", 50),
-            key="compras"
-        )
-        devoluciones = st.number_input(
-            "Devoluciones", min_value=0, max_value=compras,
-            value=st.session_state.get("devoluciones", 0),
-            key="devoluciones"
-        )
-        invf = st.number_input(
-            "Inventario final", min_value=0,
-            max_value=inv0 + compras - devoluciones,
-            value=st.session_state.get("invf", 60),
-            key="invf"
-        )
+        st.write(teoria)
+        speak_block(teoria, key_prefix="teo-n1", lang_hint="es")
 
-        # Cálculo correcto
-        correct_cost = inv0 + compras - devoluciones - invf
+        st.markdown("---")
+        duda = st.text_area("¿Tienes una duda sobre la teoría? Escríbela y la IA te contesta:", key="n1_teo_duda")
+        if st.button("💬 Resolver duda con IA", key="n1_teo_duda_btn"):
+            prompt = (
+                "Responde de forma breve y clara a esta duda sobre valoración de inventarios "
+                "en sistema periódico usando la fórmula COGS = InvI + Compras - Devol - InvF. "
+                f"Duda del estudiante: {duda}"
+            )
+            fb = ia_feedback(prompt, role_desc="mentor")
+            st.info(fb)
 
-        # Entrada de la respuesta del estudiante
-        user_cost = st.number_input(
-            "Ingresa tu resultado de Costo de Ventas",
-            value=0.0,
-            key="user_cost"
-        )
-        if st.button("Validar Respuesta"):
-            if np.isclose(user_cost, correct_cost):
-                st.success(f"¡Correcto! El costo de ventas es {correct_cost}")
+        with st.expander("📌 Nota contable/NIIF"):
+            st.markdown(
+                "Bajo NIIF, debes usar un método de costo razonable y **consistente**. "
+                "En aprendizaje verás UEPS como referencia, aunque **no es aceptado por NIIF plenas**."
+            )
+
+    # ----- EJEMPLO GUIADO -----
+    with tabs[1]:
+        st.subheader("Ejemplo guiado · paso a paso")
+        colL, colR = st.columns([1,2], gap="large")
+        with colL:
+            st.caption("Ingresa/ajusta datos")
+            inv0 = st.number_input("Inventario Inicial (InvI)", min_value=0.0, value=1500.0, step=100.0, key="n1_ex_inv0")
+            compras = st.number_input("Compras del período", min_value=0.0, value=2700.0, step=100.0, key="n1_ex_compras")
+            devol = st.number_input("Devoluciones (a proveedor)", min_value=0.0, value=200.0, step=50.0, key="n1_ex_devol")
+            invf = st.number_input("Inventario Final (InvF)", min_value=0.0, value=1300.0, step=100.0, key="n1_ex_invf")
+
+        with colR:
+            st.caption("Desglose y explicación")
+            st.write(f"**1) InvI + Compras** → {peso(inv0)} + {peso(compras)} = **{peso(inv0+compras)}**")
+            st.write(f"**2) − Devoluciones**  → {peso(inv0+compras)} − {peso(devol)} = **{peso(inv0+compras-devol)}**")
+            st.write(f"**3) − InvF**          → {peso(inv0+compras-devol)} − {peso(invf)} = **{peso(inv0+compras-devol-invf)}**")
+            cogs = inv0 + compras - devol - invf
+            st.success(f"**COGS (Costo de Ventas)** = {peso(cogs)}")
+            st.caption("Interpretación: la ‘mochila de costo’ se llenó con InvI y Compras; devolviste parte (Devoluciones) "
+                       "y lo que quedó al cierre (InvF) no salió a ventas. El resto es COGS.")
+
+        st.markdown("—")
+        st.write("**Mini reto**: explica qué pasaría con el COGS si **no hubiera devoluciones** y el **Inventario Final fuera muy pequeño**.")
+        razonamiento = st.text_area("Tu razonamiento (la IA te comenta):", key="n1_ex_raz")
+
+        if st.button("💬 Comentar con IA", key="n1_ex_fb"):
+            prompt = (
+                "Evalúa si el razonamiento es coherente con COGS = InvI + Compras - Devoluciones - InvF. "
+                f"Datos: InvI={inv0}, Compras={compras}, Devoluciones={devol}, InvF={invf}. "
+                f"Texto del estudiante: {razonamiento}"
+            )
+            fb = ia_feedback(prompt, role_desc="corrector")
+            st.info(fb)
+
+    # ----- PRÁCTICA INTERACTIVA (IA) -----
+    with tabs[2]:
+        st.subheader("Práctica interactiva · escenarios aleatorios")
+        st.caption("Completa el cálculo. Puedes generar otro escenario y validar con IA.")
+
+        def new_case():
+            inv0 = random.randint(500, 4000)
+            compras = random.randint(800, 5000)
+            devol = random.randint(0, int(compras*0.3))
+            invf = random.randint(0, inv0 + compras - devol)
+            st.session_state.n1p_inv0 = float(inv0)
+            st.session_state.n1p_compras = float(compras)
+            st.session_state.n1p_devol = float(devol)
+            st.session_state.n1p_invf = float(invf)
+
+        if "n1p_inv0" not in st.session_state:
+            new_case()
+
+        cols = st.columns(4)
+        with cols[0]:
+            st.metric("Inv. Inicial", peso(st.session_state.n1p_inv0))
+        with cols[1]:
+            st.metric("Compras", peso(st.session_state.n1p_compras))
+        with cols[2]:
+            st.metric("Devoluciones", peso(st.session_state.n1p_devol))
+        with cols[3]:
+            st.metric("Inv. Final", peso(st.session_state.n1p_invf))
+
+        st.button("🔄 Nuevo escenario", on_click=new_case, key="n1_practice_new")
+
+        user_cogs = st.number_input("Tu COGS ($)", min_value=0.0, value=0.0, step=10.0, key="n1_practice_user_cogs")
+        user_comment = st.text_area("Explica tu cálculo (la IA te corrige):", key="n1_practice_comment")
+
+        if st.button("✅ Validar práctica", key="n1_practice_validate"):
+            inv0 = st.session_state.n1p_inv0
+            compras = st.session_state.n1p_compras
+            devol = st.session_state.n1p_devol
+            invf = st.session_state.n1p_invf
+            correct = inv0 + compras - devol - invf
+            if abs(user_cogs - correct) <= 0.5:
+                st.success(f"¡Correcto! COGS = {peso(correct)}")
             else:
-                st.error(f"Incorrecto. No es el valor esperado")
-                st.info("Recuerda la fórmula: Inventario inicial + Compras - Devoluciones - Inventario final")
+                st.error(f"No coincide. El COGS esperado era {peso(correct)}")
+            prompt = (
+                f"Valida el cálculo del estudiante: COGS_est={user_cogs:.2f}. "
+                f"Datos: InvI={inv0:.2f}, Compras={compras:.2f}, Devol={devol:.2f}, InvF={invf:.2f}. "
+                f"COGS_correcto={correct:.2f}. Comentario del estudiante: {user_comment}"
+            )
+            fb = ia_feedback(prompt, role_desc="tutor")
+            with st.expander("💬 Feedback de la IA"):
+                st.write(fb)
 
+    # ----- EVALUACIÓN PARA APROBAR -----
+    with tabs[3]:
+        st.subheader("Evaluación final del Nivel 1")
+        st.caption("Necesitas acertar **2 de 3** para aprobar y desbloquear el Nivel 2.")
 
-    elif slide.get("sim_weighted"):
-        st.subheader("Ejemplo Promedio Ponderado")
-        st.markdown(get_table_html(), unsafe_allow_html=True)
-        st.markdown("""
-**Transacciones:**
-1. Compra a la empresa Proveedora S.A.: 150 u. a 18,0 c/u → 2 700,0  
-2. Venta a la empresa Cliente S.A.: 150 u. a costo promedio 16,8 c/u → 2 520,0  
-3. Inventario final remanente: 100 u. a 16,8 c/u → 1 680,0  
+        q1 = st.radio("1) En sistema periódico, ¿cuándo conoces con certeza el COGS?",
+                      ["En cada venta", "Al cierre del período"], index=None, key="n1_eval_q1")
+        q2 = st.radio("2) ¿Cuál de estos **disminuye** el COGS en la fórmula periódica?",
+                      ["Devoluciones de compra", "Compras"], index=None, key="n1_eval_q2")
+        q3 = st.radio("3) Selecciona la fórmula correcta:",
+                      ["InvI + Compras + Devoluciones - InvF",
+                       "InvI + Compras - Devoluciones - InvF",
+                       "InvI - Compras + Devoluciones + InvF"], index=None, key="n1_eval_q3")
 
-**Cómo se llegó a esos valores:**
-- Se parte de un inventario inicial de 100 u. a 15,0 c/u (1 500,0).  
-- Tras comprar 150 u. a 18,0 c/u, el valor total es 2 700,0.  
-- Costo promedio = (1 500,0 + 2 700,0) / (100 + 150) = 16,8 c/u.  
-- Al vender 150 u. se aplicó ese promedio, y el saldo final de 100 u. se valora igual.
-        """)
-    elif slide.get("sim_peps"):
-        st.subheader("Ejemplo PEPS (FIFO)")
-        st.markdown(get_peps_table_html(), unsafe_allow_html=True)
-        st.markdown("""
-**Transacciones:**
-1. Compra a la empresa Proveedora S.A.: 150 unidades a un valor de 18,0 cada unidad → 2 700,0  
-2. Venta a la empresa Cliente S.A.: 50 unidades 
-
-**Cómo se llegó a esos valores:**
-- Inventario inicial: 100 unidades a un valor de 15,0 cada unidad (1 500,0).
-- Compra: se regitra las cantidades y el valor unitario y el saldo sería la multiplicación de estos dos valores.
-- Con PEPS, primero salen las 50 unidades del inventario inicial (las más antiguas con valor de 15,0 cada uno). 
-- Al final, se observan dos valores en el saldo, 50 que quedaron del lote inicial y los 150 de la compra.
-        """)
-
-    # Navegación con un solo clic
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.session_state.inv_slide_index > 0:
-            st.button("Anterior", on_click=inv_go_prev, key="inv_prev_btn")
-    with col2:
-        if not slide.get("sim_peps"):
-            st.button("Siguiente", on_click=inv_go_next, args=(slides,), key="inv_next_btn")
-
-# Sección Depreciaciones
-def mostrar_depreciaciones_teoria():
-    st.header("Depreciaciones")
-
-    # Definir las secciones
-    slides = [
-        "Video introductorio",
-        "Definición de Depreciación",
-        "Método Línea Recta",
-        "Ejercicio Línea Recta",
-        "Método Saldo Decreciente",
-        "Ejercicio Saldo Decreciente",
-        "Método Suma de Dígitos de los Años",
-        "Ejercicio SYD",
-        "Método Unidades de Producción",
-        "Ejercicio Unidades de Producción"
-    ]
-
-    total = len(slides)
-
-    if "slide_index" not in st.session_state:
-        st.session_state.slide_index = 0
-    idx = st.session_state.slide_index
-    slide = slides[idx]
-
-    # Contenido de cada slide
-    if slide == "Video introductorio":
-        st.video("https://www.youtube.com/watch?v=LO-Zil21tKw")
-    elif slide == "Definición de Depreciación":
-        st.markdown(
-            "**¿Qué es la Depreciación?**\n\nLa **depreciación** es la pérdida de valor que sufre un activo fijo con el paso del tiempo, debido al uso, el desgaste, el envejecimiento o la obsolescencia.\n\n**Importancia contable:**\n- Permite distribuir el costo de un activo a lo largo de su vida útil.\n- Refleja el valor real de los activos en los estados financieros.\n- Afecta el cálculo de las utilidades y los impuestos.\n\n**Ejemplos de activos que se deprecian:**\n- Vehículos\n- Maquinaria\n- Equipos de oficina\n- Muebles y enseres\n\n**Dato clave:**\n\n📌 El **terreno no se deprecia**, ya que no pierde valor con el tiempo en condiciones normales.\n\n**Juego de Depreciación - Concepto Básico:**\n\nExplora ejemplos donde decidirás si un bien se deprecia o no, y cuál sería su vida útil aproximada. Esto te prepara para aplicar los métodos de cálculo más adelante."
-        )
-    elif slide == "Método Línea Recta":
-        st.subheader("Método Línea Recta")
-        st.write("**Método de Línea Recta**\n\nEste método distribuye el valor depreciable del activo de manera uniforme durante su vida útil. Es el más utilizado por su simplicidad.\n\n**Ventajas:**\n- Fácil de aplicar.\n- Ideal para activos con uso constante.\n\n**Desventajas:**\n- No refleja variaciones en el uso o productividad del activo.\n\n**Juego de Depreciación - Línea Recta:**\n\nEn esta simulación, registrarás el costo del activo, su vida útil y el valor residual para calcular la depreciación anual constante.\n\n**Fórmula:**\n\n$$Depreciación~Anual = \\frac{Costo~del~Activo - Valor~Residual}{Vida~Útil~(años)}$$")
-    elif slide == "Ejercicio Línea Recta":
-        st.subheader("Ejercicio: Línea Recta")
-        def rnd_linea():
-            st.session_state.costo = random.randint(10000, 50000)
-            st.session_state.salvamento = random.randint(1000, int(st.session_state.costo * 0.3))
-            st.session_state.vida = random.randint(3, 10)
-        if st.button("Generar valores aleatorios"): rnd_linea()
-        costo = st.number_input("Costo", value=st.session_state.get("costo", 20000))
-        salv = st.number_input("Valor de Salvamento", value=st.session_state.get("salvamento", 2000))
-        vida = st.number_input("Vida útil (años)", min_value=1, value=st.session_state.get("vida", 5), step=1)
-        user = st.number_input("Tu Depreciación Anual", value=0.0, format="%.2f")
-        if st.button("Validar Respuesta Línea Recta"):
-            correcto = (costo - salv) / vida
-            if np.isclose(user, correcto):
-                st.success(f"¡Correcto! La depreciación anual es {correcto:.2f}")
-            else:
-                st.error("Incorrecto.")
-                st.info("Recuerda: (Costo - Salvamento) / Vida útil")
-    elif slide == "Método Saldo Decreciente":
-        st.subheader("Método Saldo Decreciente Doble")
-        st.write("**Método de Saldo Decreciente Doble**\n\nEste método acelera la depreciación en los primeros años de vida útil del activo. Se calcula aplicando el doble de la tasa de línea recta sobre el valor en libros del activo al inicio de cada año.\n\n**Ventajas:**\n- Refleja mejor la pérdida de valor de activos que se usan más al principio.\n\n**Desventajas:**\n- Más complejo que el método de línea recta.\n- El valor residual no se garantiza al final del período.\n\n**Juego de Depreciación - Saldo Decreciente Doble:**\n\nSimularás varios años de vida útil calculando la depreciación acelerada año a año.\n\n**Fórmula:**\n\n$$Depreciación~Anual = 2 \\times \\frac{1}{Vida~Útil} \\times Valor~en~Libros~al~Inicio~del~Año$$")
-    elif slide == "Ejercicio Saldo Decreciente":
-        st.subheader("Ejercicio: Saldo Decreciente")
-        def rnd_dd():
-            st.session_state.costo_dd = random.randint(10000, 50000)
-            st.session_state.vida_dd = random.randint(3, 10)
-        if st.button("Generar valores aleatorios Doble Decline"): rnd_dd()
-        costo_dd = st.number_input("Costo", value=st.session_state.get("costo_dd", 25000), key="costo_dd")
-        vida_dd = st.number_input("Vida útil (años)", min_value=1, value=st.session_state.get("vida_dd", 5), step=1, key="vida_dd")
-        user_dd = st.number_input("Tu Depreciación Primer Año", value=0.0, format="%.2f", key="user_dd")
-        if st.button("Validar Respuesta Saldo Decreciente"):
-            tasa = 2 / vida_dd
-            correcto = tasa * costo_dd
-            if np.isclose(user_dd, correcto):
-                st.success(f"¡Correcto! Depreciación primer año = {correcto:.2f}")
-            else:
-                st.error("Incorrecto.")
-                st.info("Recuerda: 2 / Vida útil * Costo inicial")
-    elif slide == "Método Suma de Dígitos de los Años":
-        st.subheader("Suma de Dígitos de los Años (SYD)")
-        st.write("**Método Suma de Dígitos de los Años (SYD)**\n\nEste método también proporciona una depreciación acelerada, asignando una fracción del valor depreciable según los años restantes de vida útil.\n\n**Ventajas:**\n- Refleja una mayor depreciación en los primeros años.\n- Mejora la relación gasto/beneficio en activos que se desgastan más rápido al inicio.\n\n**Desventajas:**\n- Cálculo más complejo.\n\n**Juego de Depreciación - SYD:**\n\nVas a usar la suma de los dígitos de la vida útil para distribuir la depreciación cada año, con base en los años restantes.\n\n**Fórmulas:**\n\n- Suma de dígitos = $$1 + 2 + ... + n = \\frac{n(n+1)}{2}$$\n- Depreciación del año t = $$\\frac{Años~Restantes}{Suma~de~los~Años} \\times (Costo - Valor~Residual)$$")
-    elif slide == "Ejercicio SYD":
-        st.subheader("Ejercicio: SYD")
-        def rnd_syd():
-            st.session_state.costo_syd = random.randint(10000, 50000)
-            st.session_state.salv_syd = random.randint(1000, int(st.session_state.costo_syd * 0.3))
-            st.session_state.vida_syd = random.randint(3, 10)
-            st.session_state.periodo_syd = random.randint(1, st.session_state.vida_syd)
-        if st.button("Generar valores aleatorios SYD"): rnd_syd()
-        costo_syd = st.number_input("Costo", value=st.session_state.get("costo_syd", 20000), key="costo_syd")
-        salv_syd = st.number_input("Salvamento", value=st.session_state.get("salv_syd", 2000), key="salv_syd")
-        vida_syd = st.number_input("Vida útil (años)", min_value=1, value=st.session_state.get("vida_syd", 5), step=1, key="vida_syd")
-        periodo_syd = st.number_input("¿Para qué año? (t)", min_value=1, max_value=vida_syd, value=st.session_state.get("periodo_syd", 1), step=1, key="periodo_syd")
-        user_syd = st.number_input("Tu Depreciación SYD", value=0.0, format="%.2f", key="user_syd")
-        if st.button("Validar Respuesta SYD"):
-            n = vida_syd
-            sum_dig = n * (n + 1) / 2
-            correcto = (costo_syd - salv_syd) * (n - periodo_syd + 1) / sum_dig
-            if np.isclose(user_syd, correcto):
-                st.success(f"¡Correcto! Depreciación año {periodo_syd} = {correcto:.2f}")
-            else:
-                st.error("Incorrecto.")
-                st.info("Recuerda: (Costo - Salvamento) * (vida - t + 1) / [n(n+1)/2]")
-    elif slide == "Método Unidades de Producción":
-        st.subheader("Método Unidades de Producción")
-        st.write("**Método de Unidades de Producción**\n\nEste método calcula la depreciación según el uso real del activo, medido en unidades producidas, horas trabajadas u otro indicador.\n\n**Ventajas:**\n- Muy preciso para activos cuya vida depende del uso.\n\n**Desventajas:**\n- Requiere llevar un registro detallado del uso.\n\n**Juego de Depreciación - Unidades de Producción:**\n\nSimularás el uso del activo en cada periodo y calcularás la depreciación basada en la producción real registrada.\n\n**Fórmulas:**\n\n- Depreciación por unidad: \n$$\\frac{Costo - Valor~Residual}{Total~Unidades~Estimadas}$$\n\n- Depreciación del período:\n$$Depreciación~=~Unidades~Producidas~en~el~Periodo \\times Depreciación~por~Unidad$$")
-    elif slide == "Ejercicio Unidades de Producción":
-        st.subheader("Ejercicio: Unidades de Producción")
-        def rnd_up():
-            st.session_state.costo_up = random.randint(10000, 50000)
-            st.session_state.salv_up = random.randint(1000, int(st.session_state.costo_up * 0.3))
-            st.session_state.unid_up = random.randint(1000, 10000)
-            st.session_state.prod_up = random.randint(1, st.session_state.unid_up)
-        if st.button("Generar valores aleatorios UP"): rnd_up()
-        costo_up = st.number_input("Costo", value=st.session_state.get("costo_up", 20000), key="costo_up")
-        salv_up = st.number_input("Salvamento", value=st.session_state.get("salv_up", 2000), key="salv_up")
-        unid_up = st.number_input("Unidades Totales Estimadas", min_value=1, value=st.session_state.get("unid_up", 5000), key="unid_up")
-        prod_up = st.number_input("Unidades Producidas este período", min_value=0, max_value=unid_up, value=st.session_state.get("prod_up", 1000), key="prod_up")
-        user_up = st.number_input("Tu Depreciación Período", value=0.0, format="%.2f", key="user_up")
-        if st.button("Validar Respuesta UP"):
-            dep_unit = (costo_up - salv_up) / unid_up
-            correcto = dep_unit * prod_up
-            if np.isclose(user_up, correcto):
-                st.success(f"¡Correcto! Depreciación período = {correcto:.2f}")
-            else:
-                st.error("Incorrecto.")
-                st.info("Recuerda: (Costo - Salvamento)/Unidades totales * Unidades producidas")
-
-    # Navegación con un solo clic
-    col1, col2 = st.columns(2)
-    with col1:
-        if idx > 0:
-            st.button("Anterior", on_click=dep_go_prev, key="dep_prev_btn")
-        else:
-            col1.write("")
-    with col2:
-        if idx < total - 1:
-            st.button("Siguiente", on_click=dep_go_next, args=(total,), key="dep_next_btn")
-        else:
-            col2.write("")
-
-# Práctica Inventarios
-def ejercicios_valoracion_inventarios():
-    st.header("Ejercicios de Valoración de Inventarios")
-    st.write("...")
-
-# Práctica Depreciaciones Gráfico
-def ejercicios_depreciaciones_grafico():
-    st.header("Ejercicios de Depreciaciones - Gráfico")
-    costo    = st.number_input("Costo total", value=10000)
-    residual = st.number_input("Valor residual", value=1000)
-    vida     = st.number_input("Vida útil (años)", value=5)
-    if vida > 0:
-        dep  = (costo - residual) / vida
-        vals = costo - dep * np.arange(vida + 1)
-        fig, ax = plt.subplots()
-        ax.plot(np.arange(vida + 1), vals, marker='o')
-        st.pyplot(fig)
-    else:
-        st.error("Vida útil debe ser >0")
-
-# Chat Contable
-def chat_contable():
-    st.title("Chat Contable")
-    pregunta = st.text_input("Escribe tu pregunta relacionada con contabilidad:", key="chat_pregunta")
-    if st.button("Enviar pregunta", key="btn_chat"):
-        if pregunta.strip() == "":
-            st.error("Por favor, ingresa una pregunta.")
-        else:
-            st.info("Esto puede tardar un momento...")
+        if st.button("🧪 Validar evaluación", key="n1_eval_btn"):
+            correct = {
+                "n1_eval_q1": "Al cierre del período",
+                "n1_eval_q2": "Devoluciones de compra",
+                "n1_eval_q3": "InvI + Compras - Devoluciones - InvF"
+            }
+            answers = {"n1_eval_q1": q1, "n1_eval_q2": q2, "n1_eval_q3": q3}
+            score = sum(1 for k,v in answers.items() if v == correct[k])
+            passed = score >= 2
 
             prompt = (
-                "Actúa como un experto en contabilidad. "
-                "Si la pregunta del usuario no está relacionada con contabilidad, responde: "
-                "'El chat contable es solo para preguntas de contabilidad'. "
-                "De lo contrario, responde la pregunta de manera clara y detallada. "
-                f"Pregunta del usuario: '{pregunta}'."
+                f"Nivel 1 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
+                f"Aciertos: {score}/3. Da un feedback amable en máximo 6 líneas y sugiere 1 repaso si falló."
             )
-            response = openai.ChatCompletion.create(
-                extra_headers={},
-                extra_body={},
-                model="deepseek/deepseek-chat-v3-0324:free",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            respuesta = response.choices[0].message.content.strip()
-            st.info(respuesta)
+            fb = ia_feedback(prompt, role_desc="coach")
 
-            # Generar el PDF en memoria y manejar caracteres no Latin-1
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-
-            texto = f"Pregunta:\n{pregunta}\n\nRespuesta:\n{respuesta}"
-            texto_seguro = texto.encode("latin-1", errors="ignore").decode("latin-1")
-
-            pdf.multi_cell(0, 10, texto_seguro)
-
-            # Dest="S" devuelve el PDF como str; luego lo codificamos ignorando caracteres no Latin-1
-            pdf_str = pdf.output(dest="S")
-            pdf_bytes = pdf_str.encode("latin-1", errors="ignore")
-
-            st.download_button(
-                label="📄 Descargar chat en PDF",
-                data=pdf_bytes,
-                file_name="chat_contable.pdf",
-                mime="application/pdf"
-            )
-
-# Panel Admin completo
-def admin_panel():
-    st.header("Administrador de Usuarios")
-
-    # Inicializa el flag show_passwords
-    if "show_passwords" not in st.session_state:
-        st.session_state.show_passwords = False
-
-    # Botón para alternar visibilidad de contraseñas
-    if st.button("Mostrar/Ocultar contraseñas"):
-        st.session_state.show_passwords = not st.session_state.show_passwords
-
-    st.markdown("---")
-
-    # 1) Mostrar usuarios con columna de contraseña
-    all_users = list(users_collection.find(
-        {}, 
-        {"_id": 0, "username": 1, "role": 1, "password_hash": 1}
-    ))
-    # Construye DataFrame
-    df = pd.DataFrame(all_users).rename(columns={
-        "username": "Usuario",
-        "role": "Rol",
-        "password_hash": "Contraseña"
-    })
-    # Si no queremos mostrar hashes, los enmascaramos
-    if not st.session_state.show_passwords:
-        df["Contraseña"] = df["Contraseña"].apply(lambda _: "••••••••••")
-
-    st.subheader("Usuarios actuales")
-    st.dataframe(df)
-
-    st.markdown("---")
-
-    # 2) Crear usuario en formulario
-    st.subheader("Crear nuevo usuario")
-    with st.form("create_user_form"):
-        raw_user = st.text_input("Nombre de usuario", key="admin_new_user")
-        new_user = raw_user.strip().lower()                   # ← normalizar aquí
-        new_pass = st.text_input("Contraseña", type="password", key="admin_new_pass")
-        new_role = st.selectbox("Rol", ["user", "admin"], key="admin_new_role")
-        submitted = st.form_submit_button("Agregar usuario")
-        if submitted:
-            if not new_user or not new_pass:
-                st.error("Completa todos los campos.")
-            elif users_collection.count_documents({"username": new_user}) > 0:
-                st.error("El usuario ya existe.")
+            if passed:
+                st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 2 en el menú.")
+                celebracion_confeti()
             else:
-                users_collection.insert_one({
-                    "username": new_user,                     # almacena lowercase
-                    "password_hash": pwd_ctx.hash(new_pass),
-                    "role": new_role
-                })
-                st.success(f"Usuario '{new_user}' agregado.")
+                st.error(f"No aprobado. Aciertos {score}/3. Repasa la teoría y vuelve a intentar.")
+            with st.expander("💬 Feedback de la IA"):
+                st.write(fb)
 
+            save_progress(username, "level1", passed, score=score)
+
+            # >>> Fuerza desbloqueo visible y salto a Nivel 2
+            if passed:
+                st.session_state["force_go_level2"] = True
+                st.rerun()
+
+# ===========================
+# Placeholders niveles 2–4
+# ===========================
+def page_placeholder(title):
+    st.title(title)
+    st.info("Este nivel se habilitará y lo mejoraremos después de que termines el nivel anterior. 👍")
+
+# ===========================
+# Pantalla Login
+# ===========================
+def login_screen():
+    st.header("Iniciar Sesión")
+    with st.form("login_form"):
+        st.text_input("Usuario", key="login_raw_user")
+        st.text_input("Contraseña", type="password", key="login_password")
+        st.form_submit_button("Ingresar", on_click=do_login)
+    if st.session_state.login_error:
+        st.error(st.session_state.login_error)
     st.markdown("---")
+    st.caption("Usuarios demo → **admin / AdminSeguro#2025** · **estudiante / 1234**")
 
-    # 3) Editar usuario en formulario
-    st.subheader("Editar usuario")
-    edit_user = st.selectbox(
-        "Selecciona usuario",
-        [u["username"] for u in all_users],
-        key="admin_edit_select"
-    )
-    with st.form("edit_user_form"):
-        user_doc = users_collection.find_one({"username": edit_user})
-        edit_pass = st.text_input(
-            "Nueva contraseña (vacío = no cambiar)", 
-            key="admin_edit_pass"
-        )
-        edit_role = st.selectbox(
-            "Nuevo rol", ["user", "admin"],
-            index=0 if user_doc["role"] == "user" else 1,
-            key="admin_edit_role"
-        )
-        submitted = st.form_submit_button("Actualizar usuario")
-        if submitted:
-            update = {"role": edit_role}
-            if edit_pass:
-                update["password_hash"] = pwd_ctx.hash(edit_pass)
-            users_collection.update_one(
-                {"username": edit_user},
-                {"$set": update}
-            )
-            st.success(f"Usuario '{edit_user}' actualizado.")
-
-    st.markdown("---")
-
-    # 4) Eliminar usuario en formulario
-    st.subheader("Eliminar usuario")
-    del_user = st.selectbox(
-        "Selecciona usuario a eliminar",
-        [u["username"] for u in all_users],
-        key="admin_del_select"
-    )
-    with st.form("delete_user_form"):
-        submitted = st.form_submit_button("Eliminar usuario")
-        if submitted:
-            if del_user == st.session_state.username:
-                st.error("No puedes eliminar tu propia cuenta.")
-            else:
-                users_collection.delete_one({"username": del_user})
-                st.success(f"Usuario '{del_user}' eliminado.")
-
-# App principal
+# ===========================
+# Router principal
+# ===========================
 def main_app():
+    username = st.session_state.username
+    current = sidebar_nav(username)
 
-    # Construye el menú base
-    opts = ["Teoría", "Práctica", "Chat Contable"]
+    if current.startswith("Nivel 1"):
+        page_level1(username)
+    elif current.startswith("Nivel 2"):
+        page_placeholder("Nivel 2 · Métodos (Promedio Ponderado, PEPS, UEPS)")
+    elif current.startswith("Nivel 3"):
+        page_placeholder("Nivel 3 · Devoluciones")
+    elif current.startswith("Nivel 4"):
+        page_placeholder("Nivel 4 · Estado de Resultados")
+    else:
+        page_level1(username)
 
-    # Obtén el documento del usuario actual de MongoDB
-    current = users_collection.find_one({"username": st.session_state.username})
-    if current and current.get("role") == "admin":
-        opts.append("Administrador")
-
-    sel = st.sidebar.radio("Categoría", opts)
-
-    if sel == "Teoría":
-        sub = st.sidebar.radio("Opciones", ["Valoración de inventarios", "Depreciaciones"])
-        if sub == "Valoración de inventarios":
-            mostrar_valoracion_inventarios()
-        else:
-            mostrar_depreciaciones_teoria()
-
-    elif sel == "Práctica":
-        sub = st.sidebar.radio("Opciones", ["Ejercicios inventarios", "Ejercicios depreciaciones"])
-        if sub == "Ejercicios inventarios":
-            ejercicios_valoracion_inventarios()
-        else:
-            ejercicios_depreciaciones_grafico()
-
-    elif sel == "Chat Contable":
-        chat_contable()
-
-    else:  # Administrador
-        admin_panel()
-
-    st.sidebar.button(
-        "Cerrar Sesión",
-        on_click=logout,
-        key="btn_logout"
-    )
-
+# ===========================
 # Entry
+# ===========================
 def main():
     init_session()
-
     if not st.session_state.authenticated:
-        col_login, col_image = st.columns([1, 1])
-        with col_login:
-            st.header("Iniciar Sesión")
-            with st.form("login_form"):
-                st.text_input("Usuario", key="login_raw_user")
-                st.text_input("Contraseña", type="password", key="login_password")
-                st.form_submit_button("Ingresar", on_click=do_login)
-            if st.session_state.login_error:
-                st.error(st.session_state.login_error)
-
-        with col_image:
-            st.image(
-                "https://i.ibb.co/MDwk0bmw/Gemini-Generated-Image-kdwslvkdwslvkdws.png",
-                use_container_width=True
-            )
+        login_screen()
     else:
         main_app()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
