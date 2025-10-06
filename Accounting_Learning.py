@@ -178,6 +178,11 @@ def speak_block(texto: str, key_prefix: str, lang_hint="es"):
     components.html(html, height=140)
 
 # ===========================
+# Config encuesta
+# ===========================
+SURVEY_URL = os.getenv("SURVEY_URL", "https://forms.gle/pSxXp78LR3gqRzeR6")
+
+# ===========================
 # Pantalla de Celebración (aparte)
 # ===========================
 def confetti_block(duration_ms: int = 6000, height_px: int = 340):
@@ -277,12 +282,10 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
 
         // Confeti
         for (const p of pieces) {{
-          // física básica
           p.x += p.vx + Math.sin(p.y*0.02)*0.2;
           p.y += p.vy;
           p.r += p.vr;
 
-          // reciclaje
           if (p.y > canvas.height + 20) {{
             p.y = -20;
             p.x = Math.random()*canvas.width;
@@ -302,7 +305,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
           if (p.type === 'rect') {{
             ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
           }} else {{
-            // triángulo
             ctx.beginPath();
             ctx.moveTo(0, -p.h/2);
             ctx.lineTo(-p.w/2, p.h/2);
@@ -326,7 +328,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
           ctx.fillStyle = b.color;
           ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
           ctx.fill();
-          // cuerdita
           ctx.beginPath();
           ctx.strokeStyle = '#888';
           ctx.moveTo(b.x, b.y + b.r);
@@ -342,7 +343,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
     </script>
     """
     components.html(html, height=height_px)
-
 
 def start_celebration(message_md: str, next_label: str, next_key_value: str):
     """
@@ -382,8 +382,12 @@ def celebration_screen():
         label = st.session_state.get("celebrate_next_label", "siguiente nivel")
         if st.button(f"➡️ Ir al {label}", key="celebrate_go_next_btn", use_container_width=True):
             next_key = st.session_state.get("celebrate_next_key")
+
+            # Seleccionar automáticamente el destino en el radio de la barra lateral
             if next_key:
                 st.session_state["sidebar_level_select"] = next_key
+
+            # Limpieza de estado de celebración
             st.session_state["celebrate_active"] = False
             st.session_state["celebrate_message"] = ""
             st.session_state["celebrate_next_label"] = ""
@@ -405,7 +409,8 @@ def default_progress():
         "level2": {"passed": False, "date": None, "score": None},
         "level3": {"passed": False, "date": None, "score": None},
         "level4": {"passed": False, "date": None, "score": None},
-        "completed_survey": False
+        # Nueva bandera: libera la opción "Encuesta de satisfacción" al aprobar Nivel 4
+        "survey_unlocked": False
     }
 
 def init_session():
@@ -465,15 +470,14 @@ def sidebar_nav(username):
     if prog["level3"]["passed"]:
         options.append("Nivel 4: Estado de Resultados")
 
-    # 👇 Añade la pestaña Encuesta solo si está habilitada
-    if prog.get("completed_survey"):
-        options.append("Encuesta")
+    # Agregar "Encuesta de satisfacción" SOLO cuando se desbloquee tras aprobar el Nivel 4
+    if prog.get("survey_unlocked"):
+        options.append("Encuesta de satisfacción")
 
-    # 👇 Sanea valor inválido en session_state
+    # Limpia selección inválida si quedara de sesiones previas
     if "sidebar_level_select" in st.session_state and st.session_state.sidebar_level_select not in options:
         del st.session_state["sidebar_level_select"]
 
-    # 👇 Crea el radio sin 'index' (usará session_state o el primero)
     sel = st.sidebar.radio("Ir a:", options, key="sidebar_level_select")
 
     st.sidebar.markdown("---")
@@ -484,12 +488,13 @@ def sidebar_nav(username):
     st.sidebar.write(f"{badge(prog['level3']['passed'])} Nivel 3")
     st.sidebar.write(f"{badge(prog['level4']['passed'])} Nivel 4")
     st.sidebar.markdown("---")
-    st.sidebar.button("Cerrar Sesión", on_click=logout, key="logout_btn")
 
     if st.sidebar.button("🔍 Probar conexión IA"):
         fb = ia_feedback("Di 'OK' si recibiste este mensaje.")
         st.sidebar.info("Respuesta IA: " + fb)
 
+    # Se eliminó el botón "📝 Cuestionario"
+    st.sidebar.button("Cerrar Sesión", on_click=logout, key="logout_btn")
     return sel
 
 # ===========================
@@ -819,9 +824,9 @@ def page_level2(username):
                 save_progress(username, "level2", passed, score=score)
                 start_celebration(
                     message_md=(
-                        "<b>¡Nivel 2 completado!<b> 🧠✨\n\n"
-                        "Ya dominas **PP / PEPS / UEPS**. Vamos a meterle realismo: "
-                        "**devoluciones** que ajustan compras y ventas."
+                        "<b>¡Nivel 2 completado!</b> 🧠✨<br><br>"
+                        "Ya dominas <b>PP / PEPS / UEPS</b>. Vamos a meterle realismo: "
+                        "<b>devoluciones</b> que ajustan compras y ventas."
                     ),
                     next_label="Nivel 3",
                     next_key_value="Nivel 3: Devoluciones"
@@ -857,7 +862,7 @@ def page_level3(username):
         compra = st.number_input("Compra bruta ($)", min_value=0.0, value=5000.0, step=100.0, key="n3_ej_compra")
         dev_comp = st.number_input("Devolución a proveedor ($)", min_value=0.0, value=600.0, step=50.0, key="n3_ej_devcomp")
         compras_net = compra - dev_comp
-        st.info(f"**Compras netas = {peso(compra)} − {peso(dev_comp)} = {peso(compras_net)}**")
+        st.info(f"**Compras netas = {peso(compra)} − {peso(dev_comp)} = {peso(compras_net)}")
 
         st.subheader("Devolución de venta (reingreso de unidades)")
         st.caption("Escenario simple PP: el costo reingresado es el costo promedio vigente.")
@@ -941,9 +946,9 @@ def page_level3(username):
                 save_progress(username, "level3", passed, score=score)
                 start_celebration(
                     message_md=(
-                        "<b>¡Nivel 3 dominado!<b> 🔁📦\n\n"
-                        "Entendiste cómo ajustar por **devoluciones**. "
-                        "Ahora a integrar todo en el **Estado de Resultados**."
+                        "<b>¡Nivel 3 dominado!</b> 🔁📦<br><br>"
+                        "Entendiste cómo ajustar por <b>devoluciones</b>. "
+                        "Ahora a integrar todo en el <b>Estado de Resultados</b>."
                     ),
                     next_label="Nivel 4",
                     next_key_value="Nivel 4: Estado de Resultados"
@@ -1051,40 +1056,38 @@ def page_level4(username):
             if passed:
                 st.success(f"¡Felicidades! Aciertos {score}/3 🎓 Has completado los 4 niveles.")
                 save_progress(username, "level4", passed, score=score)
+
+                # Desbloquear la opción "Encuesta de satisfacción" en el menú lateral
+                prog = get_progress(username)
+                prog["survey_unlocked"] = True
+                st.session_state.all_progress[username] = prog
+
+                # Dispara celebración con botón que lleva a la nueva opción del menú
                 start_celebration(
                     message_md=(
-                        "<b>¡Curso completado!<b> 🎓🌟\n\n"
+                        "<b>¡Curso completado!</b> 🎓🌟<br><br>"
                         "Has recorrido desde el COGS básico hasta el EERR. "
-                        "Por favor responde la **encuesta final** para ayudarnos a mejorar."
+                        "Por favor responde la <b>Encuesta de satisfacción</b> para ayudarnos a mejorar."
                     ),
-                    next_label="Formulario de Encuesta",
-                    next_key_value="Encuesta"
+                    next_label="Encuesta de satisfacción",
+                    next_key_value="Encuesta de satisfacción"
                 )
-                # Guardamos también un flag de encuesta disponible tras finalizar
-                prog = get_progress(username)
-                prog["completed_survey"] = True
-                st.session_state.all_progress[username] = prog
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Refuerza conceptos y vuelve a intentar.")
                 with st.expander("💬 Feedback de la IA"):
                     st.write(fb)
 
 # ===========================
-# Encuesta (pestaña virtual)
+# Página: Encuesta de satisfacción (solo enlace)
 # ===========================
-SURVEY_URL = os.getenv("SURVEY_URL", "https://forms.gle/pSxXp78LR3gqRzeR6")
-
-def page_survey(username):
-    st.title("Encuesta de cierre")
-    prog = get_progress(username)
-    if not prog.get("completed_survey"):
-        st.warning("La encuesta se habilita al terminar el Nivel 4.")
-        return
-
-    # Usa la URL global
-    st.markdown(
-        f"Gracias por completar el curso 🙌. Por favor responde la **[encuesta aquí]({SURVEY_URL})**."
+def page_survey():
+    st.title("📝 Encuesta de satisfacción")
+    st.write(
+        "Tu opinión nos ayuda a mejorar esta herramienta. "
+        "Por favor abre el siguiente enlace y completa el formulario:"
     )
+    st.markdown(f"- 👉 **[Abrir formulario de encuesta]({SURVEY_URL})**")
+    st.caption("Si el enlace no abre en tu navegador, copia y pégalo en otra pestaña.")
 
 # ===========================
 # Pantalla Login
@@ -1112,6 +1115,9 @@ def main_app():
 
     current = sidebar_nav(username)
 
+    # Sin botón ni embed de cuestionario en la parte superior.
+    # La encuesta vive en su propia opción del menú.
+
     if current.startswith("Nivel 1"):
         page_level1(username)
     elif current.startswith("Nivel 2"):
@@ -1120,8 +1126,8 @@ def main_app():
         page_level3(username)
     elif current.startswith("Nivel 4"):
         page_level4(username)
-    elif current.startswith("Encuesta"):
-        page_survey(username)
+    elif current == "Encuesta de satisfacción":
+        page_survey()
     else:
         page_level1(username)
 
