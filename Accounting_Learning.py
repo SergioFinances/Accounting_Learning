@@ -12,6 +12,9 @@ import os
 import random
 from datetime import datetime
 
+from datetime import datetime, timezone
+
+
 import numpy as np
 import streamlit as st
 import streamlit.components.v1 as components
@@ -446,7 +449,7 @@ def repo_init():
             "username": admin_user,
             "password_hash": hash_password(admin_pass),
             "role": "admin",
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         })
 
     # índice por username
@@ -457,22 +460,35 @@ def repo_init():
 
     return db, users_col, progress_col
 
+from passlib.context import CryptContext
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 def verify_credentials(users_col, username: str, password: str):
-    if not users_col:
+    # 🔧 NO usar "if not users_col"
+    if users_col is None:
+        st.error("Colección de usuarios no inicializada.")
         return None
+
     doc = users_col.find_one({"username": username})
     if not doc:
         return None
-    if verify_password(password, doc.get("password_hash", "")):
-        return doc
+
+    password_hash = doc.get("password_hash")
+    try:
+        if password_hash and pwd_ctx.verify(password, password_hash):
+            return doc
+    except Exception:
+        # Si hubiera hashes antiguos o formato inesperado
+        return None
     return None
+
 
 def create_user(users_col, progress_col, username: str, password: str, role: str = "user"):
     users_col.insert_one({
         "username": username.strip().lower(),
         "password_hash": hash_password(password),
         "role": role,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     })
     # opcional: crear doc de progreso base
     progress_col.update_one(
