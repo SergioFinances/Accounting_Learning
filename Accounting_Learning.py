@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 # =========================================================
-#   Herramienta Contable - Inventarios Gamificados (sin Mongo)
+#   Herramienta Contable - Inventarios Gamificados (con Mongo)
 #   Niveles por pestaña (desbloqueo progresivo)
 #   Pantalla de celebración aparte (confeti + globos + botón)
 #   IA DeepSeek vía OpenRouter para feedback
+#   Admin con CRUD desde MongoDB (users)
 #   Fecha: 2025-10-05
 # =========================================================
 
@@ -16,6 +17,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
+# ===========================
+# Constantes
+# ===========================
 ADMIN_OPTION = "⚙️ Administrador de Usuarios"
 
 # ===========================
@@ -190,11 +194,9 @@ SURVEY_URL = os.getenv("SURVEY_URL", "https://forms.gle/pSxXp78LR3gqRzeR6")
 def confetti_block(duration_ms: int = 6000, height_px: int = 340):
     """
     Confeti y 'globos' simples 100% inline (sin CDNs).
-    Dibuja partículas de colores (rectángulos/triángulos) que caen y rotan.
-    Además deja st.balloons() como efecto complementario.
     """
     try:
-        st.balloons()  # efecto adicional
+        st.balloons()
     except Exception:
         pass
 
@@ -220,14 +222,12 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
         window.addEventListener('resize', resize);
       }}
 
-      // Paleta y utilidad aleatoria
       const colors = ['#ff6b6b','#ffd93d','#6BCB77','#4D96FF','#845EC2','#FF9671','#FFC75F'];
       const rand = (a,b)=>a+Math.random()*(b-a);
       const pick = (arr)=>arr[Math.floor(Math.random()*arr.length)];
 
-      // Partículas de confeti
       const pieces = [];
-      const N = 180; // cantidad
+      const N = 180;
       for (let i=0;i<N;i++) {{
         pieces.push({{
           type: Math.random()<0.4 ? 'tri' : 'rect',
@@ -244,7 +244,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
         }});
       }}
 
-      // Globos minimalistas (suben)
       const balloons = [];
       for (let i=0;i<6;i++) {{
         balloons.push({{
@@ -256,7 +255,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
         }});
       }}
 
-      // Pequeño 'estallido' inicial
       function burst(x, y, count=28) {{
         for (let i=0;i<count;i++) {{
           pieces.push({{
@@ -282,7 +280,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
         const elapsed = now - start;
         ctx.clearRect(0,0,canvas.width,canvas.height);
 
-        // Confeti
         for (const p of pieces) {{
           p.x += p.vx + Math.sin(p.y*0.02)*0.2;
           p.y += p.vy;
@@ -317,7 +314,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
           ctx.restore();
         }}
 
-        // Globos ascendentes
         for (const b of balloons) {{
           b.y -= b.vy;
           if (b.y + b.r < -30) {{
@@ -347,10 +343,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
     components.html(html, height=height_px)
 
 def start_celebration(message_md: str, next_label: str, next_key_value: str):
-    """
-    Activa el 'modo celebración' y guarda el destino del botón.
-    Se muestra en el próximo rerender como pantalla aparte.
-    """
     st.session_state["celebrate_active"] = True
     st.session_state["celebrate_message"] = message_md
     st.session_state["celebrate_next_label"] = next_label
@@ -358,11 +350,6 @@ def start_celebration(message_md: str, next_label: str, next_key_value: str):
     st.rerun()
 
 def celebration_screen():
-    """
-    Renderiza la pantalla de celebración en una 'hoja' separada:
-    confeti, mensaje creativo y botón para saltar al siguiente nivel.
-    Devuelve True si se mostró la pantalla, False si no.
-    """
     if not st.session_state.get("celebrate_active"):
         return False
 
@@ -384,12 +371,8 @@ def celebration_screen():
         label = st.session_state.get("celebrate_next_label", "siguiente nivel")
         if st.button(f"➡️ Ir al {label}", key="celebrate_go_next_btn", use_container_width=True):
             next_key = st.session_state.get("celebrate_next_key")
-
-            # Seleccionar automáticamente el destino en el radio de la barra lateral
             if next_key:
                 st.session_state["sidebar_level_select"] = next_key
-
-            # Limpieza de estado de celebración
             st.session_state["celebrate_active"] = False
             st.session_state["celebrate_message"] = ""
             st.session_state["celebrate_next_label"] = ""
@@ -397,36 +380,132 @@ def celebration_screen():
             st.rerun()
     return True
 
+# ===========================
+# --- REPO / MONGO HELPERS ---
+# ===========================
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
+
+# Hashing: preferimos passlib[bcrypt]; si no está, caemos a SHA256 (uso educativo)
+try:
+    from passlib.context import CryptContext
+    _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    def hash_password(p: str) -> str:
+        return _pwd_ctx.hash(p)
+    def verify_password(p: str, h: str) -> bool:
+        try:
+            return _pwd_ctx.verify(p, h)
+        except Exception:
+            return False
+except Exception:
+    import hashlib
+    st.warning("Passlib no disponible: usando SHA256 solo para pruebas (no apto producción).")
+    def hash_password(p: str) -> str:
+        return hashlib.sha256(("pepper123::"+p).encode("utf-8")).hexdigest()
+    def verify_password(p: str, h: str) -> bool:
+        return hash_password(p) == h
+
+def repo_init():
+    """
+    Crea el cliente Mongo y retorna (db, users_col, progress_col).
+    Lee URI desde st.secrets['mongodb']['uri'] o env MONGODB_URI.
+    Garantiza un admin inicial.
+    """
+    uri = None
+    try:
+        uri = st.secrets["mongodb"]["uri"]
+    except Exception:
+        uri = os.getenv("MONGODB_URI")
+
+    if not uri:
+        raise RuntimeError("No encuentro la URI de MongoDB. Define [mongodb].uri en secrets.toml o MONGODB_URI en el entorno.")
+
+    client = MongoClient(uri, server_api=ServerApi('1'))
+    # ping
+    client.admin.command('ping')
+
+    # DB por defecto (si la URI no especifica nombre, usamos 'accounting_app')
+    db_name = "accounting_app"
+    db = client[db_name]
+
+    users_col = db["users"]
+    progress_col = db["progress"]  # para futuro; hoy no lo usamos a fondo
+
+    # Admin inicial
+    admin_user = None
+    admin_pass = None
+    try:
+        admin_user = st.secrets["admin"]["username"]
+        admin_pass = st.secrets["admin"]["password"]
+    except Exception:
+        admin_user = "admin"
+        admin_pass = "AdminSeguro#2025"
+
+    if users_col.count_documents({"username": admin_user}) == 0:
+        users_col.insert_one({
+            "username": admin_user,
+            "password_hash": hash_password(admin_pass),
+            "role": "admin",
+            "created_at": datetime.utcnow()
+        })
+
+    # índice por username
+    try:
+        users_col.create_index("username", unique=True)
+    except Exception:
+        pass
+
+    return db, users_col, progress_col
+
+def verify_credentials(users_col, username: str, password: str):
+    if not users_col:
+        return None
+    doc = users_col.find_one({"username": username})
+    if not doc:
+        return None
+    if verify_password(password, doc.get("password_hash", "")):
+        return doc
+    return None
+
+def create_user(users_col, progress_col, username: str, password: str, role: str = "user"):
+    users_col.insert_one({
+        "username": username.strip().lower(),
+        "password_hash": hash_password(password),
+        "role": role,
+        "created_at": datetime.utcnow()
+    })
+    # opcional: crear doc de progreso base
+    progress_col.update_one(
+        {"username": username.strip().lower()},
+        {"$setOnInsert": {"levels": {}}},
+        upsert=True
+    )
+
+def update_user(users_col, username: str, new_password: str | None, new_role: str | None):
+    update = {}
+    if new_password:
+        update["password_hash"] = hash_password(new_password)
+    if new_role:
+        update["role"] = new_role
+    if update:
+        users_col.update_one({"username": username}, {"$set": update})
+
+def delete_user(users_col, progress_col, username: str):
+    users_col.delete_one({"username": username})
+    progress_col.delete_many({"username": username})
 
 # ===========================
-# Login en memoria (sin Mongo)
+# Estado de sesión mínimo
 # ===========================
-DEFAULT_USERS = {
-    "admin": {"password": "AdminSeguro#2025", "role": "admin"},
-    "estudiante": {"password": "1234", "role": "user"},
-}
-
-def default_progress():
-    return {
-        "level1": {"passed": False, "date": None, "score": None},
-        "level2": {"passed": False, "date": None, "score": None},
-        "level3": {"passed": False, "date": None, "score": None},
-        "level4": {"passed": False, "date": None, "score": None},
-        # Nueva bandera: libera la opción "Encuesta de satisfacción" al aprobar Nivel 4
-        "survey_unlocked": False
-    }
-
 def init_session():
     st.session_state.setdefault("authenticated", False)
     st.session_state.setdefault("login_error", "")
     st.session_state.setdefault("username", "")
-    st.session_state.setdefault("users", DEFAULT_USERS.copy())
-    st.session_state.setdefault("all_progress", {})  # username -> progress
+    # colecciones se setean en main()
 
-def check_credentials(user, password):
-    users = st.session_state.users
-    return user in users and users[user]["password"] == password
-
+# ===========================
+# Login / Logout
+# ===========================
 def do_login():
     user = st.session_state.login_raw_user.strip().lower()
     pwd  = st.session_state.login_password
@@ -436,7 +515,6 @@ def do_login():
 
     users_col = st.session_state.get("users_col")
     doc = verify_credentials(users_col, user, pwd)
-
     if doc:
         st.session_state.authenticated = True
         st.session_state.username = user
@@ -444,46 +522,47 @@ def do_login():
     else:
         st.session_state.login_error = "Credenciales incorrectas."
 
-
 def logout():
     st.session_state.authenticated = False
     st.session_state.username = ""
     st.session_state.login_error = ""
 
-def get_progress(username):
-    allp = st.session_state.all_progress
-    if username not in allp:
-        allp[username] = default_progress()
-    return allp[username]
-
-def save_progress(username, level_key, passed: bool, score=None):
-    prog = get_progress(username)
-    prog[level_key] = {"passed": passed, "date": datetime.utcnow(), "score": score}
-    st.session_state.all_progress[username] = prog
-
 # ===========================
-# Sidebar navegación por nivel (con opción Admin solo para admin)
+# Sidebar navegación por nivel (Admin solo si rol=admin)
 # ===========================
-dADMIN_OPTION = "⚙️ Administrador de Usuarios"
-
 def sidebar_nav(username):
-    # ...
-    # Obtén el rol desde Mongo
-    users_col = st.session_state["users_col"]
-    doc = users_col.find_one({"username": username}, {"role": 1, "_id": 0}) or {}
-    current_user_role = doc.get("role", "user")
+    st.sidebar.title("Niveles")
 
-    options = ["Nivel 1: Introducción a Inventarios"]
-    # ... (añadir los otros niveles según tu lógica)
-    # encuesta si aplica...
+    # En esta versión mostramos todas las páginas de ejemplo;
+    # si quieres bloqueo progresivo, guarda/lee progreso desde Mongo en el futuro.
+    options = [
+        "Nivel 1: Introducción a Inventarios",
+        "Nivel 2: Métodos (PP/PEPS/UEPS)",
+        "Nivel 3: Devoluciones",
+        "Nivel 4: Estado de Resultados",
+        "Encuesta de satisfacción",
+    ]
+
+    # rol desde Mongo
+    current_user_role = "user"
+    users_col = st.session_state.get("users_col")
+    if users_col and username:
+        doc = users_col.find_one({"username": username}, {"role": 1, "_id": 0}) or {}
+        current_user_role = doc.get("role", "user")
 
     if current_user_role == "admin":
         options.append(ADMIN_OPTION)
 
-    sel = st.sidebar.radio("Ir a:", options, key="sidebar_level_select")
-    # ...
-    return sel
+    # limpia selección inválida si cambiara el menú
+    if "sidebar_level_select" in st.session_state and st.session_state.sidebar_level_select not in options:
+        del st.session_state["sidebar_level_select"]
 
+    sel = st.sidebar.radio("Ir a:", options, key="sidebar_level_select")
+
+    st.sidebar.markdown("---")
+    st.sidebar.caption(f"Usuario: **{username}** · Rol: **{current_user_role}**")
+    st.sidebar.button("Cerrar Sesión", on_click=logout, key="logout_btn")
+    return sel
 
 # ===========================
 # NIVEL 1
@@ -636,7 +715,6 @@ def page_level1(username):
 
             if passed:
                 st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 2 en el menú.")
-                save_progress(username, "level1", passed, score=score)
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 1 superado!</b> 🏆<br><br>"
@@ -659,7 +737,6 @@ def page_level2(username):
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplos guiados", "🎮 Práctica (IA)", "🏁 Evaluación para aprobar"])
 
-    # Teoría
     with tabs[0]:
         theory = (
             "**Promedio Ponderado (PP):** mezcla lotes y asigna un costo promedio a cada unidad.\n\n"
@@ -673,7 +750,6 @@ def page_level2(username):
         st.write(theory)
         speak_block(theory, key_prefix="teo-n2", lang_hint="es")
 
-    # Ejemplos guiados
     with tabs[1]:
         st.subheader("Ejemplo de PP dinámico")
         colA, colB = st.columns([1,1])
@@ -688,10 +764,7 @@ def page_level2(username):
             comp_val = comp_u * comp_pu
             total_u = inv0_u + comp_u
             total_val = inv0_val + comp_val
-            if total_u > 0:
-                prom = total_val / total_u
-            else:
-                prom = 0
+            prom = (total_val / total_u) if total_u > 0 else 0
             cogs = min(venta_u, total_u) * prom
             saldo_u = max(total_u - venta_u, 0)
             saldo_val = saldo_u * prom
@@ -722,7 +795,6 @@ def page_level2(username):
         st.write(f"Venta: {venta} u. Inventario: 100u @10; 50u @12")
         st.info(f"**FIFO COGS** ≈ {peso(fifo_cogs)} · **LIFO COGS** ≈ {peso(lifo_cogs)}  → (LIFO mayor COGS con precios al alza)")
 
-    # Práctica (IA)
     with tabs[2]:
         st.subheader("Práctica: elige el método correcto")
         st.caption("Completa el cálculo según el método seleccionado.")
@@ -738,7 +810,6 @@ def page_level2(username):
 
         ans_cogs = st.number_input("Tu COGS", min_value=0.0, value=0.0, step=10.0, key="n2_prac_cogs")
         if st.button("✅ Validar práctica N2", key="n2_prac_btn"):
-            # Resuelve correctamente según método
             total_u = inv0_u + comp_u
             inv0_val = inv0_u * inv0_pu
             comp_val = comp_u * comp_pu
@@ -749,17 +820,15 @@ def page_level2(username):
             elif metodo == "PEPS (FIFO)":
                 remaining = venta_u
                 correct = 0.0
-                # vender desde inv0 luego compra
                 use = min(remaining, inv0_u)
                 correct += use * inv0_pu
                 remaining -= use
                 if remaining > 0:
                     use2 = min(remaining, comp_u)
                     correct += use2 * comp_pu
-            else:  # UEPS (LIFO)
+            else:  # UEPS
                 remaining = venta_u
                 correct = 0.0
-                # vender desde compra (más reciente) luego inv0
                 use = min(remaining, comp_u)
                 correct += use * comp_pu
                 remaining -= use
@@ -780,7 +849,6 @@ def page_level2(username):
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
 
-    # Evaluación
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 2")
         st.caption("Necesitas acertar **2 de 3**.")
@@ -809,7 +877,6 @@ def page_level2(username):
 
             if passed:
                 st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 3 en el menú.")
-                save_progress(username, "level2", passed, score=score)
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 2 completado!</b> 🧠✨<br><br>"
@@ -832,7 +899,6 @@ def page_level3(username):
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplos", "🎮 Práctica (IA)", "🏁 Evaluación para aprobar"])
 
-    # Teoría
     with tabs[0]:
         theory = (
             "**Devoluciones de compra**: restan a compras; reducen el pool de costo disponible.\n\n"
@@ -844,7 +910,6 @@ def page_level3(username):
         st.write(theory)
         speak_block(theory, key_prefix="teo-n3", lang_hint="es")
 
-    # Ejemplos
     with tabs[1]:
         st.subheader("Devolución de compra (impacto directo en Compras)")
         compra = st.number_input("Compra bruta ($)", min_value=0.0, value=5000.0, step=100.0, key="n3_ej_compra")
@@ -859,7 +924,6 @@ def page_level3(username):
         costo_reingreso = prom * dev_venta_u
         st.success(f"**Reingreso inventario**: {dev_venta_u} u × {peso(prom)} = {peso(costo_reingreso)}")
 
-    # Práctica IA
     with tabs[2]:
         st.subheader("Práctica: combina compras netas y devolución de venta (PP)")
         inv0 = random.randint(500, 1500)
@@ -877,15 +941,12 @@ def page_level3(username):
 
         ans_cogs = st.number_input("Tu COGS estimado (PP)", min_value=0.0, value=0.0, step=10.0, key="n3_prac_cogs")
         if st.button("✅ Validar práctica N3", key="n3_prac_btn"):
-            # Compras netas en valor (PP)
             inv0_val = inv0 * prom0
             comp_val = comp * comp_pu
-            comp_net_val = comp_val - dev_comp  # devol. compra reduce valor de compras
+            comp_net_val = comp_val - dev_comp
             total_val = inv0_val + comp_net_val
             total_u = inv0 + comp
-
             prom = total_val / total_u
-            # venta neta (vendiste y te devolvieron unidades)
             venta_neta_u = max(venta_u - dev_venta_u, 0)
             correct = venta_neta_u * prom
 
@@ -902,7 +963,6 @@ def page_level3(username):
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
 
-    # Evaluación
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 3")
         st.caption("Necesitas acertar **2 de 3**.")
@@ -931,7 +991,6 @@ def page_level3(username):
 
             if passed:
                 st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 4 en el menú.")
-                save_progress(username, "level3", passed, score=score)
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 3 dominado!</b> 🔁📦<br><br>"
@@ -954,7 +1013,6 @@ def page_level4(username):
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplo guiado", "🎮 Práctica (IA)", "🏁 Evaluación final + Encuesta"])
 
-    # Teoría
     with tabs[0]:
         theory = (
             "El **Estado de Resultados** muestra ingresos y gastos del período, hasta la **utilidad neta**. "
@@ -968,7 +1026,6 @@ def page_level4(username):
         st.write(theory)
         speak_block(theory, key_prefix="teo-n4", lang_hint="es")
 
-    # Ejemplo guiado
     with tabs[1]:
         st.subheader("Ejemplo simple")
         colL, colR = st.columns(2)
@@ -985,7 +1042,6 @@ def page_level4(username):
             st.info(f"**Utilidad bruta** = {peso(vtas_net)} − {peso(cogs)} = **{peso(util_bruta)}**")
             st.success(f"**Utilidad operativa** = {peso(util_bruta)} − {peso(gastos)} = **{peso(util_oper)}**")
 
-    # Práctica IA
     with tabs[2]:
         st.subheader("Práctica: arma tu Estado de Resultados")
         ventas = random.randint(8000, 20000)
@@ -1014,7 +1070,6 @@ def page_level4(username):
             with st.expander("💬 Feedback de la IA"):
                 st.write(fb)
 
-    # Evaluación + Encuesta
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 4")
         st.caption("Necesitas acertar **2 de 3** para terminar el curso.")
@@ -1043,14 +1098,6 @@ def page_level4(username):
 
             if passed:
                 st.success(f"¡Felicidades! Aciertos {score}/3 🎓 Has completado los 4 niveles.")
-                save_progress(username, "level4", passed, score=score)
-
-                # Desbloquear la opción "Encuesta de satisfacción" en el menú lateral
-                prog = get_progress(username)
-                prog["survey_unlocked"] = True
-                st.session_state.all_progress[username] = prog
-
-                # Dispara celebración con botón que lleva a la nueva opción del menú
                 start_celebration(
                     message_md=(
                         "<b>¡Curso completado!</b> 🎓🌟<br><br>"
@@ -1066,7 +1113,7 @@ def page_level4(username):
                     st.write(fb)
 
 # ===========================
-# Página: Encuesta de satisfacción (solo enlace)
+# Página: Encuesta de satisfacción
 # ===========================
 def page_survey():
     st.title("📝 Encuesta de satisfacción")
@@ -1077,15 +1124,17 @@ def page_survey():
     st.markdown(f"- 👉 **[Abrir formulario de encuesta]({SURVEY_URL})**")
     st.caption("Si el enlace no abre en tu navegador, copia y pégalo en otra pestaña.")
 
-
 # ===========================
-# Módulo: Administrador de Usuarios (en memoria) con Estadísticas
+# Módulo: Administrador de Usuarios (Mongo)
 # ===========================
 def admin_page():
     st.title("⚙️ Administrador de Usuarios")
 
-    users_col = st.session_state["users_col"]
-    progress_col = st.session_state["progress_col"]
+    users_col = st.session_state.get("users_col")
+    progress_col = st.session_state.get("progress_col")
+    if not users_col:
+        st.error("No hay conexión con MongoDB.")
+        return
 
     # ---- Tabla de usuarios ----
     st.subheader("Usuarios actuales")
@@ -1121,7 +1170,6 @@ def admin_page():
     if usernames:
         edit_user = st.selectbox("Selecciona el usuario a editar", usernames, key="admin_edit_select")
         if edit_user:
-            # Obtener rol actual
             curr = users_col.find_one({"username": edit_user}, {"role": 1, "_id": 0}) or {}
             curr_role = curr.get("role", "user")
             with st.form("admin_edit_user"):
@@ -1130,7 +1178,7 @@ def admin_page():
                 submit_edit = st.form_submit_button("✏️ Guardar cambios")
 
                 if submit_edit:
-                    # Evitar quitar/eliminar el último admin
+                    # Evitar quitar el último admin
                     if curr_role == "admin" and new_role_opt == "user":
                         other_admin = users_col.count_documents({"username": {"$ne": edit_user}, "role": "admin"}) > 0
                         if not other_admin:
@@ -1152,13 +1200,11 @@ def admin_page():
     if usernames:
         del_user = st.selectbox("Selecciona el usuario a eliminar", usernames, key="admin_del_select")
         if st.button("🗑️ Eliminar usuario seleccionado"):
-            # Reglas de seguridad
             if del_user == st.session_state.username:
                 st.error("No puedes eliminar tu propia cuenta en esta vista.")
             elif del_user == "admin":
                 st.error("Por seguridad no se permite eliminar la cuenta 'admin' por defecto.")
             else:
-                # Evitar borrar el último admin
                 doc = users_col.find_one({"username": del_user}, {"role": 1, "_id": 0})
                 if doc and doc.get("role") == "admin":
                     other_admin = users_col.count_documents({"username": {"$ne": del_user}, "role": "admin"}) > 0
@@ -1170,78 +1216,6 @@ def admin_page():
     else:
         st.info("No hay usuarios para eliminar.")
 
-
-    # --------------------------
-    # TAB 2: Estadísticas
-    # --------------------------
-    with tab_stats:
-        st.subheader("Resumen general")
-
-        total_users = len(users)
-        admins = sum(1 for u in users.values() if u.get("role") == "admin")
-        regulars = total_users - admins
-
-        colA, colB, colC = st.columns(3)
-        colA.metric("Usuarios totales", total_users)
-        colB.metric("Administradores", admins)
-        colC.metric("Usuarios estándar", regulars)
-
-        st.markdown("---")
-        st.subheader("Progreso por nivel")
-
-        # Cuenta aprobados por nivel
-        levels = ["level1", "level2", "level3", "level4"]
-        nombres = {
-            "level1": "Nivel 1",
-            "level2": "Nivel 2",
-            "level3": "Nivel 3",
-            "level4": "Nivel 4",
-        }
-
-        passed_counts = {lv: 0 for lv in levels}
-        attempts_counts = {lv: 0 for lv in levels}
-
-        for uname, prog in all_prog.items():
-            for lv in levels:
-                if lv in prog and prog[lv]["score"] is not None:
-                    attempts_counts[lv] += 1
-                if lv in prog and prog[lv]["passed"]:
-                    passed_counts[lv] += 1
-
-        cols = st.columns(4)
-        for i, lv in enumerate(levels):
-            total_try = attempts_counts[lv]
-            passed = passed_counts[lv]
-            rate = (passed / total_users * 100) if total_users else 0.0
-            cols[i].metric(nombres[lv], f"{passed}/{total_users}", f"{rate:.0f}% aprobaron")
-
-        # Pequeña tabla de últimos logros
-        st.markdown("---")
-        st.subheader("Últimos logros (fecha y puntaje)")
-        rows = []
-        for uname, prog in all_prog.items():
-            for lv in levels:
-                item = prog.get(lv, {})
-                if item.get("date"):
-                    rows.append({
-                        "Usuario": uname,
-                        "Nivel": nombres[lv],
-                        "Aprobado": "Sí" if item.get("passed") else "No",
-                        "Puntaje": item.get("score"),
-                        "Fecha": item.get("date").strftime("%Y-%m-%d %H:%M") if isinstance(item.get("date"), datetime) else ""
-                    })
-        # Ordenar por fecha desc
-        rows.sort(key=lambda r: r["Fecha"], reverse=True)
-
-        if rows:
-            st.dataframe(rows, use_container_width=True)
-        else:
-            st.info("Aún no hay registros de aprobaciones.")
-
-        st.markdown("---")
-        st.caption("Estas estadísticas usan los datos en memoria. Al conectar MongoDB, la UI seguirá igual; solo cambiaremos a leer desde la base de datos.")
-
-
 # ===========================
 # Pantalla Login
 # ===========================
@@ -1251,10 +1225,10 @@ def login_screen():
         st.text_input("Usuario", key="login_raw_user")
         st.text_input("Contraseña", type="password", key="login_password")
         st.form_submit_button("Ingresar", on_click=do_login)
-    if st.session_state.login_error:
-        st.error(st.session_state.login_error)
+    if st.session_state.get("login_error"):
+        st.error(st.session_state["login_error"])
     st.markdown("---")
-    st.caption("Usuarios demo → **admin / AdminSeguro#2025** · **estudiante / 1234**")
+    st.caption("Si es tu primera vez, inicia con tu usuario y contraseña asignados.")
 
 # ===========================
 # Router principal
@@ -1262,7 +1236,6 @@ def login_screen():
 def main_app():
     username = st.session_state.username
 
-    # Pantalla de celebración (si aplica)
     if celebration_screen():
         return
 
@@ -1271,6 +1244,15 @@ def main_app():
     if current.startswith("Nivel 1"):
         page_level1(username)
     elif current == ADMIN_OPTION:
+        # Última comprobación de rol por seguridad
+        users_col = st.session_state.get("users_col")
+        role = "user"
+        if users_col:
+            doc = users_col.find_one({"username": username}, {"role": 1, "_id": 0}) or {}
+            role = doc.get("role", "user")
+        if role != "admin":
+            st.warning("No autorizado.")
+            return
         admin_page()
     elif current.startswith("Nivel 2"):
         page_level2(username)
@@ -1280,33 +1262,27 @@ def main_app():
         page_level4(username)
     elif current == "Encuesta de satisfacción":
         page_survey()
-    # ⚙️ Ruta Admin robusta
-    elif current == ADMIN_OPTION or "Administrador de Usuarios" in current:
-        # Extra: bloqueo defensivo por si alguien llega aquí sin ser admin
-        role = st.session_state.users.get(username, {}).get("role", "user")
-        if role != "admin":
-            st.warning("No autorizado.")
-            return
-        admin_page()
     else:
         page_level1(username)
-
 
 # ===========================
 # Entry
 # ===========================
-from repo import repo_init, verify_credentials
-
 def main():
-    # Inicializa conexión y colecciones
-    db, users_col, progress_col = repo_init()
-    # Guárdalas en session_state para usarlas en otros módulos/páginas
-    st.session_state["users_col"] = users_col
-    st.session_state["progress_col"] = progress_col
+    init_session()
 
-    # ... resto de tu flujo:
+    # Inicializa conexión y colecciones
+    try:
+        db, users_col, progress_col = repo_init()
+        st.session_state["users_col"] = users_col
+        st.session_state["progress_col"] = progress_col
+    except Exception as e:
+        st.error(f"Error conectando a MongoDB: {e}")
+        st.stop()
+
+    # Flujo principal
     if not st.session_state.get("authenticated"):
-        login_screen()  # ver 3.2
+        login_screen()
     else:
         main_app()
 
