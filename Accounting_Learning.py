@@ -16,6 +16,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
+ADMIN_OPTION = "⚙️ Administrador de Usuarios"
+
 # ===========================
 # Configuración Streamlit
 # ===========================
@@ -471,16 +473,15 @@ def sidebar_nav(username):
     if prog["level3"]["passed"]:
         options.append("Nivel 4: Estado de Resultados")
 
-    # Agregar "Encuesta de satisfacción" SOLO cuando se desbloquee tras aprobar el Nivel 4
     if prog.get("survey_unlocked"):
         options.append("Encuesta de satisfacción")
 
-    # 👉 NUEVO: opción de Admin únicamente para usuarios con rol admin
+    # Opción Admin solo para rol admin
     current_user_role = st.session_state.users.get(username, {}).get("role", "user")
     if current_user_role == "admin":
-        options.append("⚙️ Administrador de Usuarios")
+        options.append(ADMIN_OPTION)
 
-    # Limpia selección inválida si quedara de sesiones previas
+    # Limpia selección inválida si quedó colgada
     if "sidebar_level_select" in st.session_state and st.session_state.sidebar_level_select not in options:
         del st.session_state["sidebar_level_select"]
 
@@ -497,6 +498,7 @@ def sidebar_nav(username):
 
     st.sidebar.button("Cerrar Sesión", on_click=logout, key="logout_btn")
     return sel
+
 
 
 # ===========================
@@ -1211,14 +1213,11 @@ def login_screen():
 def main_app():
     username = st.session_state.username
 
-    # Si hay celebración activa, muéstrala como hoja aparte
+    # Pantalla de celebración (si aplica)
     if celebration_screen():
         return
 
     current = sidebar_nav(username)
-
-    # Sin botón ni embed de cuestionario en la parte superior.
-    # La encuesta vive en su propia opción del menú.
 
     if current.startswith("Nivel 1"):
         page_level1(username)
@@ -1230,35 +1229,27 @@ def main_app():
         page_level4(username)
     elif current == "Encuesta de satisfacción":
         page_survey()
+    # ⚙️ Ruta Admin robusta
+    elif current == ADMIN_OPTION or "Administrador de Usuarios" in current:
+        # Extra: bloqueo defensivo por si alguien llega aquí sin ser admin
+        role = st.session_state.users.get(username, {}).get("role", "user")
+        if role != "admin":
+            st.warning("No autorizado.")
+            return
+        admin_page()
     else:
         page_level1(username)
-
 
 
 # ===========================
 # Entry
 # ===========================
-def main_app():
-    username = st.session_state.username
-
-    # Si hay celebración activa, muéstrala
-    if celebration_screen():
-        return
-
-    current = sidebar_nav(username)
-
-    if current.startswith("Nivel 1"):
-        page_level1(username)
-    elif current.startswith("Nivel 2"):
-        page_level2(username)
-    elif current.startswith("Nivel 3"):
-        page_level3(username)
-    elif current.startswith("Nivel 4"):
-        page_level4(username)
-    elif current == "Encuesta de satisfacción":
-        page_survey()
-    elif current == "⚙️ Administrador de Usuarios":   # ← NUEVO
-        admin_page()
+def main():
+    init_session()
+    if not st.session_state.authenticated:
+        login_screen()
     else:
-        page_level1(username)
+        main_app()
 
+if __name__ == "__main__":
+    main()
