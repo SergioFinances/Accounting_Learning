@@ -395,6 +395,7 @@ def celebration_screen():
             st.rerun()
     return True
 
+
 # ===========================
 # Login en memoria (sin Mongo)
 # ===========================
@@ -456,7 +457,7 @@ def save_progress(username, level_key, passed: bool, score=None):
     st.session_state.all_progress[username] = prog
 
 # ===========================
-# Sidebar navegación por nivel
+# Sidebar navegación por nivel (con opción Admin solo para admin)
 # ===========================
 def sidebar_nav(username):
     prog = get_progress(username)
@@ -474,6 +475,11 @@ def sidebar_nav(username):
     if prog.get("survey_unlocked"):
         options.append("Encuesta de satisfacción")
 
+    # 👉 NUEVO: opción de Admin únicamente para usuarios con rol admin
+    current_user_role = st.session_state.users.get(username, {}).get("role", "user")
+    if current_user_role == "admin":
+        options.append("⚙️ Administrador de Usuarios")
+
     # Limpia selección inválida si quedara de sesiones previas
     if "sidebar_level_select" in st.session_state and st.session_state.sidebar_level_select not in options:
         del st.session_state["sidebar_level_select"]
@@ -489,13 +495,9 @@ def sidebar_nav(username):
     st.sidebar.write(f"{badge(prog['level4']['passed'])} Nivel 4")
     st.sidebar.markdown("---")
 
-    if st.sidebar.button("🔍 Probar conexión IA"):
-        fb = ia_feedback("Di 'OK' si recibiste este mensaje.")
-        st.sidebar.info("Respuesta IA: " + fb)
-
-    # Se eliminó el botón "📝 Cuestionario"
     st.sidebar.button("Cerrar Sesión", on_click=logout, key="logout_btn")
     return sel
+
 
 # ===========================
 # NIVEL 1
@@ -1089,6 +1091,106 @@ def page_survey():
     st.markdown(f"- 👉 **[Abrir formulario de encuesta]({SURVEY_URL})**")
     st.caption("Si el enlace no abre en tu navegador, copia y pégalo en otra pestaña.")
 
+
+# ===========================
+# Módulo: Administrador de Usuarios (en memoria)
+# ===========================
+def admin_page():
+    st.title("⚙️ Administrador de Usuarios")
+
+    users = st.session_state.users  # dict: username -> {"password": "...", "role": "admin/user"}
+
+    # ---- Tabla de usuarios ----
+    st.subheader("Usuarios actuales")
+    data = [
+        {"Usuario": u, "Rol": info.get("role", "user")}
+        for u, info in users.items()
+    ]
+    st.dataframe(data, use_container_width=True)
+
+    st.markdown("---")
+
+    # ---- Crear usuario ----
+    st.subheader("Crear nuevo usuario")
+    with st.form("admin_create_user"):
+        new_user = st.text_input("Nombre de usuario (min 3, sin espacios)").strip().lower()
+        new_pass = st.text_input("Contraseña (min 4)", type="password")
+        new_role = st.selectbox("Rol", ["user", "admin"])
+        submitted = st.form_submit_button("➕ Crear usuario")
+
+        if submitted:
+            # Validaciones simples
+            if not new_user or len(new_user) < 3 or " " in new_user:
+                st.error("Usuario inválido. Debe tener al menos 3 caracteres y sin espacios.")
+            elif not new_pass or len(new_pass) < 4:
+                st.error("Contraseña demasiado corta (mínimo 4).")
+            elif new_user in users:
+                st.error("El usuario ya existe.")
+            else:
+                users[new_user] = {"password": new_pass, "role": new_role}
+                # Inicializa progreso si no existe
+                if new_user not in st.session_state.all_progress:
+                    st.session_state.all_progress[new_user] = default_progress()
+                st.success(f"Usuario '{new_user}' creado como {new_role}.")
+
+    st.markdown("---")
+
+    # ---- Editar usuario ----
+    st.subheader("Editar usuario")
+    if users:
+        edit_user = st.selectbox("Selecciona el usuario a editar", sorted(users.keys()), key="admin_edit_select")
+        if edit_user:
+            curr_role = users[edit_user].get("role", "user")
+            with st.form("admin_edit_user"):
+                new_pass_opt = st.text_input("Nueva contraseña (opcional: dejar vacío para no cambiar)", type="password")
+                new_role_opt = st.selectbox("Nuevo rol", ["user", "admin"], index=0 if curr_role == "user" else 1)
+                submit_edit = st.form_submit_button("✏️ Guardar cambios")
+                if submit_edit:
+                    # Evitar dejarte sin admin si editas el único admin
+                    if users[edit_user]["role"] == "admin" and new_role_opt == "user":
+                        # ¿Queda al menos otro admin?
+                        other_admin = any(u != edit_user and info.get("role") == "admin" for u, info in users.items())
+                        if not other_admin:
+                            st.error("No puedes quitar el último administrador del sistema.")
+                        else:
+                            users[edit_user]["role"] = new_role_opt
+                            if new_pass_opt:
+                                users[edit_user]["password"] = new_pass_opt
+                            st.success(f"Usuario '{edit_user}' actualizado.")
+                    else:
+                        users[edit_user]["role"] = new_role_opt
+                        if new_pass_opt:
+                            users[edit_user]["password"] = new_pass_opt
+                        st.success(f"Usuario '{edit_user}' actualizado.")
+    else:
+        st.info("No hay usuarios para editar.")
+
+    st.markdown("---")
+
+    # ---- Eliminar usuario ----
+    st.subheader("Eliminar usuario")
+    if users:
+        del_user = st.selectbox("Selecciona el usuario a eliminar", sorted(users.keys()), key="admin_del_select")
+        if st.button("🗑️ Eliminar usuario seleccionado"):
+            if del_user == st.session_state.username:
+                st.error("No puedes eliminar tu propia cuenta en esta vista.")
+            elif del_user == "admin":
+                st.error("Por seguridad no se permite eliminar la cuenta 'admin' por defecto.")
+            else:
+                # Evitar dejar el sistema sin administradores
+                if users[del_user].get("role") == "admin":
+                    other_admin = any(u != del_user and info.get("role") == "admin" for u, info in users.items())
+                    if not other_admin:
+                        st.error("No puedes eliminar el último administrador del sistema.")
+                        return
+                # Eliminar
+                users.pop(del_user, None)
+                st.session_state.all_progress.pop(del_user, None)
+                st.success(f"Usuario '{del_user}' eliminado.")
+    else:
+        st.info("No hay usuarios para eliminar.")
+
+
 # ===========================
 # Pantalla Login
 # ===========================
@@ -1131,15 +1233,32 @@ def main_app():
     else:
         page_level1(username)
 
+
+
 # ===========================
 # Entry
 # ===========================
-def main():
-    init_session()
-    if not st.session_state.authenticated:
-        login_screen()
-    else:
-        main_app()
+def main_app():
+    username = st.session_state.username
 
-if __name__ == "__main__":
-    main()
+    # Si hay celebración activa, muéstrala
+    if celebration_screen():
+        return
+
+    current = sidebar_nav(username)
+
+    if current.startswith("Nivel 1"):
+        page_level1(username)
+    elif current.startswith("Nivel 2"):
+        page_level2(username)
+    elif current.startswith("Nivel 3"):
+        page_level3(username)
+    elif current.startswith("Nivel 4"):
+        page_level4(username)
+    elif current == "Encuesta de satisfacción":
+        page_survey()
+    elif current == "⚙️ Administrador de Usuarios":   # ← NUEVO
+        admin_page()
+    else:
+        page_level1(username)
+
