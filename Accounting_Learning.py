@@ -433,14 +433,17 @@ def do_login():
     if not user or not pwd:
         st.session_state.login_error = "Por favor, ingresa usuario y contraseña."
         return
-    if check_credentials(user, pwd):
+
+    users_col = st.session_state.get("users_col")
+    doc = verify_credentials(users_col, user, pwd)
+
+    if doc:
         st.session_state.authenticated = True
-        st.session_state.username      = user
-        st.session_state.login_error   = ""
-        if user not in st.session_state.all_progress:
-            st.session_state.all_progress[user] = default_progress()
+        st.session_state.username = user
+        st.session_state.login_error = ""
     else:
         st.session_state.login_error = "Credenciales incorrectas."
+
 
 def logout():
     st.session_state.authenticated = False
@@ -461,44 +464,25 @@ def save_progress(username, level_key, passed: bool, score=None):
 # ===========================
 # Sidebar navegación por nivel (con opción Admin solo para admin)
 # ===========================
+dADMIN_OPTION = "⚙️ Administrador de Usuarios"
+
 def sidebar_nav(username):
-    prog = get_progress(username)
-    st.sidebar.title("Niveles")
+    # ...
+    # Obtén el rol desde Mongo
+    users_col = st.session_state["users_col"]
+    doc = users_col.find_one({"username": username}, {"role": 1, "_id": 0}) or {}
+    current_user_role = doc.get("role", "user")
 
     options = ["Nivel 1: Introducción a Inventarios"]
-    if prog["level1"]["passed"]:
-        options.append("Nivel 2: Métodos (PP/PEPS/UEPS)")
-    if prog["level2"]["passed"]:
-        options.append("Nivel 3: Devoluciones")
-    if prog["level3"]["passed"]:
-        options.append("Nivel 4: Estado de Resultados")
+    # ... (añadir los otros niveles según tu lógica)
+    # encuesta si aplica...
 
-    if prog.get("survey_unlocked"):
-        options.append("Encuesta de satisfacción")
-
-    # Opción Admin solo para rol admin
-    current_user_role = st.session_state.users.get(username, {}).get("role", "user")
     if current_user_role == "admin":
         options.append(ADMIN_OPTION)
 
-    # Limpia selección inválida si quedó colgada
-    if "sidebar_level_select" in st.session_state and st.session_state.sidebar_level_select not in options:
-        del st.session_state["sidebar_level_select"]
-
     sel = st.sidebar.radio("Ir a:", options, key="sidebar_level_select")
-
-    st.sidebar.markdown("---")
-    def badge(ok): return "✅" if ok else "🔒"
-    st.sidebar.caption("Progreso:")
-    st.sidebar.write(f"{badge(prog['level1']['passed'])} Nivel 1")
-    st.sidebar.write(f"{badge(prog['level2']['passed'])} Nivel 2")
-    st.sidebar.write(f"{badge(prog['level3']['passed'])} Nivel 3")
-    st.sidebar.write(f"{badge(prog['level4']['passed'])} Nivel 4")
-    st.sidebar.markdown("---")
-
-    st.sidebar.button("Cerrar Sesión", on_click=logout, key="logout_btn")
+    # ...
     return sel
-
 
 
 # ===========================
@@ -1095,19 +1079,17 @@ def page_survey():
 
 
 # ===========================
-# Módulo: Administrador de Usuarios (en memoria)
+# Módulo: Administrador de Usuarios (en memoria) con Estadísticas
 # ===========================
 def admin_page():
     st.title("⚙️ Administrador de Usuarios")
 
-    users = st.session_state.users  # dict: username -> {"password": "...", "role": "admin/user"}
+    users_col = st.session_state["users_col"]
+    progress_col = st.session_state["progress_col"]
 
     # ---- Tabla de usuarios ----
     st.subheader("Usuarios actuales")
-    data = [
-        {"Usuario": u, "Rol": info.get("role", "user")}
-        for u, info in users.items()
-    ]
+    data = list(users_col.find({}, {"_id": 0, "username": 1, "role": 1, "created_at": 1}))
     st.dataframe(data, use_container_width=True)
 
     st.markdown("---")
@@ -1121,48 +1103,43 @@ def admin_page():
         submitted = st.form_submit_button("➕ Crear usuario")
 
         if submitted:
-            # Validaciones simples
             if not new_user or len(new_user) < 3 or " " in new_user:
                 st.error("Usuario inválido. Debe tener al menos 3 caracteres y sin espacios.")
             elif not new_pass or len(new_pass) < 4:
                 st.error("Contraseña demasiado corta (mínimo 4).")
-            elif new_user in users:
+            elif users_col.find_one({"username": new_user}):
                 st.error("El usuario ya existe.")
             else:
-                users[new_user] = {"password": new_pass, "role": new_role}
-                # Inicializa progreso si no existe
-                if new_user not in st.session_state.all_progress:
-                    st.session_state.all_progress[new_user] = default_progress()
+                create_user(users_col, progress_col, new_user, new_pass, new_role)
                 st.success(f"Usuario '{new_user}' creado como {new_role}.")
 
     st.markdown("---")
 
     # ---- Editar usuario ----
     st.subheader("Editar usuario")
-    if users:
-        edit_user = st.selectbox("Selecciona el usuario a editar", sorted(users.keys()), key="admin_edit_select")
+    usernames = [u["username"] for u in users_col.find({}, {"username": 1, "_id": 0}).sort("username", 1)]
+    if usernames:
+        edit_user = st.selectbox("Selecciona el usuario a editar", usernames, key="admin_edit_select")
         if edit_user:
-            curr_role = users[edit_user].get("role", "user")
+            # Obtener rol actual
+            curr = users_col.find_one({"username": edit_user}, {"role": 1, "_id": 0}) or {}
+            curr_role = curr.get("role", "user")
             with st.form("admin_edit_user"):
-                new_pass_opt = st.text_input("Nueva contraseña (opcional: dejar vacío para no cambiar)", type="password")
+                new_pass_opt = st.text_input("Nueva contraseña (opcional: vacío = no cambiar)", type="password")
                 new_role_opt = st.selectbox("Nuevo rol", ["user", "admin"], index=0 if curr_role == "user" else 1)
                 submit_edit = st.form_submit_button("✏️ Guardar cambios")
+
                 if submit_edit:
-                    # Evitar dejarte sin admin si editas el único admin
-                    if users[edit_user]["role"] == "admin" and new_role_opt == "user":
-                        # ¿Queda al menos otro admin?
-                        other_admin = any(u != edit_user and info.get("role") == "admin" for u, info in users.items())
+                    # Evitar quitar/eliminar el último admin
+                    if curr_role == "admin" and new_role_opt == "user":
+                        other_admin = users_col.count_documents({"username": {"$ne": edit_user}, "role": "admin"}) > 0
                         if not other_admin:
                             st.error("No puedes quitar el último administrador del sistema.")
                         else:
-                            users[edit_user]["role"] = new_role_opt
-                            if new_pass_opt:
-                                users[edit_user]["password"] = new_pass_opt
+                            update_user(users_col, edit_user, new_pass_opt or None, new_role_opt)
                             st.success(f"Usuario '{edit_user}' actualizado.")
                     else:
-                        users[edit_user]["role"] = new_role_opt
-                        if new_pass_opt:
-                            users[edit_user]["password"] = new_pass_opt
+                        update_user(users_col, edit_user, new_pass_opt or None, new_role_opt)
                         st.success(f"Usuario '{edit_user}' actualizado.")
     else:
         st.info("No hay usuarios para editar.")
@@ -1171,26 +1148,98 @@ def admin_page():
 
     # ---- Eliminar usuario ----
     st.subheader("Eliminar usuario")
-    if users:
-        del_user = st.selectbox("Selecciona el usuario a eliminar", sorted(users.keys()), key="admin_del_select")
+    usernames = [u["username"] for u in users_col.find({}, {"username": 1, "_id": 0}).sort("username", 1)]
+    if usernames:
+        del_user = st.selectbox("Selecciona el usuario a eliminar", usernames, key="admin_del_select")
         if st.button("🗑️ Eliminar usuario seleccionado"):
+            # Reglas de seguridad
             if del_user == st.session_state.username:
                 st.error("No puedes eliminar tu propia cuenta en esta vista.")
             elif del_user == "admin":
                 st.error("Por seguridad no se permite eliminar la cuenta 'admin' por defecto.")
             else:
-                # Evitar dejar el sistema sin administradores
-                if users[del_user].get("role") == "admin":
-                    other_admin = any(u != del_user and info.get("role") == "admin" for u, info in users.items())
+                # Evitar borrar el último admin
+                doc = users_col.find_one({"username": del_user}, {"role": 1, "_id": 0})
+                if doc and doc.get("role") == "admin":
+                    other_admin = users_col.count_documents({"username": {"$ne": del_user}, "role": "admin"}) > 0
                     if not other_admin:
                         st.error("No puedes eliminar el último administrador del sistema.")
                         return
-                # Eliminar
-                users.pop(del_user, None)
-                st.session_state.all_progress.pop(del_user, None)
+                delete_user(users_col, progress_col, del_user)
                 st.success(f"Usuario '{del_user}' eliminado.")
     else:
         st.info("No hay usuarios para eliminar.")
+
+
+    # --------------------------
+    # TAB 2: Estadísticas
+    # --------------------------
+    with tab_stats:
+        st.subheader("Resumen general")
+
+        total_users = len(users)
+        admins = sum(1 for u in users.values() if u.get("role") == "admin")
+        regulars = total_users - admins
+
+        colA, colB, colC = st.columns(3)
+        colA.metric("Usuarios totales", total_users)
+        colB.metric("Administradores", admins)
+        colC.metric("Usuarios estándar", regulars)
+
+        st.markdown("---")
+        st.subheader("Progreso por nivel")
+
+        # Cuenta aprobados por nivel
+        levels = ["level1", "level2", "level3", "level4"]
+        nombres = {
+            "level1": "Nivel 1",
+            "level2": "Nivel 2",
+            "level3": "Nivel 3",
+            "level4": "Nivel 4",
+        }
+
+        passed_counts = {lv: 0 for lv in levels}
+        attempts_counts = {lv: 0 for lv in levels}
+
+        for uname, prog in all_prog.items():
+            for lv in levels:
+                if lv in prog and prog[lv]["score"] is not None:
+                    attempts_counts[lv] += 1
+                if lv in prog and prog[lv]["passed"]:
+                    passed_counts[lv] += 1
+
+        cols = st.columns(4)
+        for i, lv in enumerate(levels):
+            total_try = attempts_counts[lv]
+            passed = passed_counts[lv]
+            rate = (passed / total_users * 100) if total_users else 0.0
+            cols[i].metric(nombres[lv], f"{passed}/{total_users}", f"{rate:.0f}% aprobaron")
+
+        # Pequeña tabla de últimos logros
+        st.markdown("---")
+        st.subheader("Últimos logros (fecha y puntaje)")
+        rows = []
+        for uname, prog in all_prog.items():
+            for lv in levels:
+                item = prog.get(lv, {})
+                if item.get("date"):
+                    rows.append({
+                        "Usuario": uname,
+                        "Nivel": nombres[lv],
+                        "Aprobado": "Sí" if item.get("passed") else "No",
+                        "Puntaje": item.get("score"),
+                        "Fecha": item.get("date").strftime("%Y-%m-%d %H:%M") if isinstance(item.get("date"), datetime) else ""
+                    })
+        # Ordenar por fecha desc
+        rows.sort(key=lambda r: r["Fecha"], reverse=True)
+
+        if rows:
+            st.dataframe(rows, use_container_width=True)
+        else:
+            st.info("Aún no hay registros de aprobaciones.")
+
+        st.markdown("---")
+        st.caption("Estas estadísticas usan los datos en memoria. Al conectar MongoDB, la UI seguirá igual; solo cambiaremos a leer desde la base de datos.")
 
 
 # ===========================
@@ -1221,6 +1270,8 @@ def main_app():
 
     if current.startswith("Nivel 1"):
         page_level1(username)
+    elif current == ADMIN_OPTION:
+        admin_page()
     elif current.startswith("Nivel 2"):
         page_level2(username)
     elif current.startswith("Nivel 3"):
@@ -1244,10 +1295,18 @@ def main_app():
 # ===========================
 # Entry
 # ===========================
+from repo import repo_init, verify_credentials
+
 def main():
-    init_session()
-    if not st.session_state.authenticated:
-        login_screen()
+    # Inicializa conexión y colecciones
+    db, users_col, progress_col = repo_init()
+    # Guárdalas en session_state para usarlas en otros módulos/páginas
+    st.session_state["users_col"] = users_col
+    st.session_state["progress_col"] = progress_col
+
+    # ... resto de tu flujo:
+    if not st.session_state.get("authenticated"):
+        login_screen()  # ver 3.2
     else:
         main_app()
 
