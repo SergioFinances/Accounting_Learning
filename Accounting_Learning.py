@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 # =========================================================
-#   Herramienta Contable - Inventarios Gamificados (con Mongo)
+#   Herramienta Contable - Inventarios Gamificados (con Mongo + Fallback Data API)
 #   Niveles por pestaña (desbloqueo progresivo)
 #   Pantalla de celebración aparte (confeti + globos + botón)
 #   IA DeepSeek vía OpenRouter para feedback
 #   Admin con CRUD desde MongoDB (users)
-#   Fecha: 2025-10-05
+#   Fecha: 2025-10-07 (fallback Atlas Data API)
 # =========================================================
 
 import os
+import ssl
 import random
-from datetime import datetime
-
 from datetime import datetime, timezone
-
 
 import numpy as np
 import streamlit as st
@@ -227,7 +225,7 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
 
       const colors = ['#ff6b6b','#ffd93d','#6BCB77','#4D96FF','#845EC2','#FF9671','#FFC75F'];
       const rand = (a,b)=>a+Math.random()*(b-a);
-      const pick = (arr)=>arr[Math.floor(Math.random()*arr.length)];
+      const pick = (arr)=>Math.floor(Math.random()*arr.length);
 
       const pieces = [];
       const N = 180;
@@ -235,48 +233,17 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
         pieces.push({{
           type: Math.random()<0.4 ? 'tri' : 'rect',
           x: Math.random()*canvas.width,
-          y: rand(-canvas.height, 0),
-          w: rand(6, 12),
-          h: rand(8, 18),
-          r: rand(0, Math.PI*2),
-          vr: rand(-0.1, 0.1),
-          vx: rand(-0.6, 0.6),
-          vy: rand(1.8, 3.2),
-          color: pick(colors),
-          alpha: rand(0.85, 1)
+          y: (Math.random()*-canvas.height),
+          w: 6 + Math.random()*6,
+          h: 8 + Math.random()*10,
+          r: Math.random()*Math.PI*2,
+          vr: (Math.random()-0.5)*0.2,
+          vx: (Math.random()-0.5)*1.2,
+          vy: 1.8 + Math.random()*1.4,
+          color: ['#ff6b6b','#ffd93d','#6BCB77','#4D96FF','#845EC2','#FF9671','#FFC75F'][pick(['a','b','c','d','e','f','g'])],
+          alpha: 0.85 + Math.random()*0.15
         }});
       }}
-
-      const balloons = [];
-      for (let i=0;i<6;i++) {{
-        balloons.push({{
-          x: Math.random()*canvas.width,
-          y: canvas.height + rand(20, 120),
-          r: rand(14, 22),
-          vy: rand(0.4, 0.8),
-          color: pick(colors)
-        }});
-      }}
-
-      function burst(x, y, count=28) {{
-        for (let i=0;i<count;i++) {{
-          pieces.push({{
-            type: Math.random()<0.5 ? 'tri' : 'rect',
-            x, y,
-            w: rand(5, 10),
-            h: rand(6, 14),
-            r: rand(0, Math.PI*2),
-            vr: rand(-0.2, 0.2),
-            vx: rand(-3, 3),
-            vy: rand(-3, 1),
-            color: pick(colors),
-            alpha: 1
-          }});
-        }}
-      }}
-      burst(canvas.width*0.5, canvas.height*0.3);
-      burst(canvas.width*0.2, canvas.height*0.2);
-      burst(canvas.width*0.8, canvas.height*0.25);
 
       const start = performance.now();
       (function draw(now){{
@@ -287,23 +254,15 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
           p.x += p.vx + Math.sin(p.y*0.02)*0.2;
           p.y += p.vy;
           p.r += p.vr;
-
           if (p.y > canvas.height + 20) {{
             p.y = -20;
             p.x = Math.random()*canvas.width;
-            p.vx = rand(-0.6, 0.6);
-            p.vy = rand(1.8, 3.2);
-            p.r = rand(0, Math.PI*2);
-            p.color = pick(colors);
-            p.alpha = rand(0.85, 1);
           }}
-
           ctx.save();
           ctx.globalAlpha = p.alpha;
           ctx.translate(p.x, p.y);
           ctx.rotate(p.r);
           ctx.fillStyle = p.color;
-
           if (p.type === 'rect') {{
             ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
           }} else {{
@@ -315,25 +274,6 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
             ctx.fill();
           }}
           ctx.restore();
-        }}
-
-        for (const b of balloons) {{
-          b.y -= b.vy;
-          if (b.y + b.r < -30) {{
-            b.y = canvas.height + rand(30, 120);
-            b.x = Math.random()*canvas.width;
-            b.vy = rand(0.4, 0.8);
-            b.color = pick(colors);
-          }}
-          ctx.beginPath();
-          ctx.fillStyle = b.color;
-          ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.strokeStyle = '#888';
-          ctx.moveTo(b.x, b.y + b.r);
-          ctx.lineTo(b.x, b.y + b.r + 26);
-          ctx.stroke();
         }}
 
         if (elapsed < {duration_ms}) {{
@@ -355,10 +295,8 @@ def start_celebration(message_md: str, next_label: str, next_key_value: str):
 def celebration_screen():
     if not st.session_state.get("celebrate_active"):
         return False
-
     st.markdown("# 🎉 ¡Lo lograste!")
     confetti_block(duration_ms=6500, height_px=360)
-
     msg = st.session_state.get("celebrate_message", "¡Felicidades!")
     st.markdown(
         f"""
@@ -368,7 +306,6 @@ def celebration_screen():
         """,
         unsafe_allow_html=True
     )
-
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         label = st.session_state.get("celebrate_next_label", "siguiente nivel")
@@ -386,8 +323,83 @@ def celebration_screen():
 # ===========================
 # --- REPO / MONGO HELPERS ---
 # ===========================
-from pymongo import MongoClient
+from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
+from pymongo.errors import ServerSelectionTimeoutError, ConfigurationError
+import certifi
+
+# ===== Data API Adapter (fallback HTTPS) =====
+import json
+import requests
+
+class DataApiCollectionAdapter:
+    """
+    Adapter mínimo para simular métodos de PyMongo Collection usando MongoDB Atlas Data API (HTTPS).
+    Implementa: find_one, find, insert_one, update_one, delete_one, count_documents.
+    """
+    def __init__(self, base_url, api_key, data_source, database, collection):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.data_source = data_source
+        self.database = database
+        self.collection = collection
+        self.headers = {
+            "Content-Type": "application/json",
+            "api-key": self.api_key
+        }
+
+    def _action(self, name, payload):
+        url = f"{self.base_url}/action/{name}"
+        body = {
+            "dataSource": self.data_source,
+            "database": self.database,
+            "collection": self.collection,
+            **payload
+        }
+        r = requests.post(url, headers=self.headers, data=json.dumps(body), timeout=20)
+        r.raise_for_status()
+        return r.json()
+
+    def find_one(self, filter: dict, projection: dict | None = None):
+        payload = {"filter": filter}
+        if projection:
+            payload["projection"] = projection
+        res = self._action("findOne", payload)
+        return res.get("document")
+
+    def find(self, filter: dict, projection: dict | None = None, sort: list | None = None, limit: int = 100):
+        payload = {"filter": filter, "limit": limit}
+        if projection:
+            payload["projection"] = projection
+        if sort:
+            payload["sort"] = dict(sort)
+        res = self._action("find", payload)
+        return res.get("documents", [])
+
+    def insert_one(self, document: dict):
+        res = self._action("insertOne", {"document": document})
+        return res
+
+    def update_one(self, filter: dict, update: dict):
+        res = self._action("updateOne", {"filter": filter, "update": {"$set": update}})
+        return res
+
+    def delete_one(self, filter: dict):
+        res = self._action("deleteOne", {"filter": filter})
+        return res
+
+    def count_documents(self, filter: dict):
+        res = self._action("countDocuments", {"filter": filter})
+        return res.get("count", 0)
+
+class RepoHandle:
+    """
+    Mantiene referencias users_col y progress_col ya sea de PyMongo o del Adapter Data API.
+    """
+    def __init__(self, users_col, progress_col, backend: str):
+        self.users_col = users_col
+        self.progress_col = progress_col
+        self.backend = backend  # 'pymongo' o 'data_api'
 
 # Hashing: preferimos passlib[bcrypt]; si no está, caemos a SHA256 (uso educativo)
 try:
@@ -408,94 +420,115 @@ except Exception:
     def verify_password(p: str, h: str) -> bool:
         return hash_password(p) == h
 
-def repo_init():
-    """
-    Crea el cliente Mongo y retorna (db, users_col, progress_col).
-    Lee URI desde st.secrets['mongodb']['uri'] o env MONGODB_URI.
-    Garantiza un admin inicial.
-    """
-    uri = None
-    try:
-        uri = st.secrets["mongodb"]["uri"]
-    except Exception:
-        uri = os.getenv("MONGODB_URI")
-
-    if not uri:
-        raise RuntimeError("No encuentro la URI de MongoDB. Define [mongodb].uri en secrets.toml o MONGODB_URI en el entorno.")
-
-    client = MongoClient(uri, server_api=ServerApi('1'))
-    # ping
-    client.admin.command('ping')
-
-    # DB por defecto (si la URI no especifica nombre, usamos 'accounting_app')
-    db_name = "accounting_app"
-    db = client[db_name]
-
-    users_col = db["users"]
-    progress_col = db["progress"]  # para futuro; hoy no lo usamos a fondo
-
-    # Admin inicial
-    admin_user = None
-    admin_pass = None
-    try:
-        admin_user = st.secrets["admin"]["username"]
-        admin_pass = st.secrets["admin"]["password"]
-    except Exception:
-        admin_user = "admin"
-        admin_pass = "AdminSeguro#2025"
-
-    if users_col.count_documents({"username": admin_user}) == 0:
-        users_col.insert_one({
-            "username": admin_user,
-            "password_hash": hash_password(admin_pass),
-            "role": "admin",
-            "created_at": datetime.now(timezone.utc)
-        })
-
-    # índice por username
-    try:
-        users_col.create_index("username", unique=True)
-    except Exception:
-        pass
-
-    return db, users_col, progress_col
-
 from passlib.context import CryptContext
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+def _mk_client(uri: str, insecure: bool = False) -> MongoClient:
+    """
+    Crea un cliente MongoDB con parámetros consistentes.
+    insecure=True activa tlsAllowInvalidCertificates (fallback).
+    """
+    common_kwargs = {
+        "server_api": ServerApi('1'),
+        "retryWrites": True,
+        "connectTimeoutMS": 20000,
+        "socketTimeoutMS": 20000,
+        "appname": "AccountingLearningStreamlit",
+    }
+    tls_kwargs = {"tls": True, "tlsCAFile": certifi.where()}
+    if insecure:
+        tls_kwargs.update({"tlsAllowInvalidCertificates": True})
+    return MongoClient(uri, **common_kwargs, **tls_kwargs)
+
+def repo_init():
+    """
+    1) Intenta PyMongo (driver). Si funciona -> backend 'pymongo'.
+    2) Si falla por TLS/selección de servidor -> Fallback Data API (HTTPS) -> backend 'data_api'.
+    Requiere vars Data API: DATA_API_URL, DATA_API_KEY, MONGODB_DATA_SOURCE.
+    """
+    # ---- 1) Intento con driver ----
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        # como backup, intenta secrets
+        try:
+            uri = st.secrets["mongodb"]["uri"]
+        except Exception:
+            uri = None
+
+    driver_error = None
+    if uri:
+        try:
+            client = _mk_client(uri, insecure=(os.getenv("MONGODB_TLS_INSECURE","")=="1"))
+            db = client["accounting_app"]
+            users_col = db["users"]
+            progress_col = db["progress"]
+            client.admin.command("ping")
+            return RepoHandle(users_col, progress_col, backend="pymongo")
+        except (ssl.SSLError, ServerSelectionTimeoutError) as e:
+            driver_error = e  # continuar a Data API
+        except Exception as e:
+            driver_error = e  # continuar a Data API
+
+    # ---- 2) Fallback Data API ----
+    data_api_url = os.getenv("DATA_API_URL")  # p.ej: https://us-east-1.aws.data.mongodb-api.com/app/<APP_ID>/endpoint/data/v1
+    data_api_key = os.getenv("DATA_API_KEY")
+    data_source  = os.getenv("MONGODB_DATA_SOURCE")  # p.ej: Cluster0
+    database     = os.getenv("MONGODB_DB", "accounting_app")
+
+    if not all([data_api_url, data_api_key, data_source]):
+        missing = []
+        if not data_api_url: missing.append("DATA_API_URL")
+        if not data_api_key: missing.append("DATA_API_KEY")
+        if not data_source:  missing.append("MONGODB_DATA_SOURCE")
+        raise RuntimeError(
+            "Error conectando a MongoDB.\n\n"
+            f"Detalles driver: {driver_error}\n\n"
+            "No fue posible usar el driver. Para el fallback HTTPS (Atlas Data API) faltan variables: "
+            + ", ".join(missing)
+        )
+
+    users_adapter    = DataApiCollectionAdapter(data_api_url, data_api_key, data_source, database, "users")
+    progress_adapter = DataApiCollectionAdapter(data_api_url, data_api_key, data_source, database, "progress")
+
+    # Prueba rápida de reachability: countDocuments vacío
+    try:
+        _ = users_adapter.count_documents({})
+    except Exception as e:
+        raise RuntimeError(
+            "No fue posible conectarse mediante Data API (HTTPS). "
+            f"Revisa DATA_API_URL/DATA_API_KEY/MONGODB_DATA_SOURCE. Detalle: {e}"
+        )
+
+    st.warning("Usando **Atlas Data API (HTTPS)** como respaldo. No se usan sockets TLS al puerto 27017.")
+    return RepoHandle(users_adapter, progress_adapter, backend="data_api")
+
 def verify_credentials(users_col, username: str, password: str):
-    # 🔧 NO usar "if not users_col"
     if users_col is None:
         st.error("Colección de usuarios no inicializada.")
         return None
-
+    # Data API adapter y PyMongo comparten interfaz usada aquí:
     doc = users_col.find_one({"username": username})
     if not doc:
         return None
-
     password_hash = doc.get("password_hash")
     try:
         if password_hash and pwd_ctx.verify(password, password_hash):
             return doc
     except Exception:
-        # Si hubiera hashes antiguos o formato inesperado
         return None
     return None
-
 
 def create_user(users_col, progress_col, username: str, password: str, role: str = "user"):
     users_col.insert_one({
         "username": username.strip().lower(),
         "password_hash": hash_password(password),
         "role": role,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": datetime.now(timezone.utc).isoformat()
     })
-    # opcional: crear doc de progreso base
-    progress_col.update_one(
-        {"username": username.strip().lower()},
-        {"$setOnInsert": {"levels": {}}},
-        upsert=True
-    )
+    # crear doc de progreso base si no existe
+    existing = progress_col.find_one({"username": username.strip().lower()})
+    if not existing:
+        progress_col.insert_one({"username": username.strip().lower(), "levels": {}})
 
 def update_user(users_col, username: str, new_password: str | None, new_role: str | None):
     update = {}
@@ -504,11 +537,13 @@ def update_user(users_col, username: str, new_password: str | None, new_role: st
     if new_role:
         update["role"] = new_role
     if update:
-        users_col.update_one({"username": username}, {"$set": update})
+        # PyMongo: update_one({"username":..}, {"$set": update})
+        # Data API adapter hace lo mismo internamente
+        users_col.update_one({"username": username}, update)
 
 def delete_user(users_col, progress_col, username: str):
     users_col.delete_one({"username": username})
-    progress_col.delete_many({"username": username})
+    progress_col.delete_one({"username": username})
 
 # ===========================
 # Estado de sesión mínimo
@@ -549,8 +584,6 @@ def logout():
 def sidebar_nav(username):
     st.sidebar.title("Niveles")
 
-    # En esta versión mostramos todas las páginas de ejemplo;
-    # si quieres bloqueo progresivo, guarda/lee progreso desde Mongo en el futuro.
     options = [
         "Nivel 1: Introducción a Inventarios",
         "Nivel 2: Métodos (PP/PEPS/UEPS)",
@@ -563,8 +596,12 @@ def sidebar_nav(username):
     current_user_role = "user"
     users_col = st.session_state.get("users_col")
     if users_col and username:
-        doc = users_col.find_one({"username": username}, {"role": 1, "_id": 0}) or {}
-        current_user_role = doc.get("role", "user")
+        doc = users_col.find_one({"username": username}, {"role": 1, "_id": 0}) if hasattr(users_col, "find_one") else None
+        if not doc and hasattr(users_col, "find"):
+            # Adapter find con proyección
+            docs = users_col.find({"username": username}, {"role": 1, "_id": 0}, limit=1)
+            doc = docs[0] if docs else {}
+        current_user_role = (doc or {}).get("role", "user")
 
     if current_user_role == "admin":
         options.append(ADMIN_OPTION)
@@ -1149,13 +1186,20 @@ def admin_page():
     users_col = st.session_state.get("users_col")
     progress_col = st.session_state.get("progress_col")
     if not users_col:
-        st.error("No hay conexión con MongoDB.")
+        st.error("No hay conexión con la base de datos.")
         return
 
     # ---- Tabla de usuarios ----
     st.subheader("Usuarios actuales")
-    data = list(users_col.find({}, {"_id": 0, "username": 1, "role": 1, "created_at": 1}))
-    st.dataframe(data, use_container_width=True)
+    # Compatibilidad adapter/driver
+    rows = []
+    try:
+        # PyMongo: cursor .find
+        rows = list(users_col.find({}, {"_id": 0, "username": 1, "role": 1, "created_at": 1}))
+    except Exception:
+        # Adapter Data API
+        rows = users_col.find({}, {"_id": 0, "username": 1, "role": 1, "created_at": 1}, sort=[("username", 1)], limit=500)
+    st.dataframe(rows, use_container_width=True)
 
     st.markdown("---")
 
@@ -1172,17 +1216,24 @@ def admin_page():
                 st.error("Usuario inválido. Debe tener al menos 3 caracteres y sin espacios.")
             elif not new_pass or len(new_pass) < 4:
                 st.error("Contraseña demasiado corta (mínimo 4).")
-            elif users_col.find_one({"username": new_user}):
-                st.error("El usuario ya existe.")
             else:
-                create_user(users_col, progress_col, new_user, new_pass, new_role)
-                st.success(f"Usuario '{new_user}' creado como {new_role}.")
+                # evitar duplicados
+                exists = users_col.find_one({"username": new_user})
+                if exists:
+                    st.error("El usuario ya existe.")
+                else:
+                    create_user(users_col, progress_col, new_user, new_pass, new_role)
+                    st.success(f"Usuario '{new_user}' creado como {new_role}.")
 
     st.markdown("---")
 
     # ---- Editar usuario ----
     st.subheader("Editar usuario")
-    usernames = [u["username"] for u in users_col.find({}, {"username": 1, "_id": 0}).sort("username", 1)]
+    try:
+        usernames = [u["username"] for u in users_col.find({}, {"username": 1, "_id": 0})]
+    except Exception:
+        docs = users_col.find({}, {"username": 1, "_id": 0}, sort=[("username", 1)], limit=500)
+        usernames = [d["username"] for d in docs]
     if usernames:
         edit_user = st.selectbox("Selecciona el usuario a editar", usernames, key="admin_edit_select")
         if edit_user:
@@ -1195,13 +1246,13 @@ def admin_page():
 
                 if submit_edit:
                     # Evitar quitar el último admin
-                    if curr_role == "admin" and new_role_opt == "user":
-                        other_admin = users_col.count_documents({"username": {"$ne": edit_user}, "role": "admin"}) > 0
-                        if not other_admin:
-                            st.error("No puedes quitar el último administrador del sistema.")
-                        else:
-                            update_user(users_col, edit_user, new_pass_opt or None, new_role_opt)
-                            st.success(f"Usuario '{edit_user}' actualizado.")
+                    try:
+                        admin_count = users_col.count_documents({"role": "admin"})
+                    except Exception:
+                        # Adapter Data API
+                        admin_count = users_col.count_documents({"role": "admin"})
+                    if curr_role == "admin" and new_role_opt == "user" and admin_count <= 1:
+                        st.error("No puedes quitar el último administrador del sistema.")
                     else:
                         update_user(users_col, edit_user, new_pass_opt or None, new_role_opt)
                         st.success(f"Usuario '{edit_user}' actualizado.")
@@ -1212,23 +1263,29 @@ def admin_page():
 
     # ---- Eliminar usuario ----
     st.subheader("Eliminar usuario")
-    usernames = [u["username"] for u in users_col.find({}, {"username": 1, "_id": 0}).sort("username", 1)]
+    try:
+        usernames = [u["username"] for u in users_col.find({}, {"username": 1, "_id": 0})]
+    except Exception:
+        docs = users_col.find({}, {"username": 1, "_id": 0}, sort=[("username", 1)], limit=500)
+        usernames = [d["username"] for d in docs]
     if usernames:
         del_user = st.selectbox("Selecciona el usuario a eliminar", usernames, key="admin_del_select")
         if st.button("🗑️ Eliminar usuario seleccionado"):
             if del_user == st.session_state.username:
                 st.error("No puedes eliminar tu propia cuenta en esta vista.")
-            elif del_user == "admin":
-                st.error("Por seguridad no se permite eliminar la cuenta 'admin' por defecto.")
-            else:
-                doc = users_col.find_one({"username": del_user}, {"role": 1, "_id": 0})
-                if doc and doc.get("role") == "admin":
-                    other_admin = users_col.count_documents({"username": {"$ne": del_user}, "role": "admin"}) > 0
-                    if not other_admin:
-                        st.error("No puedes eliminar el último administrador del sistema.")
-                        return
-                delete_user(users_col, progress_col, del_user)
-                st.success(f"Usuario '{del_user}' eliminado.")
+                return
+            # proteger 'admin' si aplica
+            doc = users_col.find_one({"username": del_user}, {"role": 1, "_id": 0}) or {}
+            if doc.get("role") == "admin":
+                try:
+                    admin_count = users_col.count_documents({"role": "admin"})
+                except Exception:
+                    admin_count = users_col.count_documents({"role": "admin"})
+                if admin_count <= 1:
+                    st.error("No puedes eliminar el último administrador del sistema.")
+                    return
+            delete_user(users_col, progress_col, del_user)
+            st.success(f"Usuario '{del_user}' eliminado.")
     else:
         st.info("No hay usuarios para eliminar.")
 
@@ -1289,11 +1346,19 @@ def main():
 
     # Inicializa conexión y colecciones
     try:
-        db, users_col, progress_col = repo_init()
-        st.session_state["users_col"] = users_col
-        st.session_state["progress_col"] = progress_col
+        repo = repo_init()
+        # Normaliza en session_state
+        st.session_state["users_col"] = repo.users_col
+        st.session_state["progress_col"] = repo.progress_col
+        st.session_state["db_backend"] = repo.backend  # info útil
     except Exception as e:
-        st.error(f"Error conectando a MongoDB: {e}")
+        st.error(f"Error conectando a la base de datos.\n\nDetalles: {e}\n\n"
+                 "Si ves errores de TLS con el driver y no se habilita el fallback, "
+                 "asegúrate de definir las variables de Atlas Data API:\n"
+                 "• DATA_API_URL  (endpoint base /endpoint/data/v1)\n"
+                 "• DATA_API_KEY  (API Key de Data API)\n"
+                 "• MONGODB_DATA_SOURCE (ej. Cluster0)\n"
+                 "• MONGODB_DB=accounting_app (opcional, por defecto)")
         st.stop()
 
     # Flujo principal
