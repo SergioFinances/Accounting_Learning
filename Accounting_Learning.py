@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 # =========================================================
 #   Herramienta Contable - Inventarios Gamificados (con Mongo)
-#   Niveles por pestaña (desbloqueo progresivo)
-#   Pantalla de celebración aparte (confeti + globos + botón)
-#   IA DeepSeek vía OpenRouter para feedback
-#   Admin con CRUD desde MongoDB (users) + Estadísticas (attempts)
-#   Fecha: 2025-10-05
+#   Optimizada: cache de Mongo, formularios (sin reruns), IA opcional,
+#   escenarios aleatorios estables, confeti/TTS livianos,
+#   Admin con CRUD + Estadísticas (aggregations)
+#   Fecha: 2025-10-08
 # =========================================================
 
 import os
@@ -101,7 +100,7 @@ def peso(v):
 def speak_block(texto: str, key_prefix: str, lang_hint="es"):
     """
     Control TTS del navegador con selector de voz + velocidad + tono.
-    (Web Speech API del navegador)
+    (Web Speech API del navegador) — Montaje perezoso vía expander.
     """
     escaped = (
         texto.replace("\\", "\\\\")
@@ -191,11 +190,11 @@ def speak_block(texto: str, key_prefix: str, lang_hint="es"):
 SURVEY_URL = os.getenv("SURVEY_URL", "https://forms.gle/pSxXp78LR3gqRzeR6")
 
 # ===========================
-# Pantalla de Celebración (aparte)
+# Pantalla de Celebración (aparte) — liviana
 # ===========================
-def confetti_block(duration_ms: int = 6000, height_px: int = 340):
+def confetti_block(duration_ms: int = 3500, height_px: int = 320):
     """
-    Confeti y 'globos' simples 100% inline (sin CDNs).
+    Confeti y 'globos' simples 100% inline (sin CDNs) — parámetros reducidos.
     """
     try:
         st.balloons()
@@ -229,7 +228,7 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
       const pick = (arr)=>arr[Math.floor(Math.random()*arr.length)];
 
       const pieces = [];
-      const N = 180;
+      const N = 90;  // antes 180
       for (let i=0;i<N;i++) {{
         pieces.push({{
           type: Math.random()<0.4 ? 'tri' : 'rect',
@@ -247,7 +246,7 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
       }}
 
       const balloons = [];
-      for (let i=0;i<6;i++) {{
+      for (let i=0;i<4;i++) {{
         balloons.push({{
           x: Math.random()*canvas.width,
           y: canvas.height + rand(20, 120),
@@ -257,7 +256,7 @@ def confetti_block(duration_ms: int = 6000, height_px: int = 340):
         }});
       }}
 
-      function burst(x, y, count=28) {{
+      function burst(x, y, count=22) {{
         for (let i=0;i<count;i++) {{
           pieces.push({{
             type: Math.random()<0.5 ? 'tri' : 'rect',
@@ -356,7 +355,7 @@ def celebration_screen():
         return False
 
     st.markdown("# 🎉 ¡Lo lograste!")
-    confetti_block(duration_ms=6500, height_px=360)
+    confetti_block(duration_ms=3500, height_px=320)
 
     msg = st.session_state.get("celebrate_message", "¡Felicidades!")
     st.markdown(
@@ -387,13 +386,14 @@ def celebration_screen():
 # ===========================
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
+from pymongo import WriteConcern
 import certifi
 import hashlib
 
 # Fuerza el bundle de certificados de certifi
 os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 
-# Hashing simple (evitamos passlib/bcrypt por error de backend en tu entorno)
+# Hashing simple
 def hash_password(p: str) -> str:
     return hashlib.sha256(("pepper123::" + p).encode("utf-8")).hexdigest()
 
@@ -418,47 +418,21 @@ def _connect_mongo(uri: str, insecure: bool = False):
         kwargs["tlsAllowInvalidCertificates"] = True
     return MongoClient(uri, **kwargs)
 
-def repo_init():
-    """
-    Crea el cliente Mongo y retorna (db, users_col, progress_col, attempts_col).
-    Lee URI desde st.secrets['mongodb']['uri'] o env MONGODB_URI.
-    Garantiza un admin inicial.
-    """
-    uri = None
-    try:
-        uri = st.secrets["mongodb"]["uri"]
-    except Exception:
-        uri = os.getenv("MONGODB_URI")
-
-    if not uri:
-        raise RuntimeError("No encuentro la URI de MongoDB. Define [mongodb].uri en secrets.toml o MONGODB_URI en el entorno.")
-
-    insecure_used = False
+# ---------- Versión cacheada de la conexión ----------
+@st.cache_resource(show_spinner=False)
+def repo_init_cached(uri: str, admin_user: str, admin_pass: str):
     try:
         client = _connect_mongo(uri, insecure=False)
         client.admin.command('ping')
-    except Exception as e1:
-        try:
-            client = _connect_mongo(uri, insecure=True)
-            client.admin.command('ping')
-            insecure_used = True
-        except Exception as e2:
-            raise RuntimeError(f"Fallo TLS seguro ({e1}) y fallback inseguro ({e2})")
-
-    db_name = "accounting_app"
-    db = client[db_name]
-
-    users_col = db["users"]
-    progress_col = db["progress"]
-    attempts_col = db["attempts"]  # ⬅️ NUEVO para estadísticas
-
-    # Admin inicial
-    try:
-        admin_user = st.secrets["admin"]["username"]
-        admin_pass = st.secrets["admin"]["password"]
     except Exception:
-        admin_user = "admin"
-        admin_pass = "AdminSeguro#2025"
+        client = _connect_mongo(uri, insecure=True)
+        client.admin.command('ping')
+
+    db = client["accounting_app"]
+    users_col    = db["users"]
+    progress_col = db["progress"]
+    # attempts con write concern w=0 para evitar bloqueo de UI
+    attempts_col = db.get_collection("attempts").with_options(write_concern=WriteConcern(w=0))
 
     if users_col.count_documents({"username": admin_user}) == 0:
         users_col.insert_one({
@@ -471,23 +445,33 @@ def repo_init():
     try:
         users_col.create_index("username", unique=True)
         progress_col.create_index("username", unique=True)
-    except Exception:
-        pass
-
-    # Índices útiles para attempts
-    try:
         attempts_col.create_index([("username", 1), ("level", 1), ("created_at", -1)])
     except Exception:
         pass
 
-    if insecure_used:
-        st.warning(
-            "Conexión a Mongo realizada en **modo TLS inseguro** (`tlsAllowInvalidCertificates=True`). "
-            "Usa esto solo para desarrollo.",
-            icon="⚠️"
-        )
-
     return db, users_col, progress_col, attempts_col
+
+def repo_init():
+    """
+    Crea el cliente Mongo cacheado y retorna (db, users_col, progress_col, attempts_col).
+    """
+    uri = None
+    try:
+        uri = st.secrets["mongodb"]["uri"]
+    except Exception:
+        uri = os.getenv("MONGODB_URI")
+
+    if not uri:
+        raise RuntimeError("No encuentro la URI de MongoDB. Define [mongodb].uri en secrets.toml o MONGODB_URI en el entorno.")
+
+    try:
+        admin_user = st.secrets["admin"]["username"]
+        admin_pass = st.secrets["admin"]["password"]
+    except Exception:
+        admin_user = "admin"
+        admin_pass = "AdminSeguro#2025"
+
+    return repo_init_cached(uri, admin_user, admin_pass)
 
 # --------- PROGRESO (Gamificación) ----------
 def _default_progress_doc(username: str) -> dict:
@@ -546,8 +530,11 @@ def record_attempt(username: str, level: int, score: int | None, passed: bool):
     passed: True/False
     """
     attempts_col = st.session_state.get("attempts_col")
-    if not attempts_col or not username:
+
+    # ⬅️ Importante: NO usar la colección en contexto booleano.
+    if attempts_col is None or not username:
         return
+
     try:
         attempts_col.insert_one({
             "username": username,
@@ -557,7 +544,9 @@ def record_attempt(username: str, level: int, score: int | None, passed: bool):
             "created_at": datetime.now(timezone.utc)
         })
     except Exception:
+        # No bloquear UI si falla el log
         pass
+
 
 # --------- USERS (CRUD) ----------
 def verify_credentials(users_col, username: str, password: str):
@@ -695,6 +684,40 @@ def sidebar_nav(username):
 
     return sel
 
+# ===========================
+# Helpers de escenarios aleatorios estables
+# ===========================
+def n1_new_case():
+    inv0 = random.randint(500, 4000)
+    compras = random.randint(800, 5000)
+    devol = random.randint(0, int(compras*0.3))
+    invf = random.randint(0, inv0 + compras - devol)
+    st.session_state.n1p_inv0 = float(inv0)
+    st.session_state.n1p_compras = float(compras)
+    st.session_state.n1p_devol = float(devol)
+    st.session_state.n1p_invf = float(invf)
+
+def n2_new_case():
+    st.session_state.n2_inv0_u  = random.randint(50, 150)
+    st.session_state.n2_inv0_pu = random.choice([10.0, 11.0, 12.0])
+    st.session_state.n2_comp_u  = random.randint(50, 200)
+    st.session_state.n2_comp_pu = random.choice([12.0, 13.0, 14.0])
+    st.session_state.n2_venta_u = random.randint(60, st.session_state.n2_inv0_u + st.session_state.n2_comp_u)
+
+def n3_new_case():
+    st.session_state.n3_inv0    = random.randint(500, 1500)
+    st.session_state.n3_prom0   = random.choice([15.0, 16.0, 17.0])
+    st.session_state.n3_comp    = random.randint(500, 2000)
+    st.session_state.n3_comp_pu = random.choice([17.0, 18.0, 19.0])
+    st.session_state.n3_dev_comp= random.randint(0, int(st.session_state.n3_comp*0.2))
+    st.session_state.n3_venta_u = random.randint(200, st.session_state.n3_inv0 + st.session_state.n3_comp)
+    st.session_state.n3_dev_v_u = random.randint(0, int(st.session_state.n3_venta_u*0.2))
+
+def n4_new_case():
+    st.session_state.n4_ventas   = random.randint(8000, 20000)
+    st.session_state.n4_dev_vtas = random.randint(0, 1200)
+    st.session_state.n4_cogs     = random.randint(4000, 12000)
+    st.session_state.n4_gastos   = random.randint(1000, 5000)
 
 # ===========================
 # NIVEL 1
@@ -721,7 +744,8 @@ def page_level1(username):
             "Al final miras qué queda dentro (InvF). **Lo que salió** para vender es el **COGS**."
         )
         st.write(teoria)
-        speak_block(teoria, key_prefix="teo-n1", lang_hint="es")
+        with st.expander("🔊 Escuchar explicación"):
+            speak_block(teoria, key_prefix="teo-n1", lang_hint="es")
 
         with st.expander("📌 Nota contable/NIIF"):
             st.markdown(
@@ -742,9 +766,13 @@ def page_level1(username):
 
         with colR:
             st.caption("Desglose y explicación")
-            st.write(f"**1) InvI + Compras** → {peso(inv0)} + {peso(compras)} = **{peso(inv0+compras)}**")
-            st.write(f"**2) − Devoluciones**  → {peso(inv0+compras)} − {peso(devol)} = **{peso(inv0+compras-devol)}**")
-            st.write(f"**3) − InvF**          → {peso(inv0+compras-devol)} − {peso(invf)} = **{peso(inv0+compras-devol-invf)}**")
+            st.markdown(
+                "\n".join([
+                    f"**1) InvI + Compras** → {peso(inv0)} + {peso(compras)} = **{peso(inv0+compras)}**",
+                    f"**2) − Devoluciones**  → {peso(inv0+compras)} − {peso(devol)} = **{peso(inv0+compras-devol)}**",
+                    f"**3) − InvF**          → {peso(inv0+compras-devol)} − {peso(invf)} = **{peso(inv0+compras-devol-invf)}**",
+                ])
+            )
             cogs = inv0 + compras - devol - invf
             st.success(f"**COGS (Costo de Ventas)** = {peso(cogs)}")
             st.caption("Interpretación: la ‘mochila de costo’ se llenó con InvI y Compras; devolviste parte (Devoluciones) "
@@ -754,32 +782,29 @@ def page_level1(username):
         st.write("**Mini reto**: explica qué pasaría con el COGS si **no hubiera devoluciones** y el **Inventario Final fuera muy pequeño**.")
         razonamiento = st.text_area("Tu razonamiento (opcional, la IA te comenta):", key="n1_ex_raz")
 
-        if st.button("💬 Comentar con IA (opcional)", key="n1_ex_fb"):
-            prompt = (
-                "Evalúa si el razonamiento es coherente con COGS = InvI + Compras - Devoluciones - InvF. "
-                f"Datos: InvI={inv0}, Compras={compras}, Devoluciones={devol}, InvF={invf}. "
-                f"Texto del estudiante: {razonamiento}"
-            )
-            fb = ia_feedback(prompt)
-            st.info(fb)
+        # IA opcional
+        ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n1_ex_ai", value=False)
+        if st.button("💬 Comentar", key="n1_ex_fb"):
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    prompt = (
+                        "Evalúa si el razonamiento es coherente con COGS = InvI + Compras - Devoluciones - InvF. "
+                        f"Datos: InvI={inv0}, Compras={compras}, Devol={devol}, InvF={invf}. "
+                        f"Texto del estudiante: {razonamiento}"
+                    )
+                    fb = ia_feedback(prompt)
+                with st.expander("💬 Feedback de la IA"):
+                    st.write(fb)
+            else:
+                st.info("Validación local: recuerda que si disminuye InvF, el COGS aumenta; y si no hay devoluciones, Compras no se reducen.")
 
-    # Práctica interactiva (IA)
+    # Práctica interactiva (IA) — escenarios estables
     with tabs[2]:
         st.subheader("Práctica interactiva · escenarios aleatorios")
-        st.caption("Completa el cálculo. Puedes generar otro escenario y validar con IA.")
-
-        def new_case():
-            inv0 = random.randint(500, 4000)
-            compras = random.randint(800, 5000)
-            devol = random.randint(0, int(compras*0.3))
-            invf = random.randint(0, inv0 + compras - devol)
-            st.session_state.n1p_inv0 = float(inv0)
-            st.session_state.n1p_compras = float(compras)
-            st.session_state.n1p_devol = float(devol)
-            st.session_state.n1p_invf = float(invf)
+        st.caption("Completa el cálculo. Puedes generar otro escenario y validar (IA opcional).")
 
         if "n1p_inv0" not in st.session_state:
-            new_case()
+            n1_new_case()
 
         cols = st.columns(4)
         with cols[0]:
@@ -791,12 +816,16 @@ def page_level1(username):
         with cols[3]:
             st.metric("Inv. Final", peso(st.session_state.n1p_invf))
 
-        st.button("🔄 Nuevo escenario", on_click=new_case, key="n1_practice_new")
+        st.button("🔄 Nuevo escenario", on_click=n1_new_case, key="n1_practice_new")
 
-        user_cogs = st.number_input("Tu COGS ($)", min_value=0.0, value=0.0, step=10.0, key="n1_practice_user_cogs")
-        user_comment = st.text_area("Justifica brevemente (opcional, la IA lo comenta mejor):", key="n1_practice_comment")
+        with st.form("n1_practice_form"):
+            user_cogs = st.number_input("Tu COGS ($)", min_value=0.0, value=0.0, step=10.0, key="n1_practice_user_cogs")
+            user_comment = st.text_area("Justifica brevemente (opcional):", key="n1_practice_comment")
+            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n1_practice_ai", value=False)
+            submitted = st.form_submit_button("✅ Validar práctica")
 
-        if st.button("✅ Validar práctica", key="n1_practice_validate"):
+        if submitted:
+            st.toast("✅ Respuesta recibida, validando...", icon="✅")
             inv0 = st.session_state.n1p_inv0
             compras = st.session_state.n1p_compras
             devol = st.session_state.n1p_devol
@@ -806,30 +835,37 @@ def page_level1(username):
                 st.success(f"¡Correcto! COGS = {peso(correct)}")
             else:
                 st.error(f"No coincide. El COGS esperado era {peso(correct)}")
-            prompt = (
-                f"Valida el cálculo del estudiante: COGS_est={user_cogs:.2f}. "
-                f"Datos: InvI={inv0:.2f}, Compras={compras:.2f}, Devol={devol:.2f}, InvF={invf:.2f}. "
-                f"COGS_correcto={correct:.2f}. Comentario del estudiante: {user_comment}"
-            )
-            fb = ia_feedback(prompt)
-            with st.expander("💬 Feedback de la IA"):
-                st.write(fb)
 
-    # Evaluación final
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    prompt = (
+                        f"Valida el cálculo del estudiante: COGS_est={user_cogs:.2f}. "
+                        f"Datos: InvI={inv0:.2f}, Compras={compras:.2f}, Devol={devol:.2f}, InvF={invf:.2f}. "
+                        f"COGS_correcto={correct:.2f}. Comentario del estudiante: {user_comment}"
+                    )
+                    fb = ia_feedback(prompt)
+                with st.expander("💬 Feedback de la IA"):
+                    st.write(fb)
+
+    # Evaluación final — en formulario (sin reruns por radio)
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 1")
         st.caption("Necesitas acertar **2 de 3** para aprobar y desbloquear el Nivel 2.")
 
-        q1 = st.radio("1) En sistema periódico, ¿cuándo conoces con certeza el COGS?",
-                      ["En cada venta", "Al cierre del período"], index=None, key="n1_eval_q1")
-        q2 = st.radio("2) ¿Cuál de estos **disminuye** el COGS en la fórmula periódica?",
-                      ["Devoluciones de compra", "Compras"], index=None, key="n1_eval_q2")
-        q3 = st.radio("3) Selecciona la fórmula correcta:",
-                      ["InvI + Compras + Devoluciones - InvF",
-                       "InvI + Compras - Devoluciones - InvF",
-                       "InvI - Compras + Devoluciones + InvF"], index=None, key="n1_eval_q3")
+        with st.form("n1_eval_form", clear_on_submit=False):
+            q1 = st.radio("1) En sistema periódico, ¿cuándo conoces con certeza el COGS?",
+                          ["En cada venta", "Al cierre del período"], index=None, key="n1_eval_q1")
+            q2 = st.radio("2) ¿Cuál de estos **disminuye** el COGS en la fórmula periódica?",
+                          ["Devoluciones de compra", "Compras"], index=None, key="n1_eval_q2")
+            q3 = st.radio("3) Selecciona la fórmula correcta:",
+                          ["InvI + Compras + Devoluciones - InvF",
+                           "InvI + Compras - Devoluciones - InvF",
+                           "InvI - Compras + Devoluciones + InvF"], index=None, key="n1_eval_q3")
+            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n1_eval_ai", value=False)
+            submitted = st.form_submit_button("🧪 Validar evaluación")
 
-        if st.button("🧪 Validar evaluación", key="n1_eval_btn"):
+        if submitted:
+            st.toast("✅ Respuesta recibida, validando...", icon="✅")
             correct = {
                 "n1_eval_q1": "Al cierre del período",
                 "n1_eval_q2": "Devoluciones de compra",
@@ -839,17 +875,19 @@ def page_level1(username):
             score = sum(1 for k,v in answers.items() if v == correct[k])
             passed = score >= 2
 
-            # ⬇️ Registro del intento
+            # Registro del intento (w=0, no bloquea)
             record_attempt(username, level=1, score=score, passed=passed)
 
-            prompt = (
-                f"Nivel 1 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
-                f"Aciertos: {score}/3. Escribe un feedback breve y amable (máx 6 líneas)."
-            )
-            fb = ia_feedback(prompt)
+            fb = None
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    fb = ia_feedback(
+                        f"Nivel 1 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
+                        f"Aciertos: {score}/3. Escribe un feedback breve y amable (máx 6 líneas)."
+                    )
 
             if passed:
-                # Guarda progreso en Mongo y preselecciona siguiente nivel
+                # Guarda progreso y navega
                 set_level_passed(st.session_state["progress_col"], username, "level1", score)
                 st.session_state["sidebar_next_select"] = "Nivel 2: Métodos (PP/PEPS/UEPS)"
                 start_celebration(
@@ -863,8 +901,9 @@ def page_level1(username):
                 )
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Repasa la teoría y vuelve a intentar.")
-                with st.expander("💬 Feedback de la IA"):
-                    st.write(fb)
+                if fb:
+                    with st.expander("💬 Feedback de la IA"):
+                        st.write(fb)
 
 # ===========================
 # NIVEL 2 (Métodos PP/PEPS/UEPS)
@@ -885,7 +924,8 @@ def page_level2(username):
             "- **PP** suaviza la volatilidad de precios."
         )
         st.write(theory)
-        speak_block(theory, key_prefix="teo-n2", lang_hint="es")
+        with st.expander("🔊 Escuchar explicación"):
+            speak_block(theory, key_prefix="teo-n2", lang_hint="es")
 
     with tabs[1]:
         st.subheader("Ejemplo de PP dinámico")
@@ -906,9 +946,13 @@ def page_level2(username):
             saldo_u = max(total_u - venta_u, 0)
             saldo_val = saldo_u * prom
 
-            st.write(f"**Costo Promedio** = ({peso(inv0_val)} + {peso(comp_val)}) / ({inv0_u} + {comp_u}) = **{peso(prom)}**/u")
-            st.write(f"**COGS** por venta de {venta_u} u = {venta_u} × {peso(prom)} = **{peso(cogs)}**")
-            st.success(f"**Saldo final**: {saldo_u} u × {peso(prom)} = **{peso(saldo_val)}**")
+            st.markdown(
+                "\n".join([
+                    f"**Costo Promedio** = ({peso(inv0_val)} + {peso(comp_val)}) / ({inv0_u} + {comp_u}) = **{peso(prom)}**/u",
+                    f"**COGS** por venta de {venta_u} u = {venta_u} × {peso(prom)} = **{peso(cogs)}**",
+                    f"**Saldo final**: {saldo_u} u × {peso(prom)} = **{peso(saldo_val)}**"
+                ])
+            )
 
         st.markdown("---")
         st.subheader("Ejemplo FIFO vs LIFO (comparación rápida)")
@@ -927,24 +971,33 @@ def page_level2(username):
             remaining -= use
             if remaining <= 0: break
 
-        st.write(f"Venta: {venta} u. Inventario: 100u @10; 50u @12")
-        st.info(f"**FIFO COGS** ≈ {peso(fifo_cogs)} · **LIFO COGS** ≈ {peso(lifo_cogs)}  → (LIFO mayor COGS con precios al alza)")
+        st.info(f"Venta: {venta} u. Inventario: 100u @10; 50u @12")
+        st.success(f"**FIFO COGS** ≈ {peso(fifo_cogs)} · **LIFO COGS** ≈ {peso(lifo_cogs)}  → (LIFO mayor COGS con precios al alza)")
 
     with tabs[2]:
         st.subheader("Práctica: elige el método correcto")
         st.caption("Completa el cálculo según el método seleccionado.")
 
-        metodo = st.selectbox("Método", ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"], key="n2_pract_met")
-        inv0_u = random.randint(50, 150)
-        inv0_pu = random.choice([10.0, 11.0, 12.0])
-        comp_u = random.randint(50, 200)
-        comp_pu = random.choice([12.0, 13.0, 14.0])
-        venta_u = random.randint(60, inv0_u + comp_u)
+        if "n2_inv0_u" not in st.session_state:
+            n2_new_case()
+        st.button("🔄 Nuevo escenario", on_click=n2_new_case, key="n2_new_case_btn")
+
+        inv0_u  = st.session_state.n2_inv0_u
+        inv0_pu = st.session_state.n2_inv0_pu
+        comp_u  = st.session_state.n2_comp_u
+        comp_pu = st.session_state.n2_comp_pu
+        venta_u = st.session_state.n2_venta_u
 
         st.write(f"Inv0: {inv0_u} u @ {peso(inv0_pu)} | Compra: {comp_u} u @ {peso(comp_pu)} | Venta: {venta_u} u")
 
-        ans_cogs = st.number_input("Tu COGS", min_value=0.0, value=0.0, step=10.0, key="n2_prac_cogs")
-        if st.button("✅ Validar práctica N2", key="n2_prac_btn"):
+        with st.form("n2_prac_form"):
+            metodo = st.selectbox("Método", ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"], key="n2_pract_met")
+            ans_cogs = st.number_input("Tu COGS", min_value=0.0, value=0.0, step=10.0, key="n2_prac_cogs")
+            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n2_prac_ai", value=False)
+            submitted = st.form_submit_button("✅ Validar práctica N2")
+
+        if submitted:
+            st.toast("✅ Respuesta recibida, validando...", icon="✅")
             total_u = inv0_u + comp_u
             inv0_val = inv0_u * inv0_pu
             comp_val = comp_u * comp_pu
@@ -976,26 +1029,33 @@ def page_level2(username):
                 st.success(f"¡Bien! COGS esperado ≈ {peso(correct)}")
             else:
                 st.error(f"COGS esperado ≈ {peso(correct)}")
-            fb = ia_feedback(
-                f"Práctica N2 con {metodo}. Datos: Inv0={inv0_u}@{inv0_pu}, Comp={comp_u}@{comp_pu}, Venta={venta_u}. "
-                f"COGS_est={ans_cogs}, COGS_correcto={correct}. "
-                f"Explica el porqué del cálculo en máximo 6 líneas con un truco memotécnico."
-            )
-            with st.expander("💬 Feedback de la IA"):
-                st.write(fb)
+
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    fb = ia_feedback(
+                        f"Práctica N2 con {metodo}. Datos: Inv0={inv0_u}@{inv0_pu}, Comp={comp_u}@{comp_pu}, Venta={venta_u}. "
+                        f"COGS_est={ans_cogs}, COGS_correcto={correct}. "
+                        f"Explica el porqué del cálculo en máximo 6 líneas con un truco memotécnico."
+                    )
+                with st.expander("💬 Feedback de la IA"):
+                    st.write(fb)
 
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 2")
         st.caption("Necesitas acertar **2 de 3**.")
 
-        q1 = st.radio("1) En inflación, ¿cuál suele dar mayor COGS?",
-                      ["PEPS", "UEPS", "Promedio Ponderado"], index=None, key="n2_eval_q1")
-        q2 = st.radio("2) En PEPS, ¿con qué costos se valora el inventario final?",
-                      ["Con los más antiguos", "Con los más recientes"], index=None, key="n2_eval_q2")
-        q3 = st.radio("3) El Promedio Ponderado:",
-                      ["Usa costo del último lote", "Mezcla costos para un único costo unitario"], index=None, key="n2_eval_q3")
+        with st.form("n2_eval_form"):
+            q1 = st.radio("1) En inflación, ¿cuál suele dar mayor COGS?",
+                          ["PEPS", "UEPS", "Promedio Ponderado"], index=None, key="n2_eval_q1")
+            q2 = st.radio("2) En PEPS, ¿con qué costos se valora el inventario final?",
+                          ["Con los más antiguos", "Con los más recientes"], index=None, key="n2_eval_q2")
+            q3 = st.radio("3) El Promedio Ponderado:",
+                          ["Usa costo del último lote", "Mezcla costos para un único costo unitario"], index=None, key="n2_eval_q3")
+            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n2_eval_ai", value=False)
+            submitted = st.form_submit_button("🧪 Validar evaluación N2")
 
-        if st.button("🧪 Validar evaluación N2", key="n2_eval_btn"):
+        if submitted:
+            st.toast("✅ Respuesta recibida, validando...", icon="✅")
             correct = {
                 "n2_eval_q1": "UEPS",
                 "n2_eval_q2": "Con los más recientes",
@@ -1005,13 +1065,15 @@ def page_level2(username):
             score = sum(1 for k,v in answers.items() if v == correct[k])
             passed = score >= 2
 
-            # ⬇️ Registro del intento
             record_attempt(username, level=2, score=score, passed=passed)
 
-            fb = ia_feedback(
-                f"Nivel 2 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
-                f"Aciertos: {score}/3. Da feedback amable y breve."
-            )
+            fb = None
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    fb = ia_feedback(
+                        f"Nivel 2 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
+                        f"Aciertos: {score}/3. Da feedback amable y breve."
+                    )
 
             if passed:
                 set_level_passed(st.session_state["progress_col"], username, "level2", score)
@@ -1028,8 +1090,9 @@ def page_level2(username):
 
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Repasa y vuelve a intentar.")
-                with st.expander("💬 Feedback de la IA"):
-                    st.write(fb)
+                if fb:
+                    with st.expander("💬 Feedback de la IA"):
+                        st.write(fb)
 
 # ===========================
 # NIVEL 3 (Devoluciones)
@@ -1048,7 +1111,8 @@ def page_level3(username):
             "Idea clave: mantén consistencia con el método de inventario y registra contra la cuenta correcta."
         )
         st.write(theory)
-        speak_block(theory, key_prefix="teo-n3", lang_hint="es")
+        with st.expander("🔊 Escuchar explicación"):
+            speak_block(theory, key_prefix="teo-n3", lang_hint="es")
 
     with tabs[1]:
         st.subheader("Devolución de compra (impacto directo en Compras)")
@@ -1066,27 +1130,37 @@ def page_level3(username):
 
     with tabs[2]:
         st.subheader("Práctica: combina compras netas y devolución de venta (PP)")
-        inv0 = random.randint(500, 1500)
-        prom0 = random.choice([15.0, 16.0, 17.0])
-        comp = random.randint(500, 2000)
-        comp_pu = random.choice([17.0, 18.0, 19.0])
-        dev_comp = random.randint(0, int(comp*0.2))
-        venta_u = random.randint(200, inv0 + comp)
-        dev_venta_u = random.randint(0, int(venta_u*0.2))
+
+        if "n3_inv0" not in st.session_state:
+            n3_new_case()
+        st.button("🔄 Nuevo escenario", on_click=n3_new_case, key="n3_new_case_btn")
+
+        inv0    = st.session_state.n3_inv0
+        prom0   = st.session_state.n3_prom0
+        comp    = st.session_state.n3_comp
+        comp_pu = st.session_state.n3_comp_pu
+        dev_comp= st.session_state.n3_dev_comp
+        venta_u = st.session_state.n3_venta_u
+        dev_venta_u = st.session_state.n3_dev_v_u
 
         st.write(
             f"Inv0: {inv0} u @ {peso(prom0)} | Compra: {comp} u @ {peso(comp_pu)} | "
             f"Devol. compra: {peso(dev_comp)} (resta $) | Venta: {venta_u} u | Devol. venta: {dev_venta_u} u"
         )
 
-        ans_cogs = st.number_input("Tu COGS estimado (PP)", min_value=0.0, value=0.0, step=10.0, key="n3_prac_cogs")
-        if st.button("✅ Validar práctica N3", key="n3_prac_btn"):
+        with st.form("n3_prac_form"):
+            ans_cogs = st.number_input("Tu COGS estimado (PP)", min_value=0.0, value=0.0, step=10.0, key="n3_prac_cogs")
+            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n3_prac_ai", value=False)
+            submitted = st.form_submit_button("✅ Validar práctica N3")
+
+        if submitted:
+            st.toast("✅ Respuesta recibida, validando...", icon="✅")
             inv0_val = inv0 * prom0
             comp_val = comp * comp_pu
             comp_net_val = comp_val - dev_comp
             total_val = inv0_val + comp_net_val
             total_u = inv0 + comp
-            prom = total_val / total_u
+            prom = total_val / total_u if total_u > 0 else 0.0
             venta_neta_u = max(venta_u - dev_venta_u, 0)
             correct = venta_neta_u * prom
 
@@ -1095,26 +1169,33 @@ def page_level3(username):
                 st.success(f"COGS (venta neta) ≈ {peso(correct)} con PP")
             else:
                 st.error(f"COGS esperado ≈ {peso(correct)}")
-            fb = ia_feedback(
-                f"N3 práctica PP con devoluciones. Datos: Inv0={inv0}@{prom0}, Comp={comp}@{comp_pu}, "
-                f"DevCompra=${dev_comp}, Venta={venta_u}, DevVenta={dev_venta_u}. "
-                f"COGS_est={ans_cogs}, COGS_correcto={correct}. Explica el razonamiento."
-            )
-            with st.expander("💬 Feedback de la IA"):
-                st.write(fb)
+
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    fb = ia_feedback(
+                        f"N3 práctica PP con devoluciones. Datos: Inv0={inv0}@{prom0}, Comp={comp}@{comp_pu}, "
+                        f"DevCompra=${dev_comp}, Venta={venta_u}, DevVenta={dev_venta_u}. "
+                        f"COGS_est={ans_cogs}, COGS_correcto={correct}. Explica el razonamiento."
+                    )
+                with st.expander("💬 Feedback de la IA"):
+                    st.write(fb)
 
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 3")
         st.caption("Necesitas acertar **2 de 3**.")
 
-        q1 = st.radio("1) La devolución de compra...",
-                      ["Aumenta las compras", "Disminuye las compras", "No afecta las compras"], index=None, key="n3_eval_q1")
-        q2 = st.radio("2) La devolución de venta (PP) reingresa unidades con costo...",
-                      ["Del último lote", "Promedio vigente", "Más antiguo"], index=None, key="n3_eval_q2")
-        q3 = st.radio("3) En términos de COGS, una devolución de venta...",
-                      ["Disminuye el COGS neto", "Aumenta el COGS neto", "No lo afecta"], index=None, key="n3_eval_q3")
+        with st.form("n3_eval_form"):
+            q1 = st.radio("1) La devolución de compra...",
+                          ["Aumenta las compras", "Disminuye las compras", "No afecta las compras"], index=None, key="n3_eval_q1")
+            q2 = st.radio("2) La devolución de venta (PP) reingresa unidades con costo...",
+                          ["Del último lote", "Promedio vigente", "Más antiguo"], index=None, key="n3_eval_q2")
+            q3 = st.radio("3) En términos de COGS, una devolución de venta...",
+                          ["Disminuye el COGS neto", "Aumenta el COGS neto", "No lo afecta"], index=None, key="n3_eval_q3")
+            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n3_eval_ai", value=False)
+            submitted = st.form_submit_button("🧪 Validar evaluación N3")
 
-        if st.button("🧪 Validar evaluación N3", key="n3_eval_btn"):
+        if submitted:
+            st.toast("✅ Respuesta recibida, validando...", icon="✅")
             correct = {
                 "n3_eval_q1": "Disminuye las compras",
                 "n3_eval_q2": "Promedio vigente",
@@ -1124,13 +1205,15 @@ def page_level3(username):
             score = sum(1 for k,v in answers.items() if v == correct[k])
             passed = score >= 2
 
-            # ⬇️ Registro del intento
             record_attempt(username, level=3, score=score, passed=passed)
 
-            fb = ia_feedback(
-                f"Nivel 3 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
-                f"Aciertos: {score}/3. Da feedback breve y amable."
-            )
+            fb = None
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    fb = ia_feedback(
+                        f"Nivel 3 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
+                        f"Aciertos: {score}/3. Da feedback breve y amable."
+                    )
 
             if passed:
                 set_level_passed(st.session_state["progress_col"], username, "level3", score)
@@ -1147,8 +1230,9 @@ def page_level3(username):
 
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Repasa y vuelve a intentar.")
-                with st.expander("💬 Feedback de la IA"):
-                    st.write(fb)
+                if fb:
+                    with st.expander("💬 Feedback de la IA"):
+                        st.write(fb)
 
 # ===========================
 # NIVEL 4 (Estado de Resultados)
@@ -1169,7 +1253,8 @@ def page_level4(username):
             "- **Utilidad operativa** = Utilidad bruta − Gastos operativos"
         )
         st.write(theory)
-        speak_block(theory, key_prefix="teo-n4", lang_hint="es")
+        with st.expander("🔊 Escuchar explicación"):
+            speak_block(theory, key_prefix="teo-n4", lang_hint="es")
 
     with tabs[1]:
         st.subheader("Ejemplo simple")
@@ -1189,18 +1274,28 @@ def page_level4(username):
 
     with tabs[2]:
         st.subheader("Práctica: arma tu Estado de Resultados")
-        ventas = random.randint(8000, 20000)
-        dev_vtas = random.randint(0, 1200)
-        cogs = random.randint(4000, 12000)
-        gastos = random.randint(1000, 5000)
+
+        if "n4_ventas" not in st.session_state:
+            n4_new_case()
+        st.button("🔄 Nuevo escenario", on_click=n4_new_case, key="n4_new_case_btn")
+
+        ventas   = st.session_state.n4_ventas
+        dev_vtas = st.session_state.n4_dev_vtas
+        cogs     = st.session_state.n4_cogs
+        gastos   = st.session_state.n4_gastos
 
         st.write(
             f"Ventas brutas={peso(ventas)}, Devol/Desc Ventas={peso(dev_vtas)}, "
             f"COGS={peso(cogs)}, Gastos Op.={peso(gastos)}"
         )
-        ans_util_oper = st.number_input("Tu Utilidad Operativa", min_value=-100000.0, value=0.0, step=50.0, key="n4_prac_uop")
 
-        if st.button("✅ Validar práctica N4", key="n4_prac_btn"):
+        with st.form("n4_prac_form"):
+            ans_util_oper = st.number_input("Tu Utilidad Operativa", min_value=-100000.0, value=0.0, step=50.0, key="n4_prac_uop")
+            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n4_prac_ai", value=False)
+            submitted = st.form_submit_button("✅ Validar práctica N4")
+
+        if submitted:
+            st.toast("✅ Respuesta recibida, validando...", icon="✅")
             vtas_net = ventas - dev_vtas
             util_bruta = vtas_net - cogs
             correct = util_bruta - gastos
@@ -1208,25 +1303,32 @@ def page_level4(username):
                 st.success(f"¡Correcto! Utilidad operativa = {peso(correct)}")
             else:
                 st.error(f"Utilidad operativa esperada = {peso(correct)}")
-            fb = ia_feedback(
-                f"N4 práctica EERR. Datos: Ventas={ventas}, DevVtas={dev_vtas}, COGS={cogs}, Gastos={gastos}. "
-                f"UO_est={ans_util_oper}, UO_correcta={correct}. Explica pasos y da truco memotécnico."
-            )
-            with st.expander("💬 Feedback de la IA"):
-                st.write(fb)
+
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    fb = ia_feedback(
+                        f"N4 práctica EERR. Datos: Ventas={ventas}, DevVtas={dev_vtas}, COGS={cogs}, Gastos={gastos}. "
+                        f"UO_est={ans_util_oper}, UO_correcta={correct}. Explica pasos y da truco memotécnico."
+                    )
+                with st.expander("💬 Feedback de la IA"):
+                    st.write(fb)
 
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 4")
         st.caption("Necesitas acertar **2 de 3** para terminar el curso.")
 
-        q1 = st.radio("1) Ventas netas se calculan como:",
-                      ["Ventas brutas + Devoluciones", "Ventas brutas − Devoluciones/Descuentos", "Ventas brutas"], index=None, key="n4_eval_q1")
-        q2 = st.radio("2) Utilidad bruta =",
-                      ["Ventas netas − COGS", "Ventas netas − Gastos operativos", "Ventas brutas − COGS"], index=None, key="n4_eval_q2")
-        q3 = st.radio("3) Utilidad operativa =",
-                      ["Utilidad bruta − Gastos operativos", "Ventas netas − COGS − Gastos financieros", "COGS − Gastos operativos"], index=None, key="n4_eval_q3")
+        with st.form("n4_eval_form"):
+            q1 = st.radio("1) Ventas netas se calculan como:",
+                          ["Ventas brutas + Devoluciones", "Ventas brutas − Devoluciones/Descuentos", "Ventas brutas"], index=None, key="n4_eval_q1")
+            q2 = st.radio("2) Utilidad bruta =",
+                          ["Ventas netas − COGS", "Ventas netas − Gastos operativos", "Ventas brutas − COGS"], index=None, key="n4_eval_q2")
+            q3 = st.radio("3) Utilidad operativa =",
+                          ["Utilidad bruta − Gastos operativos", "Ventas netas − COGS − Gastos financieros", "COGS − Gastos operativos"], index=None, key="n4_eval_q3")
+            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n4_eval_ai", value=False)
+            submitted = st.form_submit_button("🧪 Validar evaluación N4")
 
-        if st.button("🧪 Validar evaluación N4", key="n4_eval_btn"):
+        if submitted:
+            st.toast("✅ Respuesta recibida, validando...", icon="✅")
             correct = {
                 "n4_eval_q1": "Ventas brutas − Devoluciones/Descuentos",
                 "n4_eval_q2": "Ventas netas − COGS",
@@ -1236,13 +1338,15 @@ def page_level4(username):
             score = sum(1 for k,v in answers.items() if v == correct[k])
             passed = score >= 2
 
-            # ⬇️ Registro del intento
             record_attempt(username, level=4, score=score, passed=passed)
 
-            fb = ia_feedback(
-                f"Nivel 4 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
-                f"Aciertos: {score}/3. Feedback amable y breve."
-            )
+            fb = None
+            if ask_ai:
+                with st.spinner("Generando feedback con IA..."):
+                    fb = ia_feedback(
+                        f"Nivel 4 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
+                        f"Aciertos: {score}/3. Feedback amable y breve."
+                    )
 
             if passed:
                 set_level_passed(st.session_state["progress_col"], username, "level4", score)
@@ -1260,8 +1364,9 @@ def page_level4(username):
 
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Refuerza conceptos y vuelve a intentar.")
-                with st.expander("💬 Feedback de la IA"):
-                    st.write(fb)
+                if fb:
+                    with st.expander("💬 Feedback de la IA"):
+                        st.write(fb)
 
 # ===========================
 # Página: Encuesta de satisfacción
@@ -1278,6 +1383,53 @@ def page_survey():
 # ===========================
 # Módulo: Administrador de Usuarios (Mongo) + Estadísticas
 # ===========================
+
+@st.cache_data(ttl=15, show_spinner=False)
+def get_user_list(_users_col, _cache_key: str = "users:list"):
+    # _users_col NO se usa para el hash del caché (por el guion bajo)
+    return [u["username"] for u in _users_col.find({}, {"username":1, "_id":0}).sort("username",1)]
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def attempts_kpis(_attempts_col, _cache_key: str = "attempts:kpis"):
+    # KPIs globales (igual que antes)
+    agg_base = list(_attempts_col.aggregate([
+        {"$group": {
+            "_id": None,
+            "total_intentos": {"$sum": 1},
+            "usuarios_unicos": {"$addToSet": "$username"},
+            "aprobados": {"$sum": {"$cond": ["$passed", 1, 0]}}
+        }},
+        {"$project": {
+            "_id": 0,
+            "total_intentos": 1,
+            "total_usuarios": {"$size": "$usuarios_unicos"},
+            "tasa_global": {"$cond": [
+                {"$eq": ["$total_intentos", 0]},
+                0,
+                {"$multiply": [{"$divide": ["$aprobados", "$total_intentos"]}, 100]}
+            ]}
+        }}
+    ]))
+    kpis = agg_base[0] if agg_base else {"total_intentos":0,"total_usuarios":0,"tasa_global":0}
+
+    lvl_rate = list(_attempts_col.aggregate([
+        {"$group": {"_id": "$level", "aprobacion": {"$avg": {"$cond": ["$passed", 1, 0]}}}},
+        {"$project": {"level": "$_id", "_id":0, "aprobacion_%": {"$multiply": ["$aprobacion", 100]}}},
+        {"$sort": {"level": 1}}
+    ]))
+
+    lvl_score = list(_attempts_col.aggregate([
+        {"$match": {"score": {"$ne": None}}},
+        {"$group": {"_id": "$level", "prom_puntaje": {"$avg": "$score"}}},
+        {"$project": {"level": "$_id", "_id":0, "prom_puntaje": 1}},
+        {"$sort": {"level": 1}}
+    ]))
+
+    last25 = list(_attempts_col.find({}, {"_id":0}).sort("created_at",-1).limit(25))
+    return kpis, lvl_rate, lvl_score, last25
+
+
 def admin_page():
     st.title("⚙️ Administrador de Usuarios")
 
@@ -1294,7 +1446,7 @@ def admin_page():
     with tab_users:
         st.subheader("Usuarios actuales")
         data = list(users_col.find({}, {"_id": 0, "username": 1, "role": 1, "created_at": 1}))
-        st.dataframe(data, use_container_width=True)
+        st.data_editor(pd.DataFrame(data), disabled=True, use_container_width=True)
 
         st.markdown("---")
 
@@ -1305,21 +1457,22 @@ def admin_page():
             new_role = st.selectbox("Rol", ["user", "admin"])
             submitted = st.form_submit_button("➕ Crear usuario")
 
-            if submitted:
-                if not new_user or len(new_user) < 3 or " " in new_user:
-                    st.error("Usuario inválido. Debe tener al menos 3 caracteres y sin espacios.")
-                elif not new_pass or len(new_pass) < 4:
-                    st.error("Contraseña demasiado corta (mínimo 4).")
-                elif users_col.find_one({"username": new_user}):
-                    st.error("El usuario ya existe.")
-                else:
-                    create_user(users_col, progress_col, new_user, new_pass, new_role)
-                    st.success(f"Usuario '{new_user}' creado como {new_role}.")
+        if submitted:
+            if not new_user or len(new_user) < 3 or " " in new_user:
+                st.error("Usuario inválido. Debe tener al menos 3 caracteres y sin espacios.")
+            elif not new_pass or len(new_pass) < 4:
+                st.error("Contraseña demasiado corta (mínimo 4).")
+            elif users_col.find_one({"username": new_user}):
+                st.error("El usuario ya existe.")
+            else:
+                create_user(users_col, progress_col, new_user, new_pass, new_role)
+                st.success(f"Usuario '{new_user}' creado como {new_role}.")
+                st.cache_data.clear()  # refresca listados/estadísticas
 
         st.markdown("---")
 
         st.subheader("Editar usuario")
-        usernames = [u["username"] for u in users_col.find({}, {"username": 1, "_id": 0}).sort("username", 1)]
+        usernames = get_user_list(users_col)
         if usernames:
             edit_user = st.selectbox("Selecciona el usuario a editar", usernames, key="admin_edit_select")
             if edit_user:
@@ -1330,25 +1483,27 @@ def admin_page():
                     new_role_opt = st.selectbox("Nuevo rol", ["user", "admin"], index=0 if curr_role == "user" else 1)
                     submit_edit = st.form_submit_button("✏️ Guardar cambios")
 
-                    if submit_edit:
-                        # Evitar quitar el último admin
-                        if curr_role == "admin" and new_role_opt == "user":
-                            other_admin = users_col.count_documents({"username": {"$ne": edit_user}, "role": "admin"}) > 0
-                            if not other_admin:
-                                st.error("No puedes quitar el último administrador del sistema.")
-                            else:
-                                update_user(users_col, edit_user, new_pass_opt or None, new_role_opt)
-                                st.success(f"Usuario '{edit_user}' actualizado.")
+                if submit_edit:
+                    # Evitar quitar el último admin
+                    if curr_role == "admin" and new_role_opt == "user":
+                        other_admin = users_col.count_documents({"username": {"$ne": edit_user}, "role": "admin"}) > 0
+                        if not other_admin:
+                            st.error("No puedes quitar el último administrador del sistema.")
                         else:
                             update_user(users_col, edit_user, new_pass_opt or None, new_role_opt)
                             st.success(f"Usuario '{edit_user}' actualizado.")
+                            st.cache_data.clear()
+                    else:
+                        update_user(users_col, edit_user, new_pass_opt or None, new_role_opt)
+                        st.success(f"Usuario '{edit_user}' actualizado.")
+                        st.cache_data.clear()
         else:
             st.info("No hay usuarios para editar.")
 
         st.markdown("---")
 
         st.subheader("Eliminar usuario")
-        usernames = [u["username"] for u in users_col.find({}, {"username": 1, "_id": 0}).sort("username", 1)]
+        usernames = get_user_list(users_col)
         if usernames:
             del_user = st.selectbox("Selecciona el usuario a eliminar", usernames, key="admin_del_select")
             if st.button("🗑️ Eliminar usuario seleccionado"):
@@ -1362,9 +1517,14 @@ def admin_page():
                         other_admin = users_col.count_documents({"username": {"$ne": del_user}, "role": "admin"}) > 0
                         if not other_admin:
                             st.error("No puedes eliminar el último administrador del sistema.")
-                            return
-                    delete_user(users_col, progress_col, del_user)
-                    st.success(f"Usuario '{del_user}' eliminado.")
+                        else:
+                            delete_user(users_col, progress_col, del_user)
+                            st.success(f"Usuario '{del_user}' eliminado.")
+                            st.cache_data.clear()
+                    else:
+                        delete_user(users_col, progress_col, del_user)
+                        st.success(f"Usuario '{del_user}' eliminado.")
+                        st.cache_data.clear()
         else:
             st.info("No hay usuarios para eliminar.")
 
@@ -1375,50 +1535,43 @@ def admin_page():
             st.error("Colección de intentos no disponible.")
             return
 
-        rows = list(attempts_col.find({}, {"_id": 0}))
-        if not rows:
-            st.info("Aún no hay intentos registrados.")
-            return
-
-        df = pd.DataFrame(rows)
-        # Tipos
-        if "created_at" in df.columns:
-            df["created_at"] = pd.to_datetime(df["created_at"])
-        if "level" in df.columns:
-            df["level"] = pd.to_numeric(df["level"], errors="coerce").fillna(0).astype(int)
-        if "passed" in df.columns:
-            df["passed"] = df["passed"].astype(bool)
-        if "score" in df.columns:
-            df["score"] = pd.to_numeric(df["score"], errors="coerce")
-
-        # KPIs
-        total_intentos = len(df)
-        total_usuarios = df["username"].nunique()
-        tasa_global = (df["passed"].mean() * 100.0) if total_intentos > 0 else 0.0
+        kpis, by_level, by_level_score, ult = attempts_kpis(attempts_col)
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Intentos totales", f"{total_intentos}")
-        c2.metric("Usuarios únicos", f"{total_usuarios}")
-        c3.metric("Tasa aprobación global", f"{tasa_global:.1f}%")
+        c1.metric("Intentos totales", f"{kpis['total_intentos']}")
+        c2.metric("Usuarios únicos", f"{kpis['total_usuarios']}")
+        c3.metric("Tasa aprobación global", f"{kpis['tasa_global']:.1f}%")
 
         st.markdown("---")
         st.subheader("Aprobación por nivel")
-        by_level = df.groupby("level")["passed"].mean().mul(100).reset_index().rename(columns={"passed": "aprobacion_%"}).sort_values("level")
-        st.dataframe(by_level, use_container_width=True)
-        st.bar_chart(by_level.set_index("level"))
+        df_lvl = pd.DataFrame(by_level).sort_values("level")
+        if not df_lvl.empty:
+            st.data_editor(df_lvl, disabled=True, use_container_width=True)
+            st.bar_chart(df_lvl.set_index("level"))
+        else:
+            st.info("Sin datos por nivel aún.")
 
         st.markdown("---")
         st.subheader("Promedio de puntaje por nivel")
-        if "score" in df.columns:
-            by_level_score = df.groupby("level")["score"].mean().reset_index().rename(columns={"score": "prom_puntaje"}).sort_values("level")
-            st.dataframe(by_level_score, use_container_width=True)
-            st.bar_chart(by_level_score.set_index("level"))
+        df_lvl_score = pd.DataFrame(by_level_score).sort_values("level")
+        if not df_lvl_score.empty:
+            st.data_editor(df_lvl_score, disabled=True, use_container_width=True)
+            st.bar_chart(df_lvl_score.set_index("level"))
+        else:
+            st.info("Sin puntajes aún.")
 
         st.markdown("---")
         st.subheader("Últimos 25 intentos")
-        ult = df.sort_values("created_at", ascending=False).head(25)[["created_at","username","level","score","passed"]]
-        ult["passed"] = ult["passed"].map({True:"✅", False:"❌"})
-        st.dataframe(ult, use_container_width=True)
+        df_last = pd.DataFrame(ult)
+        if not df_last.empty:
+            if "created_at" in df_last.columns:
+                df_last["created_at"] = pd.to_datetime(df_last["created_at"])
+            if "passed" in df_last.columns:
+                df_last["passed"] = df_last["passed"].map({True:"✅", False:"❌"})
+            keep_cols = [c for c in ["created_at","username","level","score","passed"] if c in df_last.columns]
+            st.data_editor(df_last.sort_values("created_at", ascending=False)[keep_cols], disabled=True, use_container_width=True)
+        else:
+            st.info("Aún no hay intentos registrados.")
 
 # ===========================
 # Pantalla Login
@@ -1474,7 +1627,7 @@ def main_app():
 def main():
     init_session()
 
-    # Inicializa conexión y colecciones
+    # Inicializa conexión y colecciones (cache_resource)
     try:
         db, users_col, progress_col, attempts_col = repo_init()
         st.session_state["users_col"] = users_col
@@ -1492,3 +1645,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
