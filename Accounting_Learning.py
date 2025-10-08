@@ -414,7 +414,6 @@ def _connect_mongo(uri: str, insecure: bool = False):
         retryWrites=True,
     )
     if insecure:
-        # Fallback para entornos con MITM/antivirus/proxy que rompen TLS.
         kwargs["tlsAllowInvalidCertificates"] = True
     return MongoClient(uri, **kwargs)
 
@@ -433,29 +432,25 @@ def repo_init():
     if not uri:
         raise RuntimeError("No encuentro la URI de MongoDB. Define [mongodb].uri en secrets.toml o MONGODB_URI en el entorno.")
 
-    # Intento 1: seguro
     insecure_used = False
     try:
         client = _connect_mongo(uri, insecure=False)
         client.admin.command('ping')
     except Exception as e1:
-        # Intento 2: modo inseguro (solo desarrollo) para saltar TLS handshake roto
         try:
             client = _connect_mongo(uri, insecure=True)
             client.admin.command('ping')
             insecure_used = True
         except Exception as e2:
-            # Falla total
             raise RuntimeError(f"Fallo TLS seguro ({e1}) y fallback inseguro ({e2})")
 
-    # DB por defecto (si la URI no especifica nombre, usamos 'accounting_app')
     db_name = "accounting_app"
     db = client[db_name]
 
     users_col = db["users"]
-    progress_col = db["progress"]  # para futuro
+    progress_col = db["progress"]
 
-    # Admin inicial (puedes ponerlo en secrets si quieres)
+    # Admin inicial
     try:
         admin_user = st.secrets["admin"]["username"]
         admin_pass = st.secrets["admin"]["password"]
@@ -471,24 +466,70 @@ def repo_init():
             "created_at": datetime.now(timezone.utc)
         })
 
-    # índice por username
     try:
         users_col.create_index("username", unique=True)
+        progress_col.create_index("username", unique=True)
     except Exception:
         pass
 
-    # Bandera para mostrar aviso si se usó el fallback inseguro
     if insecure_used:
         st.warning(
             "Conexión a Mongo realizada en **modo TLS inseguro** (`tlsAllowInvalidCertificates=True`). "
-            "Esto suele ser causado por antivirus/proxy/firewall que interceptan SSL. "
-            "Úsalo solo para desarrollo. Recomendado: actualizar `pymongo`, `dnspython`, `certifi`, "
-            "revisar antivirus/proxy, y habilitar certificados de confianza.",
+            "Usa esto solo para desarrollo.",
             icon="⚠️"
         )
 
     return db, users_col, progress_col
 
+# --------- PROGRESO (Gamificación) ----------
+def _default_progress_doc(username: str) -> dict:
+    return {
+        "username": username,
+        "levels": {
+            "level1": {"passed": False, "date": None, "score": None},
+            "level2": {"passed": False, "date": None, "score": None},
+            "level3": {"passed": False, "date": None, "score": None},
+            "level4": {"passed": False, "date": None, "score": None},
+        },
+        "completed_survey": False,
+        "updated_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(timezone.utc),
+    }
+
+def ensure_progress(progress_col, username: str) -> dict:
+    doc = progress_col.find_one({"username": username})
+    if doc is None:
+        doc = _default_progress_doc(username)
+        progress_col.insert_one(doc)
+    return doc
+
+def load_progress(progress_col, username: str) -> dict:
+    return ensure_progress(progress_col, username)
+
+def set_level_passed(progress_col, username: str, level_key: str, score: int | None):
+    now = datetime.now(timezone.utc)
+    progress_col.update_one(
+        {"username": username},
+        {
+            "$set": {
+                f"levels.{level_key}.passed": True,
+                f"levels.{level_key}.date": now,
+                f"levels.{level_key}.score": score,
+                "updated_at": now,
+            }
+        },
+        upsert=True
+    )
+
+def set_completed_survey(progress_col, username: str, value: bool = True):
+    now = datetime.now(timezone.utc)
+    progress_col.update_one(
+        {"username": username},
+        {"$set": {"completed_survey": value, "updated_at": now}},
+        upsert=True
+    )
+
+# --------- USERS (CRUD) ----------
 def verify_credentials(users_col, username: str, password: str):
     if users_col is None:
         return None
@@ -507,11 +548,10 @@ def create_user(users_col, progress_col, username: str, password: str, role: str
         "created_at": datetime.now(timezone.utc)
     })
     if progress_col is not None:
-        progress_col.update_one(
-            {"username": username.strip().lower()},
-            {"$setOnInsert": {"levels": {}}},
-            upsert=True
-        )
+        try:
+            progress_col.insert_one(_default_progress_doc(username.strip().lower()))
+        except Exception:
+            pass
 
 def update_user(users_col, username: str, new_password: str | None, new_role: str | None):
     update = {}
@@ -547,11 +587,15 @@ def do_login():
         return
 
     users_col = st.session_state.get("users_col")
+    progress_col = st.session_state.get("progress_col")
+
     doc = verify_credentials(users_col, user, pwd)
     if doc:
         st.session_state.authenticated = True
         st.session_state.username = user
         st.session_state.login_error = ""
+        # 🔑 Asegura documento de progreso al iniciar sesión
+        ensure_progress(progress_col, user)
     else:
         st.session_state.login_error = "Credenciales incorrectas."
 
@@ -566,33 +610,63 @@ def logout():
 def sidebar_nav(username):
     st.sidebar.title("Niveles")
 
-    options = [
-        "Nivel 1: Introducción a Inventarios",
-        "Nivel 2: Métodos (PP/PEPS/UEPS)",
-        "Nivel 3: Devoluciones",
-        "Nivel 4: Estado de Resultados",
-        "Encuesta de satisfacción",
-    ]
-
-    # rol desde Mongo
-    current_user_role = "user"
     users_col = st.session_state.get("users_col")
+    progress_col = st.session_state.get("progress_col")
+    # rol
+    current_user_role = "user"
     if users_col is not None and username:
         doc = users_col.find_one({"username": username}, {"role": 1, "_id": 0}) or {}
         current_user_role = doc.get("role", "user")
 
+    # progreso
+    prog = load_progress(progress_col, username)
+    lv = prog.get("levels", {})
+    l1 = lv.get("level1", {}).get("passed", False)
+    l2 = lv.get("level2", {}).get("passed", False)
+    l3 = lv.get("level3", {}).get("passed", False)
+    l4 = lv.get("level4", {}).get("passed", False)
+
+    # 🚦 Opciones bloqueadas/desbloqueadas
+    options = ["Nivel 1: Introducción a Inventarios"]
+    if l1:
+        options.append("Nivel 2: Métodos (PP/PEPS/UEPS)")
+    if l2:
+        options.append("Nivel 3: Devoluciones")
+    if l3:
+        options.append("Nivel 4: Estado de Resultados")
+    if l4:
+        options.append("Encuesta de satisfacción")
     if current_user_role == "admin":
         options.append(ADMIN_OPTION)
 
-    if "sidebar_level_select" in st.session_state and st.session_state.sidebar_level_select not in options:
-        del st.session_state["sidebar_level_select"]
+    # --- PRESELECCIÓN SEGURA ANTES DE CREAR EL RADIO ---
+    # Si alguna página dejó un "pendiente" de selección, úsalo aquí como índice inicial del radio:
+    pending = st.session_state.pop("sidebar_next_select", None)
+    index_arg = 0
+    if pending in options:
+        index_arg = options.index(pending)
+    else:
+        # Si ya hay un valor previo y es válido, úsalo; si no, 0
+        prev = st.session_state.get("sidebar_level_select")
+        if prev in options:
+            index_arg = options.index(prev)
+        else:
+            index_arg = 0
 
-    sel = st.sidebar.radio("Ir a:", options, key="sidebar_level_select")
+    sel = st.sidebar.radio("Ir a:", options, key="sidebar_level_select", index=index_arg)
 
     st.sidebar.markdown("---")
+    def badge(ok): return "✅" if ok else "🔒"
     st.sidebar.caption(f"Usuario: **{username}** · Rol: **{current_user_role}**")
+    st.sidebar.write(f"{badge(l1)} Nivel 1")
+    st.sidebar.write(f"{badge(l2)} Nivel 2")
+    st.sidebar.write(f"{badge(l3)} Nivel 3")
+    st.sidebar.write(f"{badge(l4)} Nivel 4")
+    st.sidebar.markdown("---")
     st.sidebar.button("Cerrar Sesión", on_click=logout, key="logout_btn")
+
     return sel
+
 
 # ===========================
 # NIVEL 1
@@ -744,7 +818,9 @@ def page_level1(username):
             fb = ia_feedback(prompt)
 
             if passed:
-                st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 2 en el menú.")
+                # Guarda progreso en Mongo y preselecciona siguiente nivel
+                set_level_passed(st.session_state["progress_col"], username, "level1", score)
+                st.session_state["sidebar_next_select"] = "Nivel 2: Métodos (PP/PEPS/UEPS)"
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 1 superado!</b> 🏆<br><br>"
@@ -805,16 +881,14 @@ def page_level2(username):
 
         st.markdown("---")
         st.subheader("Ejemplo FIFO vs LIFO (comparación rápida)")
-        inv = [(100, 10.0), (50, 12.0)]  # (u, $/u)
+        inv = [(100, 10.0), (50, 12.0)]
         venta = 120
-        # FIFO
         fifo_cogs = 0.0; remaining = venta; inv_fifo = inv.copy()
         for u, pu in inv_fifo:
             use = min(remaining, u)
             fifo_cogs += use * pu
             remaining -= use
             if remaining <= 0: break
-        # LIFO
         lifo_cogs = 0.0; remaining = venta; inv_lifo = inv.copy()[::-1]
         for u, pu in inv_lifo:
             use = min(remaining, u)
@@ -906,7 +980,8 @@ def page_level2(username):
             )
 
             if passed:
-                st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 3 en el menú.")
+                set_level_passed(st.session_state["progress_col"], username, "level2", score)
+                st.session_state["sidebar_next_select"] = "Nivel 3: Devoluciones"
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 2 completado!</b> 🧠✨<br><br>"
@@ -916,6 +991,7 @@ def page_level2(username):
                     next_label="Nivel 3",
                     next_key_value="Nivel 3: Devoluciones"
                 )
+
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Repasa y vuelve a intentar.")
                 with st.expander("💬 Feedback de la IA"):
@@ -1020,7 +1096,8 @@ def page_level3(username):
             )
 
             if passed:
-                st.success(f"¡Aprobado! Aciertos {score}/3 🎉 Se habilitará el Nivel 4 en el menú.")
+                set_level_passed(st.session_state["progress_col"], username, "level3", score)
+                st.session_state["sidebar_next_select"] = "Nivel 4: Estado de Resultados"
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 3 dominado!</b> 🔁📦<br><br>"
@@ -1030,6 +1107,7 @@ def page_level3(username):
                     next_label="Nivel 4",
                     next_key_value="Nivel 4: Estado de Resultados"
                 )
+
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Repasa y vuelve a intentar.")
                 with st.expander("💬 Feedback de la IA"):
@@ -1127,7 +1205,9 @@ def page_level4(username):
             )
 
             if passed:
-                st.success(f"¡Felicidades! Aciertos {score}/3 🎓 Has completado los 4 niveles.")
+                set_level_passed(st.session_state["progress_col"], username, "level4", score)
+                set_completed_survey(st.session_state["progress_col"], username, True)
+                st.session_state["sidebar_next_select"] = "Encuesta de satisfacción"
                 start_celebration(
                     message_md=(
                         "<b>¡Curso completado!</b> 🎓🌟<br><br>"
@@ -1137,6 +1217,7 @@ def page_level4(username):
                     next_label="Encuesta de satisfacción",
                     next_key_value="Encuesta de satisfacción"
                 )
+
             else:
                 st.error(f"No aprobado. Aciertos {score}/3. Refuerza conceptos y vuelve a intentar.")
                 with st.expander("💬 Feedback de la IA"):
@@ -1317,5 +1398,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
