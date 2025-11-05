@@ -1323,51 +1323,66 @@ def page_level2(username):
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplos guiados", "🎮 Práctica (IA)", "🏁 Evaluación para aprobar"])
 
-    with tabs[0]:
-        st.subheader("Teoría · Métodos de valoración de inventarios (PEPS, UEPS y Promedio)")
+with tabs[0]:
+    st.subheader("Teoría · Métodos de valoración de inventarios (PEPS, UEPS y Promedio)")
 
-        theory_md = """
-    En contabilidad, los inventarios representan bienes disponibles para la venta y, al mismo tiempo, **costos acumulados** que impactan la utilidad del período. Valorar correctamente el inventario permite determinar con precisión el **Costo de la Mercancía Vendida (CMV)** y analizar la rentabilidad del negocio.
+    intro = """
+En contabilidad, los inventarios representan bienes disponibles para la venta y, al mismo tiempo, **costos acumulados** que impactan la utilidad del período. Valorar correctamente el inventario permite determinar con precisión el **Costo de la Mercancía Vendida (CMV)** y analizar la rentabilidad del negocio.
+"""
+    st.markdown(intro)
 
-    ### ⚖️ ¿Por qué existen distintos métodos?
-    Los precios de compra cambian con el tiempo (inflación, descuentos, logística). Por eso, cada método responde a la pregunta: **¿qué costo asigno a lo vendido y qué costo queda en el inventario final?**  
-    En Colombia, el **Estándar para Pymes (Sección 13)** permite tres enfoques:
+    st.markdown("### ⚖️ ¿Por qué existen distintos métodos?")
+    st.markdown(
+        "Los precios de compra cambian con el tiempo (inflación, descuentos, logística). "
+        "Por eso, cada método responde a la pregunta: **¿qué costo asigno a lo vendido y qué costo queda en el inventario final?**  \n"
+        "En Colombia, el **Estándar para Pymes (Sección 13)** permite tres enfoques:"
+    )
 
-    ---
+    st.markdown("---")
+    st.markdown("### 1) PEPS (Primero en Entrar, Primero en Salir)")
+    st.markdown(
+        "- **Idea básica:** salen primero las unidades que entraron primero; el inventario final queda con costos **más recientes**.  \n"
+        "- **Efecto típico con precios al alza:** **CMV menor** y **mayor utilidad bruta** (porque se usan costos antiguos en las salidas).  \n"
+        "- **Analogía:** una estantería donde se entregan primero los productos más viejos; los nuevos quedan en la repisa y valoran el inventario final."
+    )
 
-    ### 1) PEPS (Primero en Entrar, Primero en Salir)
-    - **Idea básica:** salen primero las unidades que entraron primero; el inventario final queda con costos **más recientes**.  
-    - **Efecto típico con precios al alza:** **CMV menor** y **mayor utilidad bruta** (porque se usan costos antiguos en las salidas).  
-    - **Analogía:** una estantería donde se entregan primero los productos más viejos; los nuevos quedan en la repisa y valoran el inventario final.
+    st.markdown("---")
+    st.markdown("### 2) UEPS (Último en Entrar, Primero en Salir)")
+    st.markdown(
+        "- **Idea básica:** salen primero las unidades que entraron de último; el inventario final queda con costos **más antiguos**.  \n"
+        "- **Efecto típico con precios al alza:** **CMV mayor** y **menor utilidad bruta** (porque se usan costos recientes en las salidas).  \n"
+        "- **Importante en Colombia:** el UEPS **no está permitido fiscalmente**; se usa para análisis internos o ejercicios académicos.  \n"
+        "- **Analogía:** una pila de sacos donde tomas el de arriba (el más nuevo) y los de abajo (antiguos) permanecen en el inventario."
+    )
 
-    ---
+    st.markdown("---")
+    st.markdown("### 3) Promedio Ponderado")
+    st.markdown(
+        "- **Idea básica:** mezcla los costos de los lotes disponibles y calcula un **costo promedio por unidad**, que se usa para las salidas y el inventario final."
+    )
+    st.markdown("**Fórmula:**")
+    st.latex(r"\text{Costo promedio ponderado}=\frac{\text{Costo total disponible}}{\text{Unidades totales disponibles}}")
+    st.markdown(
+        "- **Efecto contable:** **suaviza** la volatilidad de precios y es muy utilizado por su equilibrio entre **simplicidad** y **razonabilidad**.  \n"
+        "- **Analogía:** una “olla de costos”: al vender, cada unidad se sirve con “una cucharada” de ese promedio."
+    )
 
-    ### 2) UEPS (Último en Entrar, Primero en Salir)
-    - **Idea básica:** salen primero las unidades que entraron de último; el inventario final queda con costos **más antiguos**.  
-    - **Efecto típico con precios al alza:** **CMV mayor** y **menor utilidad bruta** (porque se usan costos recientes en las salidas).  
-    - **Importante en Colombia:** el UEPS **no está permitido fiscalmente**; se usa para análisis internos o ejercicios académicos.  
-    - **Analogía:** una pila de sacos donde tomas el de arriba (el más nuevo) y los de abajo (antiguos) permanecen en el inventario.
+    st.markdown("---")
+    st.markdown("### 💡 Para decidir")
+    st.markdown(
+        "Cada método ofrece una mirada distinta del costo y la utilidad. La decisión debe ser **coherente con la operación del negocio** y **consistente en el tiempo**. "
+        "Recuerda: el método elegido afecta el **CMV, la utilidad** y la **carga tributaria**; por eso, comprender su efecto es clave para la toma de decisiones."
+    )
 
-    ---
-
-    ### 3) Promedio Ponderado
-    - **Idea básica:** mezcla los costos de los lotes disponibles y calcula un **costo promedio por unidad**, que se usa para las salidas y el inventario final.  
-    - **Fórmula:**  
-    \\[
-    \\text{Costo promedio ponderado} = \\frac{\\text{Costo total disponible}}{\\text{Unidades totales disponibles}}
-    \\]
-    - **Efecto contable:** **suaviza** la volatilidad de precios y es muy utilizado por su equilibrio entre **simplicidad** y **razonabilidad**.  
-    - **Analogía:** una “olla de costos”: al vender, cada unidad se sirve con “una cucharada” de ese promedio.
-
-    ---
-
-    ### 💡 Para decidir
-    Cada método ofrece una mirada distinta del costo y la utilidad. La decisión debe ser **coherente con la operación del negocio** y **consistente en el tiempo**. Recuerda: el método elegido afecta el **CMV, la utilidad** y la **carga tributaria**; por eso, comprender su efecto es clave para la toma de decisiones.
-        """.strip()
-
-        st.markdown(theory_md)
-        with st.expander("🔊 Escuchar explicación"):
-            speak_block(theory_md, key_prefix="teo-n2", lang_hint="es")
+    with st.expander("🔊 Escuchar explicación"):
+        full_text = "\n\n".join([intro,
+            "¿Por qué existen distintos métodos? Los precios de compra cambian con el tiempo...",
+            "PEPS: idea básica, efecto con precios al alza y analogía de estantería.",
+            "UEPS: idea básica, efecto con precios al alza, nota fiscal en Colombia y analogía de pila de sacos.",
+            "Promedio Ponderado: idea básica, fórmula y analogía de olla de costos.",
+            "Para decidir: coherencia del método, consistencia y efectos sobre CMV y utilidad."
+        ])
+        speak_block(full_text, key_prefix="teo-n2", lang_hint="es")
 
     with tabs[1]:
         st.subheader("Ejemplo de PP dinámico")
