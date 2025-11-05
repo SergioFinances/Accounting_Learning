@@ -122,25 +122,37 @@ def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
         fb = ia_feedback(prompt) or ""
         raw = fb.strip()
 
-        # Limpieza: elimina fences ```json ... ``` y tokens raros
+        # --- Si ia_feedback devolvió un mensaje de error (no JSON), salimos a fallback explícito ---
+        lower = raw.lower()
+        if (
+            lower.startswith("no pude generar feedback") or
+            "error code:" in lower or
+            "no endpoints found" in lower or
+            "api key" in lower or
+            "rate limit" in lower or
+            "timeout" in lower
+        ):
+            raise RuntimeError(raw)  # Forzamos el uso del fallback con explicación
+
+        # Limpieza: quita ```json ...``` y tokens extraños
+        import re, json
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE|re.MULTILINE).strip()
         raw = raw.replace("<|begin_of_sentence|>", "").replace("<|end_of_sentence|>", "")
         raw = raw.replace("“", "\"").replace("”", "\"").replace("’", "'")
 
-        # Si vino JSON incrustado en texto, intenta extraer el primer {...}
+        # Aceptar 'aprobo' en lugar de 'aprobado'
+        raw = raw.replace("\"aprobo\"", "\"aprobado\"").replace("'aprobo'", "'aprobado'")
+
+        # Extraer JSON si vino rodeado por texto
         if not raw.startswith("{"):
             m = re.search(r"\{.*\}", raw, flags=re.DOTALL)
             if m:
                 raw = m.group(0).strip()
 
-        # A veces devuelven 'aprobo' en lugar de 'aprobado'
-        raw = raw.replace("\"aprobo\"", "\"aprobado\"").replace("'aprobo'", "'aprobado'")
-
-        # Intenta parsear JSON (también si usaron comillas simples)
+        # Parseo tolerante (comillas simples → dobles)
         try:
             data = json.loads(raw)
         except Exception:
-            # Reemplaza comillas simples por dobles de forma segura (solo claves/strings)
             raw_clean = re.sub(r"(?<!\\)'", '"', raw)
             data = json.loads(raw_clean)
 
@@ -148,13 +160,13 @@ def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
         comentario = (data.get("comentario_corto") or "").strip()
         retro = (data.get("retroalimentacion") or "").strip()
 
-        # Seguridad: si IA no pone nada útil, usamos fallback formativo
         if not comentario:
             comentario = "Evaluación recibida."
         if not retro:
-            retro = "Recuerda: si el inventario final disminuye, se resta menos, por lo que aumenta el costo de la mercancía vendida."
+            retro = "Recuerda: si el inventario final disminuye, se resta menos; por eso aumenta el costo de la mercancía vendida."
 
         return aprobado, comentario, retro
+
 
     except Exception as e:
         ok = fallback_check(texto)
