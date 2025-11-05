@@ -77,6 +77,70 @@ def ia_feedback(prompt_user: str) -> str:
     except Exception as e:
         return f"No pude generar feedback con IA ahora. ({e})"
 
+def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
+    """
+    Valida la respuesta abierta con IA.
+    Devuelve (aprobado_bool, feedback_corto, retroalimentacion_formativa).
+    Si la IA no está disponible, usa una heurística local simple.
+    """
+    texto = (respuesta_estudiante or "").strip().lower()
+
+    # Heurística local mínima (fallback)
+    def fallback_check(t: str) -> bool:
+        return ("aumenta" in t) and ("inventario final" in t or "fórmula" in t or "se resta menos" in t)
+
+    if not OPENROUTER_API_KEY:
+        ok = fallback_check(texto)
+        fb = "Aprobado por validación local." if ok else "No aprobado por validación local."
+        retro = (
+            "Recuerda que cuando el inventario final disminuye, se resta menos en la fórmula, "
+            "y por eso el costo de la mercancía vendida aumenta."
+            if not ok else
+            "Excelente, identificaste correctamente la relación entre inventario final y costo."
+        )
+        return ok, fb, retro
+
+    # Prompt a la IA
+    prompt = (
+        "Evalúa la respuesta del estudiante sobre la relación entre el inventario final y el costo de la mercancía vendida. "
+        "Primero, indica si está correcta o no. Luego, ofrece retroalimentación formativa breve. "
+        "Responde SOLO en este formato JSON:\n\n"
+        "{\n"
+        "  \"aprobado\": true o false,\n"
+        "  \"comentario_corto\": \"...\",\n"
+        "  \"retroalimentacion\": \"...\"\n"
+        "}\n\n"
+        "Criterio: debe decir que al disminuir el inventario final, el costo de la mercancía vendida aumenta, "
+        "y explicar brevemente por qué.\n\n"
+        f"Respuesta del estudiante: \"{respuesta_estudiante}\""
+    )
+
+    try:
+        fb = ia_feedback(prompt)
+        fb_json = fb.strip()
+
+        # Intentar leer JSON devuelto por la IA
+        import json
+        try:
+            data = json.loads(fb_json)
+            ok = bool(data.get("aprobado"))
+            corto = data.get("comentario_corto", "").strip()
+            retro = data.get("retroalimentacion", "").strip()
+            return ok, corto, retro
+        except Exception:
+            # Si no devolvió JSON, procesar texto plano
+            aprobado = fb_json.lower().startswith("aprobado")
+            return aprobado, fb_json, "No se pudo leer retroalimentación estructurada."
+
+    except Exception as e:
+        ok = fallback_check(texto)
+        fb = f"Error IA ({e}). Validación local aplicada."
+        retro = (
+            "Cuando el inventario final baja, el costo de la mercancía vendida sube, "
+            "porque se resta menos al total de costos disponibles."
+        )
+        return ok, fb, retro
+
 # ===========================
 # Utilidades UI
 # ===========================
@@ -731,17 +795,20 @@ def page_level1(username):
     with tabs[0]:
         st.subheader("¿Qué es valorar inventarios y por qué impacta tu utilidad?")
         teoria = (
-            "Valorar inventarios es asignar un **costo monetario** a las existencias que mantiene una empresa para vender. "
-            "Ese costo aparece como **activo** (Inventarios) y determina el **Costo de Ventas (COGS)** en el estado de resultados, "
-            "afectando la **utilidad bruta**. En un **sistema periódico**, no actualizas inventarios con cada venta: "
-            "acumulas durante el período y cierras con la fórmula base:\n\n"
-            "  **COGS = Inventario Inicial + Compras - Devoluciones - Inventario Final**\n\n"
-            "- **InvI:** lo que tenías al empezar.\n"
-            "- **Compras:** adquisiciones del período (incluso costos necesarios para dejar el inventario disponible).\n"
-            "- **Devoluciones:** restan a Compras cuando devuelves a proveedor.\n"
-            "- **InvF:** lo que queda al cierre; su **valoración** depende del método (PP/PEPS/UEPS del Nivel 2).\n\n"
-            "Regla mental: imagina una **mochila de costo**. Entra InvI y Compras; si devuelves, sacas parte (Devoluciones). "
-            "Al final miras qué queda dentro (InvF). **Lo que salió** para vender es el **COGS**."
+            "Valorar inventarios significa asignar un **costo monetario** a las unidades que una empresa mantiene "
+            "para vender. Este valor aparece como **activo** en el balance y, al mismo tiempo, determina el "
+            "**costo de la mercancía vendida** en el estado de resultados, por lo que impacta directamente la utilidad.\n\n"
+            "En un **sistema periódico**, los movimientos del inventario no se registran con detalle en cada venta; "
+            "durante el período se acumulan las compras y los ajustes, y al cierre se calcula el costo de la mercancía vendida "
+            "con la fórmula base:\n\n"
+            "  **Costo de la mercancía vendida = Inventario inicial + Compras − Devoluciones en compras − Inventario final**\n\n"
+            "• **Inventario inicial**: el costo de las unidades disponibles al comenzar el período.\n"
+            "• **Compras**: el costo de las unidades adquiridas durante el período (incluye desembolsos necesarios para dejarlas disponibles para la venta).\n"
+            "• **Devoluciones en compras**: restan las compras cuando se regresan unidades al proveedor.\n"
+            "• **Inventario final**: el costo de las unidades que permanecen al cierre; su valoración depende del método (promedio ponderado, primeras en entrar primeras en salir, últimas en entrar primeras en salir) que estudiarás en el siguiente nivel.\n\n"
+            "💡 **Analogía de la mochila de costos**: imagina que cargas una mochila donde ingresan el inventario inicial y las compras. "
+            "Si devuelves mercancía al proveedor, sacas parte de esa mochila. Al finalizar, miras lo que queda adentro (inventario final). "
+            "Lo que salió para atender las ventas del período es, precisamente, el **costo de la mercancía vendida**."
         )
         st.write(teoria)
         with st.expander("🔊 Escuchar explicación"):
@@ -767,20 +834,25 @@ def page_level1(username):
         with colR:
             st.caption("Desglose y explicación")
             st.markdown(
-                "\n".join([
-                    f"**1) InvI + Compras** → {peso(inv0)} + {peso(compras)} = **{peso(inv0+compras)}**",
-                    f"**2) − Devoluciones**  → {peso(inv0+compras)} − {peso(devol)} = **{peso(inv0+compras-devol)}**",
-                    f"**3) − InvF**          → {peso(inv0+compras-devol)} − {peso(invf)} = **{peso(inv0+compras-devol-invf)}**",
-                ])
+                f"""
+                <div style='line-height:1.8; font-size:1.05rem;'>
+                    <b>1)</b> Inventario inicial + Compras → {peso(inv0)} + {peso(compras)} = <b>{peso(inv0+compras)}</b><br>
+                    <b>2)</b> Menos devoluciones en compras → {peso(inv0+compras)} − {peso(devol)} = <b>{peso(inv0+compras-devol)}</b><br>
+                    <b>3)</b> Menos inventario final → {peso(inv0+compras-devol)} − {peso(invf)} = <b>{peso(inv0+compras-devol-invf)}</b>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
             cogs = inv0 + compras - devol - invf
-            st.success(f"**COGS (Costo de Ventas)** = {peso(cogs)}")
-            st.caption("Interpretación: la ‘mochila de costo’ se llenó con InvI y Compras; devolviste parte (Devoluciones) "
-                       "y lo que quedó al cierre (InvF) no salió a ventas. El resto es COGS.")
+            st.success(f"**Costo de la mercancía vendida** = {peso(cogs)}")
+            st.caption(
+                "Interpretación: en la ‘mochila de costos’ entran el inventario inicial y las compras. "
+                "Las devoluciones en compras restan costo disponible. Al final, el inventario que queda en la mochila "
+                "(inventario final) **no** corresponde a ventas. La diferencia es el **costo de la mercancía vendida**."
+            )
 
-        st.markdown("—")
-        st.write("**Mini reto**: explica qué pasaría con el COGS si **no hubiera devoluciones** y el **Inventario Final fuera muy pequeño**.")
-        razonamiento = st.text_area("Tu razonamiento (opcional, la IA te comenta):", key="n1_ex_raz")
+        st.write("**Mini reto**: explica qué ocurriría con el costo de la mercancía vendida si **no hubiera devoluciones en compras** y el **inventario final fuera muy pequeño**.")
+        razonamiento = st.text_area("Tu razonamiento (opcional, la inteligencia artificial te comenta):", key="n1_ex_raz")
 
         # IA opcional
         ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n1_ex_ai", value=False)
@@ -795,12 +867,15 @@ def page_level1(username):
                     fb = ia_feedback(prompt)
                 with st.expander("💬 Feedback de la IA"):
                     st.write(fb)
-            else:
-                st.info("Validación local: recuerda que si disminuye InvF, el COGS aumenta; y si no hay devoluciones, Compras no se reducen.")
+        else:
+            st.info(
+                "Validación local: si disminuye el inventario final, el costo de la mercancía vendida aumenta; "
+                "si no hay devoluciones en compras, el valor de las compras no se reduce."
+            )
 
     # Práctica interactiva (IA) — escenarios estables
     with tabs[2]:
-        st.subheader("Práctica interactiva · escenarios aleatorios")
+        st.subheader("Práctica interactiva")
         st.caption("Completa el cálculo. Puedes generar otro escenario y validar (IA opcional).")
 
         if "n1p_inv0" not in st.session_state:
@@ -808,18 +883,18 @@ def page_level1(username):
 
         cols = st.columns(4)
         with cols[0]:
-            st.metric("Inv. Inicial", peso(st.session_state.n1p_inv0))
+            st.metric("Inventario Inicial", peso(st.session_state.n1p_inv0))
         with cols[1]:
             st.metric("Compras", peso(st.session_state.n1p_compras))
         with cols[2]:
             st.metric("Devoluciones", peso(st.session_state.n1p_devol))
         with cols[3]:
-            st.metric("Inv. Final", peso(st.session_state.n1p_invf))
+            st.metric("Inventario Final", peso(st.session_state.n1p_invf))
 
         st.button("🔄 Nuevo escenario", on_click=n1_new_case, key="n1_practice_new")
 
         with st.form("n1_practice_form"):
-            user_cogs = st.number_input("Tu COGS ($)", min_value=0.0, value=0.0, step=10.0, key="n1_practice_user_cogs")
+            user_cogs = st.number_input("El costo de mercancía vendida es:", min_value=0.0, value=0.0, step=10.0, key="n1_practice_user_cogs")
             user_comment = st.text_area("Justifica brevemente (opcional):", key="n1_practice_comment")
             ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n1_practice_ai", value=False)
             submitted = st.form_submit_button("✅ Validar práctica")
@@ -832,78 +907,185 @@ def page_level1(username):
             invf = st.session_state.n1p_invf
             correct = inv0 + compras - devol - invf
             if abs(user_cogs - correct) <= 0.5:
-                st.success(f"¡Correcto! COGS = {peso(correct)}")
+                st.success(f"¡Correcto! El **costo de la mercancía vendida** es {peso(correct)}")
             else:
-                st.error(f"No coincide. El COGS esperado era {peso(correct)}")
+                st.error(f"No coincide. El **costo de la mercancía vendida** esperado era {peso(correct)}")
 
             if ask_ai:
                 with st.spinner("Generando feedback con IA..."):
                     prompt = (
-                        f"Valida el cálculo del estudiante: COGS_est={user_cogs:.2f}. "
-                        f"Datos: InvI={inv0:.2f}, Compras={compras:.2f}, Devol={devol:.2f}, InvF={invf:.2f}. "
-                        f"COGS_correcto={correct:.2f}. Comentario del estudiante: {user_comment}"
+                        f"Valida el cálculo del estudiante: costo_estimado={user_cogs:.2f}. "
+                        f"Datos: Inventario_inicial={inv0:.2f}, Compras={compras:.2f}, Devoluciones_en_compras={devol:.2f}, Inventario_final={invf:.2f}. "
+                        f"Costo_correcto={correct:.2f}. Comentario del estudiante: {user_comment}"
                     )
                     fb = ia_feedback(prompt)
                 with st.expander("💬 Feedback de la IA"):
                     st.write(fb)
 
-    # Evaluación final — en formulario (sin reruns por radio)
+    # Evaluación final — 5 preguntas (2 selección múltiple, 2 cálculo, 1 abierta IA)
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 1")
-        st.caption("Necesitas acertar **2 de 3** para aprobar y desbloquear el Nivel 2.")
+        st.caption("Son 5 preguntas. Apruebas con **4 de 5**.")
 
-        with st.form("n1_eval_form", clear_on_submit=False):
-            q1 = st.radio("1) En sistema periódico, ¿cuándo conoces con certeza el COGS?",
-                          ["En cada venta", "Al cierre del período"], index=None, key="n1_eval_q1")
-            q2 = st.radio("2) ¿Cuál de estos **disminuye** el COGS en la fórmula periódica?",
-                          ["Devoluciones de compra", "Compras"], index=None, key="n1_eval_q2")
-            q3 = st.radio("3) Selecciona la fórmula correcta:",
-                          ["InvI + Compras + Devoluciones - InvF",
-                           "InvI + Compras - Devoluciones - InvF",
-                           "InvI - Compras + Devoluciones + InvF"], index=None, key="n1_eval_q3")
-            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n1_eval_ai", value=False)
+        # ---------- Claves correctas / datos de cálculo ----------
+        # P1: Fórmula correcta
+        P1_CORRECTA = "Inventario inicial + Compras − Devoluciones en compras − Inventario final"
+        # P2: Afirmación verdadera
+        P2_CORRECTA = "Un inventario final más alto, manteniendo todo lo demás igual, reduce el costo de la mercancía vendida."
+
+        # P3: Cálculo directo
+        P3_invI, P3_comp, P3_dev, P3_invF = 1800.0, 4500.0, 300.0, 1200.0
+        P3_CORRECTO = P3_invI + P3_comp - P3_dev - P3_invF  # 4800.0
+
+        # P4: Cálculo inverso (despejar Inventario final)
+        P4_invI, P4_comp, P4_dev, P4_cmv = 2400.0, 3600.0, 200.0, 4000.0
+        P4_CORRECTO = P4_invI + P4_comp - P4_dev - P4_cmv    # 1800.0
+
+        TOL = 0.5  # tolerancia para respuestas numéricas
+        TOTAL_ITEMS = 5
+        PASS_MIN = 4
+
+        with st.form("n1_eval_form_v2", clear_on_submit=False):
+            # ---------- Pregunta 1 (Selección múltiple) ----------
+            st.markdown("**1) En un sistema periódico, ¿cuál es la fórmula correcta para calcular el costo de la mercancía vendida?**")
+            p1_opts = [
+                "Inventario inicial + Compras + Devoluciones en compras − Inventario final",
+                P1_CORRECTA,
+                "Inventario final + Compras − Devoluciones en compras − Ventas",
+                "Inventario inicial + Ventas − Devoluciones en compras − Inventario final",
+            ]
+            q1 = st.radio("Selecciona una opción:", p1_opts, index=None, key="n1v2_q1")
+
+            st.markdown("---")
+
+            # ---------- Pregunta 2 (Selección múltiple) ----------
+            st.markdown("**2) En un sistema periódico, selecciona la afirmación verdadera:**")
+            p2_opts = [
+                "El costo de la mercancía vendida se conoce con certeza en cada venta.",
+                "Las devoluciones en compras aumentan el costo de la mercancía vendida.",
+                P2_CORRECTA,
+                "El costo de la mercancía vendida no se ve afectado por las devoluciones en compras.",
+            ]
+            q2 = st.radio("Selecciona una opción:", p2_opts, index=None, key="n1v2_q2")
+
+            st.markdown("---")
+
+            # ---------- Pregunta 3 (Cálculo directo) ----------
+            st.markdown("**3) Con base en esta información. Calcule el costo de la mercancía vendida**")
+            st.markdown(
+                f"""
+                <div style='line-height:1.8; font-size:1.05rem;'>
+                <b>Datos:</b><br>
+                • Inventario inicial = <b>{peso(P3_invI)}</b><br>
+                • Compras = <b>{peso(P3_comp)}</b><br>
+                • Devoluciones en compras = <b>{peso(P3_dev)}</b><br>
+                • Inventario final = <b>{peso(P3_invF)}</b>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            q3 = st.number_input("Escribe tu resultado ($):", min_value=0.0, value=0.0, step=10.0, key="n1v2_q3")
+
+            st.markdown("---")
+
+            # ---------- Pregunta 4 (Cálculo inverso) ----------
+            st.markdown("**4) Con base en esta información. Calcule el valor del inventario final**")
+            st.markdown(
+                f"""
+                <div style='line-height:1.8; font-size:1.05rem;'>
+                <b>Datos:</b><br>
+                • Inventario inicial = <b>{peso(P4_invI)}</b><br>
+                • Compras = <b>{peso(P4_comp)}</b><br>
+                • Devoluciones en compras = <b>{peso(P4_dev)}</b><br>
+                • Costo de la mercancía vendida = <b>{peso(P4_cmv)}</b>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            q4 = st.number_input("Inventario final ($):", min_value=0.0, value=0.0, step=10.0, key="n1v2_q4")
+
+            st.markdown("---")
+
+            # ---------- Pregunta 5 (Abierta, validación con IA) ----------
+            st.markdown("**5) Respuesta abierta (validada con IA)**")
+            st.write(
+                "Explica **qué ocurre con el costo de la mercancía vendida** cuando **disminuye el inventario final**, "
+                "manteniendo constantes el inventario inicial, las compras y las devoluciones en compras."
+            )
+            q5_text = st.text_area("Tu explicación en 2–4 líneas:", key="n1v2_q5")
+
+            ask_ai = st.checkbox("Mostrar el resultado detallado de la validación por IA", value=True, key="n1v2_ai_show")
+
             submitted = st.form_submit_button("🧪 Validar evaluación")
 
         if submitted:
-            st.toast("✅ Respuesta recibida, validando...", icon="✅")
-            correct = {
-                "n1_eval_q1": "Al cierre del período",
-                "n1_eval_q2": "Devoluciones de compra",
-                "n1_eval_q3": "InvI + Compras - Devoluciones - InvF"
-            }
-            answers = {"n1_eval_q1": q1, "n1_eval_q2": q2, "n1_eval_q3": q3}
-            score = sum(1 for k,v in answers.items() if v == correct[k])
-            passed = score >= 2
+            st.toast("✅ Respuestas recibidas, validando...", icon="✅")
 
-            # Registro del intento (w=0, no bloquea)
-            record_attempt(username, level=1, score=score, passed=passed)
+            score = 0
+            details = []
 
-            fb = None
+            # P1
+            ok1 = (q1 == P1_CORRECTA)
+            if ok1: score += 1
+            details.append(("1) Fórmula correcta", ok1))
+
+            # P2
+            ok2 = (q2 == P2_CORRECTA)
+            if ok2: score += 1
+            details.append(("2) Afirmación verdadera", ok2))
+
+            # P3
+            ok3 = (abs((q3 or 0.0) - P3_CORRECTO) <= TOL)
+            if ok3: score += 1
+            details.append(("3) Cálculo directo", ok3))
+
+            # P4
+            ok4 = (abs((q4 or 0.0) - P4_CORRECTO) <= TOL)
+            if ok4: score += 1
+            details.append(("4) Cálculo inverso", ok4))
+
+            # P5 — validación con IA
+            ok5, fb5_short, fb5_retro = n1_eval_open_ai(q5_text)
+            if ok5: score += 1
+            details.append(("5) Respuesta abierta (IA)", ok5))
+
+            # Resultado
+            passed = (score >= PASS_MIN)
+            record_attempt(username, level=1, score=score, passed=passed)  # Mongo: sin cambios
+
+            # Feedback al estudiante
+            cols = st.columns([1,1,1])
+            cols[0].metric("Aciertos", f"{score}/{TOTAL_ITEMS}")
+            cols[1].metric("Regla de aprobación", f"{PASS_MIN} de {TOTAL_ITEMS}")
+            cols[2].metric("Estado", "✅ Aprobado" if passed else "❌ No aprobado")
+
+            with st.expander("Detalle por pregunta"):
+                for label, ok in details:
+                    st.write(f"{'✅' if ok else '❌'} {label}")
+
             if ask_ai:
-                with st.spinner("Generando feedback con IA..."):
-                    fb = ia_feedback(
-                        f"Nivel 1 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
-                        f"Aciertos: {score}/3. Escribe un feedback breve y amable (máx 6 líneas)."
-                    )
+                with st.expander("💬 Resultado de la IA (pregunta 5)"):
+                    st.markdown(f"**Resultado:** {'✅ Aprobado' if ok5 else '❌ No aprobado'}")
+                    st.write(fb5_short)
+                    st.markdown("---")
+                    st.info(f"**Retroalimentación formativa:** {fb5_retro}")
 
             if passed:
-                # Guarda progreso y navega
+                # Guarda progreso y navega al Nivel 2
                 set_level_passed(st.session_state["progress_col"], username, "level1", score)
                 st.session_state["sidebar_next_select"] = "Nivel 2: Métodos (PP/PEPS/UEPS)"
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 1 superado!</b> 🏆<br><br>"
-                        "Dominaste la fórmula del <b>COGS</b> y entendiste el sistema periódico. "
+                        "Dominaste la fórmula del <b>costo de la mercancía vendida</b> y el sistema periódico. "
                         "Ahora sí: pasemos a los <b>métodos de valoración</b>."
                     ),
                     next_label="Nivel 2",
                     next_key_value="Nivel 2: Métodos (PP/PEPS/UEPS)"
                 )
             else:
-                st.error(f"No aprobado. Aciertos {score}/3. Repasa la teoría y vuelve a intentar.")
-                if fb:
-                    with st.expander("💬 Feedback de la IA"):
-                        st.write(fb)
+                st.error(f"No aprobado. Aciertos {score}/{TOTAL_ITEMS}. Repasa la teoría y vuelve a intentar.")
+
 
 # ===========================
 # NIVEL 2 (Métodos PP/PEPS/UEPS)
