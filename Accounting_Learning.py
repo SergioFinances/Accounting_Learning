@@ -80,64 +80,87 @@ def ia_feedback(prompt_user: str) -> str:
 def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
     """
     Valida la respuesta abierta con IA.
-    Devuelve (aprobado_bool, feedback_corto, retroalimentacion_formativa).
-    Si la IA no está disponible, usa una heurística local simple.
+    Devuelve: (aprobado_bool, comentario_corto, retroalimentacion_formativa).
+    Soporta salidas con claves 'aprobado' o 'aprobo', elimina tokens raros,
+    intenta extraer el primer bloque JSON aunque venga dentro de fences u otros textos.
     """
-    texto = (respuesta_estudiante or "").strip().lower()
+    import json, re
 
-    # Heurística local mínima (fallback)
+    texto = (respuesta_estudiante or "").strip()
+
+    # ---- Heurística local (fallback) ----
     def fallback_check(t: str) -> bool:
+        t = t.lower()
         return ("aumenta" in t) and ("inventario final" in t or "fórmula" in t or "se resta menos" in t)
 
     if not OPENROUTER_API_KEY:
         ok = fallback_check(texto)
         fb = "Aprobado por validación local." if ok else "No aprobado por validación local."
         retro = (
-            "Recuerda que cuando el inventario final disminuye, se resta menos en la fórmula, "
-            "y por eso el costo de la mercancía vendida aumenta."
+            "Cuando el inventario final disminuye, en la fórmula se resta menos; por eso el costo de la mercancía vendida aumenta."
             if not ok else
-            "Excelente, identificaste correctamente la relación entre inventario final y costo."
+            "Bien: reconoces que menor inventario final implica mayor costo de la mercancía vendida y explicas por qué."
         )
         return ok, fb, retro
 
-    # Prompt a la IA
+    # ---- Prompt IA (pide JSON) ----
     prompt = (
         "Evalúa la respuesta del estudiante sobre la relación entre el inventario final y el costo de la mercancía vendida. "
-        "Primero, indica si está correcta o no. Luego, ofrece retroalimentación formativa breve. "
-        "Responde SOLO en este formato JSON:\n\n"
+        "Primero indica si es correcta; luego, entrega retroalimentación formativa breve. "
+        "Responde SOLO en este formato JSON, sin texto extra, sin comentarios:\n\n"
         "{\n"
-        "  \"aprobado\": true o false,\n"
+        "  \"aprobado\": true/false,\n"
         "  \"comentario_corto\": \"...\",\n"
         "  \"retroalimentacion\": \"...\"\n"
         "}\n\n"
-        "Criterio: debe decir que al disminuir el inventario final, el costo de la mercancía vendida aumenta, "
-        "y explicar brevemente por qué.\n\n"
-        f"Respuesta del estudiante: \"{respuesta_estudiante}\""
+        "Criterio: debe afirmar que al disminuir el inventario final, el costo de la mercancía vendida aumenta, "
+        "y explicar brevemente por qué (se resta menos en la fórmula, sale más costo).\n\n"
+        f"Respuesta del estudiante: \"{texto}\""
     )
 
     try:
-        fb = ia_feedback(prompt)
-        fb_json = fb.strip()
+        fb = ia_feedback(prompt) or ""
+        raw = fb.strip()
 
-        # Intentar leer JSON devuelto por la IA
-        import json
+        # Limpieza: elimina fences ```json ... ``` y tokens raros
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE|re.MULTILINE).strip()
+        raw = raw.replace("<|begin_of_sentence|>", "").replace("<|end_of_sentence|>", "")
+        raw = raw.replace("“", "\"").replace("”", "\"").replace("’", "'")
+
+        # Si vino JSON incrustado en texto, intenta extraer el primer {...}
+        if not raw.startswith("{"):
+            m = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+            if m:
+                raw = m.group(0).strip()
+
+        # A veces devuelven 'aprobo' en lugar de 'aprobado'
+        raw = raw.replace("\"aprobo\"", "\"aprobado\"").replace("'aprobo'", "'aprobado'")
+
+        # Intenta parsear JSON (también si usaron comillas simples)
         try:
-            data = json.loads(fb_json)
-            ok = bool(data.get("aprobado"))
-            corto = data.get("comentario_corto", "").strip()
-            retro = data.get("retroalimentacion", "").strip()
-            return ok, corto, retro
+            data = json.loads(raw)
         except Exception:
-            # Si no devolvió JSON, procesar texto plano
-            aprobado = fb_json.lower().startswith("aprobado")
-            return aprobado, fb_json, "No se pudo leer retroalimentación estructurada."
+            # Reemplaza comillas simples por dobles de forma segura (solo claves/strings)
+            raw_clean = re.sub(r"(?<!\\)'", '"', raw)
+            data = json.loads(raw_clean)
+
+        aprobado = bool(data.get("aprobado"))
+        comentario = (data.get("comentario_corto") or "").strip()
+        retro = (data.get("retroalimentacion") or "").strip()
+
+        # Seguridad: si IA no pone nada útil, usamos fallback formativo
+        if not comentario:
+            comentario = "Evaluación recibida."
+        if not retro:
+            retro = "Recuerda: si el inventario final disminuye, se resta menos, por lo que aumenta el costo de la mercancía vendida."
+
+        return aprobado, comentario, retro
 
     except Exception as e:
         ok = fallback_check(texto)
-        fb = f"Error IA ({e}). Validación local aplicada."
+        fb = f"Error IA. Validación local: {'aprobada' if ok else 'no aprobada'}."
         retro = (
-            "Cuando el inventario final baja, el costo de la mercancía vendida sube, "
-            "porque se resta menos al total de costos disponibles."
+            "Cuando el inventario final baja, se resta menos en la fórmula y por eso aumenta el costo de la mercancía vendida."
         )
         return ok, fb, retro
 
@@ -1048,6 +1071,55 @@ def page_level1(username):
             ok5, fb5_short, fb5_retro = n1_eval_open_ai(q5_text)
             if ok5: score += 1
             details.append(("5) Respuesta abierta (IA)", ok5))
+
+            # --------- Retroalimentación formativa por pregunta (1–4) ---------
+            feedback_por_pregunta = []
+
+            if not ok1:
+                feedback_por_pregunta.append(
+                    ("1) Fórmula correcta",
+                    "Recuerda la estructura en sistema periódico: "
+                    "Costo de la mercancía vendida = Inventario inicial + Compras − Devoluciones en compras − Inventario final. "
+                    "Las devoluciones en compras RESTAN del costo disponible y el inventario final se descuenta al cierre.")
+                )
+            else:
+                feedback_por_pregunta.append(("1) Fórmula correcta", "¡Bien! Identificaste la fórmula sin confundir los signos."))
+
+            if not ok2:
+                feedback_por_pregunta.append(
+                    ("2) Afirmación verdadera",
+                    "Si el inventario final aumenta (manteniendo todo lo demás igual), se descuenta una cifra mayor al cierre, "
+                    "por lo que el costo de la mercancía vendida DISMINUYE. Por eso la afirmación correcta es la que indica esa relación inversa.")
+                )
+            else:
+                feedback_por_pregunta.append(("2) Afirmación verdadera", "Correcto: inventario final más alto ⇒ menor costo de la mercancía vendida."))
+
+            if not ok3:
+                feedback_por_pregunta.append(
+                    ("3) Cálculo directo",
+                    f"Vuelve a aplicar la fórmula con los datos: {peso(P3_invI)} + {peso(P3_comp)} − {peso(P3_dev)} − {peso(P3_invF)} = {peso(P3_CORRECTO)}. "
+                    "Error típico: olvidar restar las devoluciones en compras.")
+                )
+            else:
+                feedback_por_pregunta.append(("3) Cálculo directo", "Cálculo correcto y bien aplicado el orden de operaciones."))
+
+            if not ok4:
+                feedback_por_pregunta.append(
+                    ("4) Cálculo inverso",
+                    "Despeja el Inventario final desde la fórmula: Inventario final = Inventario inicial + Compras − Devoluciones en compras − Costo de la mercancía vendida. "
+                    f"Con los datos: {peso(P4_invI)} + {peso(P4_comp)} − {peso(P4_dev)} − {peso(P4_cmv)} = {peso(P4_CORRECTO)}. "
+                    "Error típico: cambiar signos al despejar.")
+                )
+            else:
+                feedback_por_pregunta.append(("4) Cálculo inverso", "¡Bien! Despejaste correctamente el inventario final."))
+
+            # --------- Mostrar panel de retroalimentación ---------
+            with st.expander("🧠 Retroalimentación formativa por pregunta"):
+                for titulo, nota in feedback_por_pregunta:
+                    st.markdown(f"**{titulo}**")
+                    st.write(nota)
+                    st.markdown("---")
+
 
             # Resultado
             passed = (score >= PASS_MIN)
