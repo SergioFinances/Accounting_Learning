@@ -164,41 +164,52 @@ def ia_feedback(prompt_user: str) -> str:
     except Exception as e:
         return f"No pude generar feedback con IA ahora. ({e})"
 
-def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
+def eval_ia_explicacion(pregunta: str, criterios: str, respuesta_estudiante: str) -> tuple[bool, str, str]:
+    """
+    Evalúa con IA una explicación abierta contra 'pregunta' y 'criterios'.
+    Devuelve: (aprobado_bool, comentario_corto, retroalimentacion).
+    """
     texto = (respuesta_estudiante or "").strip()
 
     system_msg = {
         "role": "system",
         "content": (
-            "Eres un evaluador pedagógico de contabilidad. "
-            "Responde SOLO en JSON válido (una línea)."
+            "Eres un tutor de contabilidad empático, alentador y claro. "
+            "Siempre retroalimentas con tono amable, sin regaños ni juicios. "
+            "Estructura tu respuesta pedagógica así: "
+            "1) Refuerzo positivo breve; "
+            "2) Explicación clara y paso a paso; "
+            "3) Analogía simple (por ejemplo: 'mochila de costos', 'balanza', 'caja que se vacía'); "
+            "4) Un consejo práctico (‘siguiente paso’) para mejorar. "
+            "Usa terminología local de Colombia: CMV (Costo de la Mercancía Vendida), no COGS. "
+            "Evita tecnicismos innecesarios, sé conciso y motivador."
         )
     }
+
     user_msg = {
         "role": "user",
         "content": (
-            "Pregunta del curso: Explica con tus palabras qué ocurre con el costo de la mercancía vendida "
-            "cuando el inventario final DISMINUYE, y por qué sucede eso.\n\n"
-            "Criterios de evaluación:\n"
-            "- Debe afirmar explícitamente que el costo AUMENTA.\n"
-            "- Debe justificar que, al cierre, se RESTA MENOS en la fórmula contable.\n"
-            "- Se valora el uso de razonamiento contable, claridad conceptual y coherencia entre causa y efecto.\n\n"
-            "Responde EXCLUSIVAMENTE en formato JSON, sin texto adicional ni comentarios.\n"
-            "Usa esta estructura:\n"
-            "{\n"
-            "  \"aprobado\": true|false,\n"
-            "  \"comentario_corto\": \"≤ 20 palabras (síntesis del resultado)\",\n"
-            "  \"retroalimentacion\": \"≤ 120 palabras (explicación formativa extensa, clara, con ejemplos o analogías pedagógicas)\"\n"
+            f"Pregunta de evaluación:\n«{pregunta}»\n\n"
+            f"Criterios de evaluación (deben cumplirse todos):\n{criterios}\n\n"
+            "Responde EXCLUSIVAMENTE con este JSON (una sola línea, sin texto extra):\n"
+            "{"
+            "\"aprobado\": true|false, "
+            "\"comentario_corto\": \"≤ 20 palabras (síntesis amable pero siempre diciendo que está correcto o incorrecto, es decir"
+            "sin flexibilidad)\", "
+            "\"retroalimentacion\": "
+            "\"≤ 120 palabras, tono amable y pedagógico, inicia con refuerzo positivo, explica paso a paso, "
+            "incluye una analogía sencilla (p.ej. 'mochila de costos' o 'balanza'), y cierra con un consejo práctico. "
+            "Usa CMV (no COGS).\""
             "}\n\n"
-            f"Respuesta del estudiante: \"{texto}\""
+            f"Respuesta del estudiante: \"{respuesta_estudiante.strip()}\""
         )
     }
 
     try:
-        raw = ia_call([system_msg, user_msg], temperature=0.2)
-        st.session_state["n1_p5_raw"] = raw  # <-- guardamos lo que devolvió OpenRouter
-
+        raw = ia_call([system_msg, user_msg], temperature=0.25)
+        st.session_state["eval_raw"] = raw  # opcional diagnóstico
         data = _parse_first_json(raw)
+
         aprobado = bool(data.get("aprobado"))
         comentario = (data.get("comentario_corto") or "").strip()
         retro = (data.get("retroalimentacion") or "").strip()
@@ -208,26 +219,31 @@ def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
         else:
             comentario = f"IA: {comentario}"
         if not retro:
-            retro = ("Recuerda: al bajar el inventario final se descuenta menos; por eso el costo aumenta.")
+            retro = ("Recuerda: al disminuir el inventario final se resta menos; por eso el CMV aumenta.")
 
         return aprobado, comentario, retro
 
     except Exception as e:
-        # Guardamos el error textual para diagnóstico
-        st.session_state["n1_p5_raw"] = f"[IA ERROR] {str(e).strip()}"
-
-        # Fallback mínimo (no bloquea el examen)
+        # Fallback mínimo
         t = (texto or "").lower()
-        inv_down = any(w in t for w in ["disminuye","disminuir","baja","menor","reduce","decrece"])
+        inv_down = any(w in t for w in ["disminuye","disminuir","baja","menor","reduce","decrece","muy pequeño"])
         cost_up  = any(w in t for w in ["aumenta","sube","mayor","incrementa"])
         resta_menos = ("resta menos" in t) or ("se resta menos" in t)
 
         aprobado = inv_down and (cost_up or resta_menos)
         comentario = "Fallback: la IA no estuvo disponible."
-        retro = ("Si el inventario final disminuye, se descuenta menos en la fórmula y por eso el costo aumenta. "
-                 "Regla: «menos inventario final → más costo de ventas».")
+        retro = ("Si el inventario final es muy pequeño, se descuenta menos en la fórmula y el CMV aumenta. "
+                 "Memotecnia: «menos inventario final → más CMV».")
         return aprobado, comentario, retro
 
+
+def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
+    pregunta = "¿Qué ocurre con el CMV cuando el inventario final DISMINUYE y por qué?"
+    criterios = (
+        "1) Debe afirmar que el CMV AUMENTA.\n"
+        "2) Debe justificar que al cierre se RESTA MENOS en la fórmula (CMV = InvI + Compras − InvF)."
+    )
+    return eval_ia_explicacion(pregunta, criterios, respuesta_estudiante)
 
 # ===========================
 # Utilidades UI
@@ -947,15 +963,18 @@ def page_level1(username):
 
         # Define la pregunta del mini reto para que quede claro en el validador (opcional, para diagnóstico/consistencia)
         mini_reto = (
-            "¿Qué ocurriría con el costo de la mercancía vendida si no hubiera devoluciones en compras "
+            "¿Qué ocurriría con el **Costo de la Mercancía Vendida (CMV)** si no hubiera devoluciones en compras "
             "y el inventario final fuera muy pequeño?"
+        )
+        criterios_mini = (
+            "1) Si no hay devoluciones en compras → las compras no se reducen (se mantienen altas).\n"
+            "2) Inventario final muy pequeño → se RESTA MUY POCO al cierre, por tanto el **CMV AUMENTA**."
         )
 
         if st.button("💬 Comentar", key="n1_ex_fb"):
             if ask_ai:
                 with st.spinner("Evaluando con IA…"):
-                    # Usa tu validador IA que exige JSON y evalúa criterios (aprobado, comentario, retro)
-                    ok, comentario, retro = n1_eval_open_ai(razonamiento)
+                    ok, comentario, retro = eval_ia_explicacion(mini_reto, criterios_mini, razonamiento)
 
                 with st.expander("💬 Resultado de la IA (mini reto)"):
                     st.markdown(f"**Pregunta:** {mini_reto}")
@@ -963,13 +982,6 @@ def page_level1(username):
                     st.markdown(f"**Comentario:** {comentario}")
                     st.markdown("---")
                     st.info(f"**Retroalimentación formativa:** {retro}")
-            else:
-                # Validación local breve (sin IA) por si no se activa el checkbox
-                st.info(
-                    "Validación local: si no hay devoluciones en compras, las compras no se reducen; "
-                    "y si el inventario final es muy pequeño, se resta menos al cierre, por lo que el costo de la mercancía vendida aumenta."
-                )
-
 
     # Práctica interactiva (IA) — escenarios estables
     with tabs[2]:
