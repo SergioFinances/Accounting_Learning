@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
+import json, re
 
 # ===========================
 # Constantes
@@ -49,6 +50,92 @@ client = OpenAI(
 )
 DEEPSEEK_MODEL = "deepseek/deepseek-chat-v3.1:free"
 
+def ia_call(messages: list, temperature: float = 0.2) -> str:
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY ausente o inválida.")
+    completion = client.chat.completions.create(
+        model=DEEPSEEK_MODEL,  # definido arriba (recomendado sin :free)
+        messages=messages,
+        temperature=temperature,
+        extra_body={}
+    )
+    text = (completion.choices[0].message.content or "").strip()
+    return text
+
+def _parse_first_json(s: str) -> dict:
+    """
+    Extrae y parsea SOLO el primer objeto JSON balanceado de la respuesta.
+    Tolera ```json fences, tokens raros, 'aprobo', comillas simples, y texto extra después del JSON.
+    """
+    import json, re
+
+    t = (s or "").strip()
+
+    # Errores comunes (texto, no JSON)
+    lower = t.lower()
+    if ("no endpoints found" in lower or "unauthorized" in lower or
+        "rate limit" in lower or "timeout" in lower):
+        raise RuntimeError(t)
+
+    # Limpieza básica
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t, flags=re.IGNORECASE|re.MULTILINE).strip()
+    t = t.replace("<|begin_of_sentence|>", "").replace("<|end_of_sentence|>", "")
+    t = t.replace("“","\"").replace("”","\"").replace("’","'")
+    t = t.replace("\"aprobo\"", "\"aprobado\"").replace("'aprobo'", "'aprobado'")
+
+    # --- Encontrar el PRIMER objeto JSON balanceado ---
+    start = t.find("{")
+    if start == -1:
+        raise RuntimeError("No se encontró '{' en la respuesta del modelo.")
+
+    brace = 0
+    in_str = False
+    esc = False
+    end = None
+    for i in range(start, len(t)):
+        ch = t[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == "\"":
+                in_str = False
+        else:
+            if ch == "\"":
+                in_str = True
+            elif ch == "{":
+                brace += 1
+            elif ch == "}":
+                brace -= 1
+                if brace == 0:
+                    end = i
+                    break
+    if end is None:
+        # No cerró, intento con recorte hasta último '}' por si vino basura
+        last = t.rfind("}")
+        if last == -1:
+            raise RuntimeError("No se encontró cierre '}' en la respuesta del modelo.")
+        end = last
+
+    candidate = t[start:end+1].strip()
+
+    # Intento 1: parseo directo
+    try:
+        return json.loads(candidate)
+    except Exception:
+        pass
+
+    # Intento 2: normalizar comillas simples -> dobles (fuera de strings escapados)
+    candidate2 = re.sub(r"(?<!\\)'", '"', candidate)
+    try:
+        return json.loads(candidate2)
+    except Exception as e:
+        # Último recurso: quitar comas finales antes de '}' si las hay
+        candidate3 = re.sub(r",\s*}", "}", candidate2)
+        return json.loads(candidate3)
+
+
 def ia_feedback(prompt_user: str) -> str:
     """
     Usa OpenRouter con el modelo DeepSeek para dar feedback educativo breve.
@@ -78,103 +165,69 @@ def ia_feedback(prompt_user: str) -> str:
         return f"No pude generar feedback con IA ahora. ({e})"
 
 def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
-    """
-    Valida la respuesta abierta con IA.
-    Devuelve: (aprobado_bool, comentario_corto, retroalimentacion_formativa).
-    Soporta salidas con claves 'aprobado' o 'aprobo', elimina tokens raros,
-    intenta extraer el primer bloque JSON aunque venga dentro de fences u otros textos.
-    """
-    import json, re
-
     texto = (respuesta_estudiante or "").strip()
 
-    # ---- Heurística local (fallback) ----
-    def fallback_check(t: str) -> bool:
-        t = t.lower()
-        return ("aumenta" in t) and ("inventario final" in t or "fórmula" in t or "se resta menos" in t)
-
-    if not OPENROUTER_API_KEY:
-        ok = fallback_check(texto)
-        fb = "Aprobado por validación local." if ok else "No aprobado por validación local."
-        retro = (
-            "Cuando el inventario final disminuye, en la fórmula se resta menos; por eso el costo de la mercancía vendida aumenta."
-            if not ok else
-            "Bien: reconoces que menor inventario final implica mayor costo de la mercancía vendida y explicas por qué."
+    system_msg = {
+        "role": "system",
+        "content": (
+            "Eres un evaluador pedagógico de contabilidad. "
+            "Responde SOLO en JSON válido (una línea)."
         )
-        return ok, fb, retro
-
-    # ---- Prompt IA (pide JSON) ----
-    prompt = (
-        "Evalúa la respuesta del estudiante sobre la relación entre el inventario final y el costo de la mercancía vendida. "
-        "Primero indica si es correcta; luego, entrega retroalimentación formativa breve. "
-        "Responde SOLO en este formato JSON, sin texto extra, sin comentarios:\n\n"
-        "{\n"
-        "  \"aprobado\": true/false,\n"
-        "  \"comentario_corto\": \"...\",\n"
-        "  \"retroalimentacion\": \"...\"\n"
-        "}\n\n"
-        "Criterio: debe afirmar que al disminuir el inventario final, el costo de la mercancía vendida aumenta, "
-        "y explicar brevemente por qué (se resta menos en la fórmula, sale más costo).\n\n"
-        f"Respuesta del estudiante: \"{texto}\""
-    )
+    }
+    user_msg = {
+        "role": "user",
+        "content": (
+            "Pregunta del curso: Explica con tus palabras qué ocurre con el costo de la mercancía vendida "
+            "cuando el inventario final DISMINUYE, y por qué sucede eso.\n\n"
+            "Criterios de evaluación:\n"
+            "- Debe afirmar explícitamente que el costo AUMENTA.\n"
+            "- Debe justificar que, al cierre, se RESTA MENOS en la fórmula contable.\n"
+            "- Se valora el uso de razonamiento contable, claridad conceptual y coherencia entre causa y efecto.\n\n"
+            "Responde EXCLUSIVAMENTE en formato JSON, sin texto adicional ni comentarios.\n"
+            "Usa esta estructura:\n"
+            "{\n"
+            "  \"aprobado\": true|false,\n"
+            "  \"comentario_corto\": \"≤ 20 palabras (síntesis del resultado)\",\n"
+            "  \"retroalimentacion\": \"≤ 120 palabras (explicación formativa extensa, clara, con ejemplos o analogías pedagógicas)\"\n"
+            "}\n\n"
+            f"Respuesta del estudiante: \"{texto}\""
+        )
+    }
 
     try:
-        fb = ia_feedback(prompt) or ""
-        raw = fb.strip()
+        raw = ia_call([system_msg, user_msg], temperature=0.2)
+        st.session_state["n1_p5_raw"] = raw  # <-- guardamos lo que devolvió OpenRouter
 
-        # --- Si ia_feedback devolvió un mensaje de error (no JSON), salimos a fallback explícito ---
-        lower = raw.lower()
-        if (
-            lower.startswith("no pude generar feedback") or
-            "error code:" in lower or
-            "no endpoints found" in lower or
-            "api key" in lower or
-            "rate limit" in lower or
-            "timeout" in lower
-        ):
-            raise RuntimeError(raw)  # Forzamos el uso del fallback con explicación
-
-        # Limpieza: quita ```json ...``` y tokens extraños
-        import re, json
-        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE|re.MULTILINE).strip()
-        raw = raw.replace("<|begin_of_sentence|>", "").replace("<|end_of_sentence|>", "")
-        raw = raw.replace("“", "\"").replace("”", "\"").replace("’", "'")
-
-        # Aceptar 'aprobo' en lugar de 'aprobado'
-        raw = raw.replace("\"aprobo\"", "\"aprobado\"").replace("'aprobo'", "'aprobado'")
-
-        # Extraer JSON si vino rodeado por texto
-        if not raw.startswith("{"):
-            m = re.search(r"\{.*\}", raw, flags=re.DOTALL)
-            if m:
-                raw = m.group(0).strip()
-
-        # Parseo tolerante (comillas simples → dobles)
-        try:
-            data = json.loads(raw)
-        except Exception:
-            raw_clean = re.sub(r"(?<!\\)'", '"', raw)
-            data = json.loads(raw_clean)
-
+        data = _parse_first_json(raw)
         aprobado = bool(data.get("aprobado"))
         comentario = (data.get("comentario_corto") or "").strip()
         retro = (data.get("retroalimentacion") or "").strip()
 
         if not comentario:
-            comentario = "Evaluación recibida."
+            comentario = "IA: evaluación recibida."
+        else:
+            comentario = f"IA: {comentario}"
         if not retro:
-            retro = "Recuerda: si el inventario final disminuye, se resta menos; por eso aumenta el costo de la mercancía vendida."
+            retro = ("Recuerda: al bajar el inventario final se descuenta menos; por eso el costo aumenta.")
 
         return aprobado, comentario, retro
 
-
     except Exception as e:
-        ok = fallback_check(texto)
-        fb = f"Error IA. Validación local: {'aprobada' if ok else 'no aprobada'}."
-        retro = (
-            "Cuando el inventario final baja, se resta menos en la fórmula y por eso aumenta el costo de la mercancía vendida."
-        )
-        return ok, fb, retro
+        # Guardamos el error textual para diagnóstico
+        st.session_state["n1_p5_raw"] = f"[IA ERROR] {str(e).strip()}"
+
+        # Fallback mínimo (no bloquea el examen)
+        t = (texto or "").lower()
+        inv_down = any(w in t for w in ["disminuye","disminuir","baja","menor","reduce","decrece"])
+        cost_up  = any(w in t for w in ["aumenta","sube","mayor","incrementa"])
+        resta_menos = ("resta menos" in t) or ("se resta menos" in t)
+
+        aprobado = inv_down and (cost_up or resta_menos)
+        comentario = "Fallback: la IA no estuvo disponible."
+        retro = ("Si el inventario final disminuye, se descuenta menos en la fórmula y por eso el costo aumenta. "
+                 "Regla: «menos inventario final → más costo de ventas».")
+        return aprobado, comentario, retro
+
 
 # ===========================
 # Utilidades UI
@@ -889,24 +942,34 @@ def page_level1(username):
         st.write("**Mini reto**: explica qué ocurriría con el costo de la mercancía vendida si **no hubiera devoluciones en compras** y el **inventario final fuera muy pequeño**.")
         razonamiento = st.text_area("Tu razonamiento (opcional, la inteligencia artificial te comenta):", key="n1_ex_raz")
 
-        # IA opcional
+        # IA opcional (evalúa específicamente el mini reto con criterios contables)
         ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n1_ex_ai", value=False)
+
+        # Define la pregunta del mini reto para que quede claro en el validador (opcional, para diagnóstico/consistencia)
+        mini_reto = (
+            "¿Qué ocurriría con el costo de la mercancía vendida si no hubiera devoluciones en compras "
+            "y el inventario final fuera muy pequeño?"
+        )
+
         if st.button("💬 Comentar", key="n1_ex_fb"):
             if ask_ai:
-                with st.spinner("Generando feedback con IA..."):
-                    prompt = (
-                        "Evalúa si el razonamiento es coherente con COGS = InvI + Compras - Devoluciones - InvF. "
-                        f"Datos: InvI={inv0}, Compras={compras}, Devol={devol}, InvF={invf}. "
-                        f"Texto del estudiante: {razonamiento}"
-                    )
-                    fb = ia_feedback(prompt)
-                with st.expander("💬 Feedback de la IA"):
-                    st.write(fb)
-        else:
-            st.info(
-                "Validación local: si disminuye el inventario final, el costo de la mercancía vendida aumenta; "
-                "si no hay devoluciones en compras, el valor de las compras no se reduce."
-            )
+                with st.spinner("Evaluando con IA…"):
+                    # Usa tu validador IA que exige JSON y evalúa criterios (aprobado, comentario, retro)
+                    ok, comentario, retro = n1_eval_open_ai(razonamiento)
+
+                with st.expander("💬 Resultado de la IA (mini reto)"):
+                    st.markdown(f"**Pregunta:** {mini_reto}")
+                    st.markdown(f"**Resultado:** {'✅ Aprobado' if ok else '❌ No aprobado'}")
+                    st.markdown(f"**Comentario:** {comentario}")
+                    st.markdown("---")
+                    st.info(f"**Retroalimentación formativa:** {retro}")
+            else:
+                # Validación local breve (sin IA) por si no se activa el checkbox
+                st.info(
+                    "Validación local: si no hay devoluciones en compras, las compras no se reducen; "
+                    "y si el inventario final es muy pequeño, se resta menos al cierre, por lo que el costo de la mercancía vendida aumenta."
+                )
+
 
     # Práctica interactiva (IA) — escenarios estables
     with tabs[2]:
@@ -1084,8 +1147,31 @@ def page_level1(username):
             if ok5: score += 1
             details.append(("5) Respuesta abierta (IA)", ok5))
 
+            st.markdown(
+                """
+                <style>
+                .val { font-family: monospace; font-size: 15px; color: #1a73e8; font-weight: 600; }
+                .calc { line-height: 1.9; font-size: 1.02rem; }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+
+            def fmt_plain(v, dec=0):
+                try:
+                    return f"{v:,.{dec}f}".replace(",", ".")
+                except Exception:
+                    return str(v)
+
+            def money(v, dec=0):
+                return f"${fmt_plain(v, dec)}"
+
             # --------- Retroalimentación formativa por pregunta (1–4) ---------
             feedback_por_pregunta = []
+
+            def fmt_valor_html(v):
+                """Devuelve el valor monetario formateado y estilizado en HTML uniforme."""
+                return f"<span style='font-family:monospace;font-size:15px;color:#1a73e8;font-weight:600;'> {peso(v)} </span>"
 
             if not ok1:
                 feedback_por_pregunta.append(
@@ -1106,30 +1192,49 @@ def page_level1(username):
             else:
                 feedback_por_pregunta.append(("2) Afirmación verdadera", "Correcto: inventario final más alto ⇒ menor costo de la mercancía vendida."))
 
+            # --- Textos HTML formateados para P3 y P4 ---
+            texto_p3 = f"""
+            <div class='calc'>
+            Vuelve a aplicar la fórmula con los datos:<br>
+            <span class='val'>{money(P3_invI)}</span> &plus;
+            <span class='val'>{money(P3_comp)}</span> &minus;
+            <span class='val'>{money(P3_dev)}</span> &minus;
+            <span class='val'>{money(P3_invF)}</span>
+            = <strong><span class='val'>{money(P3_CORRECTO)}</span></strong>.<br>
+            <em>Error típico:</em> olvidar restar las devoluciones en compras.
+            </div>
+            """
+
+            texto_p4 = f"""
+            <div class='calc'>
+            Despeja el Inventario final desde la fórmula:<br>
+            Inventario final = Inventario inicial &plus; Compras &minus; Devoluciones en compras &minus; Costo de la mercancía vendida.<br>
+            Con los datos:<br>
+            <span class='val'>{money(P4_invI)}</span> &plus;
+            <span class='val'>{money(P4_comp)}</span> &minus;
+            <span class='val'>{money(P4_dev)}</span> &minus;
+            <span class='val'>{money(P4_cmv)}</span>
+            = <strong><span class='val'>{money(P4_CORRECTO)}</span></strong>.<br>
+            <em>Error típico:</em> cambiar signos al despejar.
+            </div>
+            """
+
             if not ok3:
-                feedback_por_pregunta.append(
-                    ("3) Cálculo directo",
-                    f"Vuelve a aplicar la fórmula con los datos: {peso(P3_invI)} + {peso(P3_comp)} − {peso(P3_dev)} − {peso(P3_invF)} = {peso(P3_CORRECTO)}. "
-                    "Error típico: olvidar restar las devoluciones en compras.")
-                )
+                feedback_por_pregunta.append(("3) Cálculo directo", texto_p3))
             else:
                 feedback_por_pregunta.append(("3) Cálculo directo", "Cálculo correcto y bien aplicado el orden de operaciones."))
 
             if not ok4:
-                feedback_por_pregunta.append(
-                    ("4) Cálculo inverso",
-                    "Despeja el Inventario final desde la fórmula: Inventario final = Inventario inicial + Compras − Devoluciones en compras − Costo de la mercancía vendida. "
-                    f"Con los datos: {peso(P4_invI)} + {peso(P4_comp)} − {peso(P4_dev)} − {peso(P4_cmv)} = {peso(P4_CORRECTO)}. "
-                    "Error típico: cambiar signos al despejar.")
-                )
+                feedback_por_pregunta.append(("4) Cálculo inverso", texto_p4))
             else:
                 feedback_por_pregunta.append(("4) Cálculo inverso", "¡Bien! Despejaste correctamente el inventario final."))
+
 
             # --------- Mostrar panel de retroalimentación ---------
             with st.expander("🧠 Retroalimentación formativa por pregunta"):
                 for titulo, nota in feedback_por_pregunta:
-                    st.markdown(f"**{titulo}**")
-                    st.write(nota)
+                    st.markdown(f"**{titulo}**", unsafe_allow_html=True)
+                    st.markdown(nota, unsafe_allow_html=True)
                     st.markdown("---")
 
 
