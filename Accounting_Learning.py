@@ -1384,52 +1384,654 @@ def page_level2(username):
         ])
         speak_block(full_text, key_prefix="teo-n2", lang_hint="es")
 
-    with tabs[1]:
-        st.subheader("Ejemplo de PP dinámico")
-        colA, colB = st.columns([1,1])
-        with colA:
-            inv0_u = st.number_input("Inv. inicial (u)", min_value=0, value=100, step=10, key="n2_pp_inv_u")
-            inv0_pu = st.number_input("Inv. inicial $/u", min_value=0.0, value=15.0, step=0.5, key="n2_pp_inv_pu")
-            comp_u = st.number_input("Compra (u)", min_value=0, value=150, step=10, key="n2_pp_comp_u")
-            comp_pu = st.number_input("Compra $/u", min_value=0.0, value=18.0, step=0.5, key="n2_pp_comp_pu")
-            venta_u = st.number_input("Venta (u)", min_value=0, value=150, step=10, key="n2_pp_venta_u")
-        with colB:
-            inv0_val = inv0_u * inv0_pu
-            comp_val = comp_u * comp_pu
-            total_u = inv0_u + comp_u
-            total_val = inv0_val + comp_val
-            prom = (total_val / total_u) if total_u > 0 else 0
-            cogs = min(venta_u, total_u) * prom
-            saldo_u = max(total_u - venta_u, 0)
-            saldo_val = saldo_u * prom
+        with tabs[1]:
+            st.subheader("KARDEX dinámico por método (PP · PEPS · UEPS)")
 
-            st.markdown(
-                "\n".join([
-                    f"**Costo Promedio** = ({peso(inv0_val)} + {peso(comp_val)}) / ({inv0_u} + {comp_u}) = **{peso(prom)}**/u",
-                    f"**COGS** por venta de {venta_u} u = {venta_u} × {peso(prom)} = **{peso(cogs)}**",
-                    f"**Saldo final**: {saldo_u} u × {peso(prom)} = **{peso(saldo_val)}**"
+            # ===== Helpers internos KARDEX =====
+            def _fmt_money(v):
+                try:
+                    return peso(float(v))
+                except Exception:
+                    return str(v)
+
+            def _consume_layers(layers, qty_out):
+                remaining = qty_out
+                cost = 0.0
+                det = []
+                new_layers = []
+                for qty, pu in layers:
+                    if remaining <= 0:
+                        new_layers.append([qty, pu])
+                        continue
+                    take = min(qty, remaining)
+                    if take > 0:
+                        det.append({"qty": take, "pu": pu, "total": take * pu})
+                        cost += take * pu
+                        qty_rest = qty - take
+                        remaining -= take
+                        if qty_rest > 0:
+                            new_layers.append([qty_rest, pu])
+                    else:
+                        new_layers.append([qty, pu])
+                return cost, det, new_layers, remaining
+
+            def _kardex_two_ops(method_name, inv0_u, inv0_pu, comp_u, comp_pu, venta_u):
+                cols = pd.MultiIndex.from_tuples([
+                    ("", "Fecha"), ("", "Descripción"),
+                    ("Entrada", "Cantidad"), ("Entrada", "Precio"), ("Entrada", "Total"),
+                    ("Salida", "Cantidad"), ("Salida", "Precio"), ("Salida", "Total"),
+                    ("Saldo", "Cantidad"), ("Saldo", "Precio"), ("Saldo", "Total"),
                 ])
+
+                rows = []
+
+                # --- Fila 1: Saldo inicial ---
+                saldo_layers = []
+                if inv0_u > 0:
+                    saldo_layers = [[float(inv0_u), float(inv0_pu)]]
+                saldo_qty = sum(q for q, _ in saldo_layers)
+                saldo_val = sum(q * p for q, p in saldo_layers)
+                saldo_pu = (saldo_val / saldo_qty) if saldo_qty > 0 else 0.0
+
+                rows.append([
+                    "Día 1", "Saldo inicial",
+                    "", "", "",
+                    "", "", "",
+                    int(saldo_qty), round(saldo_pu, 2), round(saldo_val, 2)
+                ])
+
+                explain_lines = [f"- **Saldo inicial**: {int(inv0_u)} u @ {_fmt_money(inv0_pu)} → Saldo: {int(saldo_qty)} u, {_fmt_money(saldo_val)}."]
+
+                # --- Fila 2: Compra ---
+                entrada_total = comp_u * comp_pu
+                if method_name == "Promedio Ponderado":
+                    new_qty = saldo_qty + comp_u
+                    new_val = saldo_val + entrada_total
+                    new_pu  = (new_val / new_qty) if new_qty > 0 else 0.0
+                    saldo_layers = [[new_qty, new_pu]]
+                    saldo_qty, saldo_val, saldo_pu = new_qty, new_val, new_pu
+                    rows.append([
+                        "Día 2", "Compra",
+                        int(comp_u), round(comp_pu, 2), round(entrada_total, 2),
+                        "", "", "",
+                        int(saldo_qty), round(saldo_pu, 2), round(saldo_val, 2)
+                    ])
+                    explain_lines.append(
+                        f"- **Compra**: +{int(comp_u)} u @ {_fmt_money(comp_pu)}. Nuevo promedio: {_fmt_money(saldo_pu)} con {int(saldo_qty)} u en saldo."
+                    )
+                else:
+                    saldo_layers.append([float(comp_u), float(comp_pu)])
+                    saldo_qty = sum(q for q, _ in saldo_layers)
+                    saldo_val = sum(q * p for q, p in saldo_layers)
+                    saldo_pu = (saldo_val / saldo_qty) if saldo_qty > 0 else 0.0
+                    rows.append([
+                        "Día 2", "Compra",
+                        int(comp_u), round(comp_pu, 2), round(entrada_total, 2),
+                        "", "", "",
+                        int(saldo_qty), round(saldo_pu, 2), round(saldo_val, 2)
+                    ])
+                    capas_txt = " · ".join([f"{int(q)}u@{_fmt_money(p)}" for q, p in saldo_layers])
+                    explain_lines.append(f"- **Compra**: +{int(comp_u)} u @ {_fmt_money(comp_pu)}. Capas ahora: {capas_txt}.")
+
+                # --- Fila 3: Venta ---
+                venta_total = 0.0
+                salida_pu_mostrar = 0.0
+                det_salida = []
+
+                if venta_u > 0 and saldo_qty > 0:
+                    if method_name == "Promedio Ponderado":
+                        salida_pu_mostrar = saldo_pu
+                        venta_total = min(venta_u, saldo_qty) * salida_pu_mostrar
+                        new_qty = max(saldo_qty - venta_u, 0)
+                        new_val = max(saldo_val - venta_total, 0.0)
+                        new_pu  = (new_val / new_qty) if new_qty > 0 else 0.0
+                        saldo_layers = [[new_qty, new_pu]] if new_qty > 0 else []
+                        saldo_qty, saldo_val, saldo_pu = new_qty, new_val, new_pu
+                        det_salida = [{"qty": min(venta_u, new_qty + venta_u), "pu": salida_pu_mostrar, "total": venta_total}]
+                        explain_lines.append(
+                            f"- **Venta**: {int(venta_u)} u al costo promedio {_fmt_money(salida_pu_mostrar)} → **CMV**: {_fmt_money(venta_total)}. "
+                            f"Saldo: {int(saldo_qty)} u, {_fmt_money(saldo_val)}."
+                        )
+                    else:
+                        layers = saldo_layers[:] if method_name == "PEPS (FIFO)" else saldo_layers[::-1]
+                        venta_total, det_salida, layers_after, remaining = _consume_layers(layers, venta_u)
+                        if method_name == "PEPS (FIFO)":
+                            saldo_layers = layers_after
+                        else:  # UEPS
+                            saldo_layers = layers_after[::-1]
+                        saldo_qty = sum(q for q, _ in saldo_layers)
+                        saldo_val = sum(q * p for q, p in saldo_layers)
+                        saldo_pu = (saldo_val / saldo_qty) if saldo_qty > 0 else 0.0
+                        salida_pu_mostrar = (venta_total / venta_u) if venta_u > 0 else 0.0
+
+                        if det_salida:
+                            det_txt = " + ".join([f"{int(d['qty'])}u@{_fmt_money(d['pu'])}={_fmt_money(d['total'])}" for d in det_salida])
+                            capas_txt = (" · ".join([f"{int(q)}u@{_fmt_money(p)}" for q, p in saldo_layers]) if saldo_layers else "0 u")
+                            explain_lines.append(
+                                f"- **Venta**: {int(venta_u)} u → {det_txt} ⇒ **CMV**: {_fmt_money(venta_total)}. Saldo: {capas_txt}."
+                            )
+                        else:
+                            explain_lines.append("- **Venta**: no hay consumo (sin saldo).")
+
+                rows.append([
+                    "Día 3", "Venta",
+                    "", "", "",
+                    int(venta_u) if venta_u > 0 else "", round(salida_pu_mostrar, 2) if venta_u > 0 else "", round(venta_total, 2) if venta_u > 0 else "",
+                    int(saldo_qty), round(saldo_pu, 2), round(saldo_val, 2)
+                ])
+
+                df = pd.DataFrame(rows, columns=cols)
+                explain_md = "\n".join(explain_lines)
+                return df, explain_md
+
+            # ===== Controles del ejemplo (INSUMOS) =====
+            c1, c2, c3, c4, c5 = st.columns([1,1,1,1,1])
+            with c1:
+                metodo = st.selectbox("Método", ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"], key="n2_kardex_met")
+            with c2:
+                inv0_u  = st.number_input("Inv. inicial (u)", min_value=0, value=100, step=10, key="n2_kx_inv_u")
+            with c3:
+                inv0_pu = st.number_input("Inv. inicial $/u", min_value=0.0, value=10.0, step=0.5, key="n2_kx_inv_pu")
+            with c4:
+                comp_u  = st.number_input("Compra (u)", min_value=0, value=60, step=10, key="n2_kx_comp_u")
+            with c5:
+                comp_pu = st.number_input("Compra $/u", min_value=0.0, value=12.0, step=0.5, key="n2_kx_comp_pu")
+
+            c6, _ = st.columns([1,3])
+            with c6:
+                venta_u = st.number_input("Venta (u)", min_value=0, value=120, step=10, key="n2_kx_venta_u")
+
+            # =========================
+            # 1) 🎬 DEMOSTRACIÓN NARRADA (primero)
+            # =========================
+            st.markdown("---")
+            st.markdown("### 🎬 Demostración narrada: llenado del KARDEX paso a paso")
+
+            def compute_steps_for_demo(method_name, inv0_u, inv0_pu, comp_u, comp_pu, venta_u):
+                rows = [
+                    {"fecha":"Día 1","desc":"Saldo inicial",
+                    "ent_q":"","ent_pu":"","ent_tot":"",
+                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sdo_q":"","sdo_pu":"","sdo_tot":""},
+                    {"fecha":"Día 2","desc":"Compra",
+                    "ent_q":"","ent_pu":"","ent_tot":"",
+                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sdo_q":"","sdo_pu":"","sdo_tot":""},
+                    {"fecha":"Día 3","desc":"Venta",
+                    "ent_q":"","ent_pu":"","ent_tot":"",
+                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sdo_q":"","sdo_pu":"","sdo_tot":""},
+                ]
+
+                # Paso 1
+                saldo_layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
+                s_q = sum(q for q,_ in saldo_layers)
+                s_v = sum(q*p for q,p in saldo_layers)
+                s_p = (s_v/s_q) if s_q>0 else 0.0
+                rows[0]["sdo_q"]  = int(s_q)
+                rows[0]["sdo_pu"] = round(s_p, 2)
+                rows[0]["sdo_tot"]= round(s_v, 2)
+
+                # Paso 2
+                ent_tot = comp_u * comp_pu
+                if method_name == "Promedio Ponderado":
+                    new_q = s_q + comp_u
+                    new_v = s_v + ent_tot
+                    new_p = (new_v/new_q) if new_q>0 else 0.0
+                    saldo_layers = [[new_q, new_p]]
+                    s_q, s_v, s_p = new_q, new_v, new_p
+                else:
+                    saldo_layers.append([float(comp_u), float(comp_pu)])
+                    s_q = sum(q for q,_ in saldo_layers)
+                    s_v = sum(q*p for q,p in saldo_layers)
+                    s_p = (s_v/s_q) if s_q>0 else 0.0
+
+                rows[1]["ent_q"]  = int(comp_u)
+                rows[1]["ent_pu"] = round(comp_pu, 2)
+                rows[1]["ent_tot"]= round(ent_tot, 2)
+                rows[1]["sdo_q"]  = int(s_q)
+                rows[1]["sdo_pu"] = round(s_p, 2)
+                rows[1]["sdo_tot"]= round(s_v, 2)
+
+                # Paso 3
+                sal_q = min(venta_u, s_q)
+                sal_pu_mostrar = 0.0
+                sal_tot = 0.0
+                if venta_u>0 and s_q>0:
+                    if method_name == "Promedio Ponderado":
+                        sal_pu_mostrar = s_p
+                        sal_tot = sal_q * sal_pu_mostrar
+                        new_q = s_q - sal_q
+                        new_v = s_v - sal_tot
+                        new_p = (new_v/new_q) if new_q>0 else 0.0
+                        saldo_layers = [[new_q, new_p]] if new_q>0 else []
+                        s_q, s_v, s_p = new_q, new_v, new_p
+                    else:
+                        layers = saldo_layers[:] if method_name=="PEPS (FIFO)" else saldo_layers[::-1]
+                        remaining = sal_q
+                        cost = 0.0
+                        new_layers = []
+                        for q,pu in layers:
+                            if remaining<=0:
+                                new_layers.append([q,pu]); continue
+                            take = min(q, remaining)
+                            cost += take*pu
+                            rest = q - take
+                            remaining -= take
+                            if rest>0:
+                                new_layers.append([rest, pu])
+                        saldo_layers = new_layers if method_name=="PEPS (FIFO)" else new_layers[::-1]
+                        sal_tot = cost
+                        sal_pu_mostrar = (sal_tot/sal_q) if sal_q>0 else 0.0
+                        s_q = sum(q for q,_ in saldo_layers)
+                        s_v = sum(q*p for q,p in saldo_layers)
+                        s_p = (s_v/s_q) if s_q>0 else 0.0
+
+                rows[2]["sal_q"]  = int(sal_q) if sal_q>0 else ""
+                rows[2]["sal_pu"] = round(sal_pu_mostrar, 2) if sal_q!="" else ""
+                rows[2]["sal_tot"]= round(sal_tot, 2) if sal_q!="" else ""
+                rows[2]["sdo_q"]  = int(s_q)
+                rows[2]["sdo_pu"] = round(s_p, 2)
+                rows[2]["sdo_tot"]= round(s_v, 2)
+
+                narr = [
+                    "Paso 1. Registramos el saldo inicial: anotamos la cantidad disponible y el costo unitario. El saldo total se obtiene multiplicando cantidad por precio.",
+                    "Paso 2. Registramos la compra: cantidad por precio nos da el valor de la entrada. Actualizamos el saldo. Si usamos Promedio Ponderado, recalculamos el costo unitario promedio.",
+                    "Paso 3. Registramos la venta: calculamos el CMV aplicando el método elegido. En Promedio usamos el costo promedio vigente; en PEPS salen primero las unidades más antiguas; en UEPS, las últimas en entrar. Luego actualizamos el saldo."
+                ]
+                if method_name == "Promedio Ponderado":
+                    narr[2] = "Paso 3. Venta: el CMV se calcula con el costo promedio vigente. Restamos la cantidad vendida, y el saldo final queda con el nuevo promedio si cambió."
+                elif method_name == "PEPS (FIFO)":
+                    narr[2] = "Paso 3. Venta: en PEPS salen primero las unidades más antiguas; el CMV usa esos costos históricos. Luego actualizamos el saldo con las capas que quedan."
+                else:
+                    narr[2] = "Paso 3. Venta: en UEPS salen primero las últimas unidades compradas; el CMV usa esos costos recientes. Después actualizamos el saldo con las capas restantes."
+                return rows, narr
+
+            demo_rows, demo_narr = compute_steps_for_demo(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
+
+            # HTML de la demo con marcadores (SIN f-string) y luego reemplazos seguros
+            import json as _json
+            html_demo_template = """
+            <style>
+            .kx {border-collapse:collapse;width:100%;font-size:14px}
+            .kx th,.kx td {border:1px solid #eaeaea;padding:6px 8px;text-align:center}
+            .kx thead th {background:#f8fafc;font-weight:600}
+            .kx .hi {background:#fff7e6;box-shadow:inset 0 0 0 9999px rgba(255,165,0,0.08)}
+            .fill {transition: background 0.3s, color 0.3s}
+            .controls {display:flex;gap:8px;align-items:center;margin:8px 0}
+            .badge {display:inline-block;background:#eef;border:1px solid #dde;padding:2px 8px;border-radius:12px;font-size:12px}
+            </style>
+            <div class="controls">
+            <button id="playDemo">▶️ Reproducir demo</button>
+            <span class="badge">%%METODO%%</span>
+            </div>
+            <table class="kx" id="kxtable">
+            <thead>
+                <tr>
+                <th></th><th></th>
+                <th colspan="3">Entrada</th>
+                <th colspan="3">Salida</th>
+                <th colspan="3">Saldo</th>
+                </tr>
+                <tr>
+                <th>Fecha</th><th>Descripción</th>
+                <th>Cantidad</th><th>Precio</th><th>Total</th>
+                <th>Cantidad</th><th>Precio</th><th>Total</th>
+                <th>Cantidad</th><th>Precio</th><th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr id="row0"><td>Día 1</td><td>Saldo inicial</td>
+                <td id="r0_ent_q" class="fill muted"></td><td id="r0_ent_pu" class="fill muted"></td><td id="r0_ent_tot" class="fill muted"></td>
+                <td id="r0_sal_q" class="fill muted"></td><td id="r0_sal_pu" class="fill muted"></td><td id="r0_sal_tot" class="fill muted"></td>
+                <td id="r0_sdo_q" class="fill muted"></td><td id="r0_sdo_pu" class="fill muted"></td><td id="r0_sdo_tot" class="fill muted"></td>
+                </tr>
+                <tr id="row1"><td>Día 2</td><td>Compra</td>
+                <td id="r1_ent_q" class="fill muted"></td><td id="r1_ent_pu" class="fill muted"></td><td id="r1_ent_tot" class="fill muted"></td>
+                <td id="r1_sal_q" class="fill muted"></td><td id="r1_sal_pu" class="fill muted"></td><td id="r1_sal_tot" class="fill muted"></td>
+                <td id="r1_sdo_q" class="fill muted"></td><td id="r1_sdo_pu" class="fill muted"></td><td id="r1_sdo_tot" class="fill muted"></td>
+                </tr>
+                <tr id="row2"><td>Día 3</td><td>Venta</td>
+                <td id="r2_ent_q" class="fill muted"></td><td id="r2_ent_pu" class="fill muted"></td><td id="r2_ent_tot" class="fill muted"></td>
+                <td id="r2_sal_q" class="fill muted"></td><td id="r2_sal_pu" class="fill muted"></td><td id="r2_sal_tot" class="fill muted"></td>
+                <td id="r2_sdo_q" class="fill muted"></td><td id="r2_sdo_pu" class="fill muted"></td><td id="r2_sdo_tot" class="fill muted"></td>
+                </tr>
+            </tbody>
+            </table>
+            <div id="narr" style="margin-top:8px;font-size:15px;"></div>
+
+            <script>
+            (function(){
+            const data  = %%DATA%%;
+            const narrs = %%NARR%%;
+            const table = document.getElementById("kxtable");
+            const narrDiv = document.getElementById("narr");
+            const btn = document.getElementById("playDemo");
+
+            const pesos = (v)=> {
+                try { return new Intl.NumberFormat('es-CO',{style:'currency', currency:'COP', maximumFractionDigits:2}).format(v); }
+                catch(e){ return "$"+(Math.round(v*100)/100).toLocaleString('es-CO'); }
+            };
+            const fmt = (x)=> (x===null || x===undefined || x==="") ? "" : (typeof x==="number" ? (Number.isInteger(x)? x.toString(): (Math.round(x*100)/100).toString().replace(".",",")) : x);
+
+            function speak(text){
+                return new Promise((resolve)=>{
+                try{
+                    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+                    const u = new SpeechSynthesisUtterance(text);
+                    const voices = window.speechSynthesis.getVoices();
+                    const pick = voices.find(v=>/es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
+                    if (pick) u.voice = pick;
+                    u.rate = 1.0; u.pitch = 1.0;
+                    u.onend = ()=> resolve();
+                    window.speechSynthesis.speak(u);
+                }catch(e){ resolve(); }
+                });
+            }
+
+            const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
+
+            function fillCell(id, val, money=false){
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.classList.remove("muted");
+                el.style.background = "#fffbe6";
+                el.style.color = "#333";
+                el.textContent = (money ? pesos(val) : fmt(val));
+                setTimeout(()=>{ el.style.background=""; }, 400);
+            }
+
+            function highlightRow(i){
+                [0,1,2].forEach(r=>{
+                const tr = document.getElementById("row"+r);
+                if(!tr) return;
+                tr.classList.toggle("hi", r===i);
+                });
+            }
+
+            function clearTable(){
+                ['r0','r1','r2'].forEach(r=>{
+                ['ent_q','ent_pu','ent_tot','sal_q','sal_pu','sal_tot','sdo_q','sdo_pu','sdo_tot'].forEach(c=>{
+                    const el = document.getElementById(r+"_"+c);
+                    if (el) { el.textContent = ""; el.classList.add("muted"); }
+                });
+                });
+                narrDiv.textContent = "";
+                highlightRow(-1);
+            }
+
+            async function narrAndFill(text, actions){
+                const dur = Math.max(2500, Math.min(6000, text.length * 55));
+                const t1 = Math.floor(dur * 0.33);
+                const t2 = Math.floor(dur * 0.66);
+                const t3 = Math.floor(dur * 0.90);
+
+                const pVoice = speak(text);
+                if (actions[0]) { await sleep(t1); actions[0](); }
+                if (actions[1]) { await sleep(Math.max(0,t2 - t1)); actions[1](); }
+                if (actions[2]) { await sleep(Math.max(0,t3 - t2)); actions[2](); }
+                await pVoice;
+                await sleep(200);
+            }
+
+            async function play(){
+                clearTable();
+
+                // Paso 1
+                highlightRow(0);
+                narrDiv.textContent = "Paso 1 · Saldo inicial";
+                const r0 = data[0];
+                await narrAndFill(
+                narrs[0],
+                [
+                    ()=> fillCell("r0_sdo_q", r0.sdo_q),
+                    ()=> fillCell("r0_sdo_pu", r0.sdo_pu, true),
+                    ()=> fillCell("r0_sdo_tot", r0.sdo_tot, true)
+                ]
+                );
+
+                // Paso 2
+                highlightRow(1);
+                narrDiv.textContent = "Paso 2 · Compra";
+                const r1 = data[1];
+                await narrAndFill(
+                narrs[1],
+                [
+                    ()=> fillCell("r1_ent_q",  r1.ent_q),
+                    ()=> fillCell("r1_ent_pu", r1.ent_pu, true),
+                    ()=> fillCell("r1_ent_tot",r1.ent_tot, true)
+                ]
+                );
+                await sleep(300);
+                fillCell("r1_sdo_q",  r1.sdo_q);
+                await sleep(200);
+                fillCell("r1_sdo_pu", r1.sdo_pu, true);
+                await sleep(200);
+                fillCell("r1_sdo_tot",r1.sdo_tot, true);
+
+                // Paso 3
+                highlightRow(2);
+                narrDiv.textContent = "Paso 3 · Venta";
+                const r2 = data[2];
+                await narrAndFill(
+                narrs[2],
+                [
+                    ()=> { if (r2.sal_q!=="") fillCell("r2_sal_q", r2.sal_q); },
+                    ()=> { if (r2.sal_pu!=="") fillCell("r2_sal_pu", r2.sal_pu, true); },
+                    ()=> { if (r2.sal_tot!=="") fillCell("r2_sal_tot", r2.sal_tot, true); }
+                ]
+                );
+                await sleep(300);
+                fillCell("r2_sdo_q",  r2.sdo_q);
+                await sleep(200);
+                fillCell("r2_sdo_pu", r2.sdo_pu, true);
+                await sleep(200);
+                fillCell("r2_sdo_tot",r2.sdo_tot, true);
+
+                highlightRow(-1);
+            }
+
+            btn.onclick = play;
+            if (window.speechSynthesis) {
+                window.speechSynthesis.onvoiceschanged = ()=>{};
+            }
+            })();
+            </script>
+            """
+
+            html_demo = (
+                html_demo_template
+                .replace("%%DATA%%", _json.dumps(demo_rows))
+                .replace("%%NARR%%", _json.dumps(demo_narr))
+                .replace("%%METODO%%", metodo)
+            )
+            components.html(html_demo, height=420, scrolling=True)
+
+            # =========================
+            # 2) 📋 KARDEX (auto-calculado) — después de la demo
+            # =========================
+            st.markdown("---")
+            st.markdown("### 📋 KARDEX (auto-calculado)")
+            df_kx, _ = _kardex_two_ops(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
+
+            def _kardex_format_for_display(df_src: pd.DataFrame) -> pd.DataFrame:
+                df = df_src.copy()
+                sublabels = [c[1].lower() for c in df.columns]
+
+                def _fmt_cell(val, sublab):
+                    if val == "" or val is None:
+                        return ""
+                    if sublab == "cantidad":
+                        try:
+                            return f"{int(round(float(val)))}"
+                        except Exception:
+                            return str(val)
+                    if sublab in ("precio", "total"):
+                        try:
+                            return peso(float(val))
+                        except Exception:
+                            return str(val)
+                    return str(val)
+
+                for j, col in enumerate(df.columns):
+                    sublab = sublabels[j]
+                    df[col] = df[col].map(lambda v: _fmt_cell(v, sublab))
+                    df[col] = df[col].astype("string")
+                return df
+
+            df_kx_display = _kardex_format_for_display(df_kx)
+            st.dataframe(df_kx_display, use_container_width=True)
+
+            # =========================
+            # 3) 📝 Ejercicio editable
+            # =========================
+            st.markdown("---")
+            st.subheader("📝 Ejercicio: Diligencia tu propio KARDEX")
+            st.caption("Usa el **mismo método** elegido arriba. Completa la tabla siguiente con los valores correctos.")
+
+            if "n2_ex_inv0_u" not in st.session_state:
+                st.session_state.n2_ex_inv0_u  = 80
+                st.session_state.n2_ex_inv0_pu = 10.0
+                st.session_state.n2_ex_comp1_u = 40
+                st.session_state.n2_ex_comp1_pu= 11.0
+                st.session_state.n2_ex_venta_u = 90
+                st.session_state.n2_ex_comp2_u = 50
+                st.session_state.n2_ex_comp2_pu= 13.0
+
+            inv0_u_ex   = st.session_state.n2_ex_inv0_u
+            inv0_pu_ex  = st.session_state.n2_ex_inv0_pu
+            comp1_u     = st.session_state.n2_ex_comp1_u
+            comp1_pu    = st.session_state.n2_ex_comp1_pu
+            venta_ex_u  = st.session_state.n2_ex_venta_u
+            comp2_u     = st.session_state.n2_ex_comp2_u
+            comp2_pu    = st.session_state.n2_ex_comp2_pu
+
+            st.info(
+                f"**Escenario:** "
+                f"Saldo inicial: {inv0_u_ex} u a {_fmt_money(inv0_pu_ex)} | "
+                f"Compra 1: {comp1_u} u a {_fmt_money(comp1_pu)} | "
+                f"Venta: {venta_ex_u} u | "
+                f"Compra 2: {comp2_u} u a {_fmt_money(comp2_pu)}"
             )
 
-        st.markdown("---")
-        st.subheader("Ejemplo FIFO vs LIFO (comparación rápida)")
-        inv = [(100, 10.0), (50, 12.0)]
-        venta = 120
-        fifo_cogs = 0.0; remaining = venta; inv_fifo = inv.copy()
-        for u, pu in inv_fifo:
-            use = min(remaining, u)
-            fifo_cogs += use * pu
-            remaining -= use
-            if remaining <= 0: break
-        lifo_cogs = 0.0; remaining = venta; inv_lifo = inv.copy()[::-1]
-        for u, pu in inv_lifo:
-            use = min(remaining, u)
-            lifo_cogs += use * pu
-            remaining -= use
-            if remaining <= 0: break
+            def _kardex_three_ops_solution(method_name):
+                layers = [[float(inv0_u_ex), float(inv0_pu_ex)]] if inv0_u_ex > 0 else []
+                if method_name == "Promedio Ponderado":
+                    qty = sum(q for q, _ in layers) + comp1_u
+                    val = sum(q * p for q, p in layers) + comp1_u * comp1_pu
+                    pu  = (val / qty) if qty > 0 else 0.0
+                    layers = [[qty, pu]]
+                else:
+                    layers.append([float(comp1_u), float(comp1_pu)])
+                if method_name == "Promedio Ponderado":
+                    qty0 = layers[0][0]
+                    pu0  = layers[0][1] if qty0 > 0 else 0.0
+                    cmv_vta = min(venta_ex_u, qty0) * pu0
+                    qty1 = max(qty0 - venta_ex_u, 0)
+                    val1 = max(qty0 * pu0 - cmv_vta, 0.0)
+                    pu1  = (val1 / qty1) if qty1 > 0 else 0.0
+                    layers = [[qty1, pu1]] if qty1 > 0 else []
+                else:
+                    order_layers = layers[:] if method_name == "PEPS (FIFO)" else layers[::-1]
+                    cmv_vta, _, after, _ = _consume_layers(order_layers, venta_ex_u)
+                    layers = after if method_name == "PEPS (FIFO)" else after[::-1]
+                if method_name == "Promedio Ponderado":
+                    qty = sum(q for q, _ in layers) + comp2_u
+                    val = sum(q * p for q, p in layers) + comp2_u * comp2_pu
+                    pu  = (val / qty) if qty > 0 else 0.0
+                    layers = [[qty, pu]]
+                else:
+                    layers.append([float(comp2_u), float(comp2_pu)])
+                qtyF = sum(q for q, _ in layers)
+                valF = sum(q * p for q, p in layers)
+                puF  = (valF / qtyF) if qtyF > 0 else 0.0
+                return layers, qtyF, puF, valF
 
-        st.info(f"Venta: {venta} u. Inventario: 100u @10; 50u @12")
-        st.success(f"**FIFO COGS** ≈ {peso(fifo_cogs)} · **LIFO COGS** ≈ {peso(lifo_cogs)}  → (LIFO mayor COGS con precios al alza)")
+            sol_layers, sol_qtyF, sol_puF, sol_valF = _kardex_three_ops_solution(metodo)
+
+            plant = pd.DataFrame([
+                {"Fecha":"Día 1","Descripción":"Saldo inicial",
+                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                {"Fecha":"Día 2","Descripción":"Compra 1",
+                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                {"Fecha":"Día 3","Descripción":"Venta",
+                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                {"Fecha":"Día 4","Descripción":"Compra 2",
+                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+            ])
+
+            st.markdown("#### ✍️ Completa la tabla (números)")
+            st.caption("Escribe **valores numéricos**. Puedes dejar celdas no aplicables en blanco.")
+            edited = st.data_editor(
+                plant,
+                use_container_width=True,
+                num_rows="fixed",
+                key="n2_kardex_student_table"
+            )
+
+            with st.form("n2_kardex_check"):
+                ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", value=False, key="n2_kardex_ai_feedback")
+                submitted_ex = st.form_submit_button("✅ Validar mi KARDEX")
+
+            if submitted_ex:
+                tol = 0.5
+                ok_flags = []
+
+                def _get_num(row, key):
+                    v = row.get(key, "")
+                    try:
+                        if v in (None, ""): return None
+                        return float(v)
+                    except Exception:
+                        return None
+
+                def _chk(val_user, val_exp):
+                    if val_user is None:
+                        return False
+                    return abs(val_user - val_exp) <= tol
+
+                r1 = edited.iloc[0].to_dict()
+                exp1_qty = inv0_u_ex
+                exp1_val = inv0_u_ex * inv0_pu_ex
+                r1_ok = _chk(_get_num(r1, "Saldo_cant"), exp1_qty) and _chk(_get_num(r1, "Saldo_total"), exp1_val)
+                ok_flags.append(r1_ok)
+
+                r4 = edited.iloc[3].to_dict()
+                r4_ok_qty   = _chk(_get_num(r4, "Saldo_cant"), sol_qtyF)
+                r4_ok_total = _chk(_get_num(r4, "Saldo_total"), sol_valF)
+                r4_pu_user  = _get_num(r4, "Saldo_pu")
+                r4_ok_pu    = True if r4_pu_user is None else _chk(r4_pu_user, sol_puF)
+                ok_flags.append(r4_ok_qty and r4_ok_total and r4_ok_pu)
+
+                aciertos = sum(1 for x in ok_flags if x)
+                st.metric("Aciertos clave", f"{aciertos}/2")
+                if all(ok_flags):
+                    st.success("¡Muy bien! Tu KARDEX coincide con los saldos esperados para este método.")
+                else:
+                    st.error("Aún hay diferencias con el saldo inicial o final. Revisa tus capas o el promedio antes de la venta.")
+
+                if ask_ai:
+                    with st.spinner("Generando feedback con IA…"):
+                        fb_txt = ia_feedback(
+                            f"Ejercicio KARDEX con método {metodo}. "
+                            f"Escenario: Inv0={inv0_u_ex}@{inv0_pu_ex}, Compra1={comp1_u}@{comp1_pu}, "
+                            f"Venta={venta_ex_u}, Compra2={comp2_u}@{comp2_pu}. "
+                            f"Saldo final correcto: qty={sol_qtyF}, val={sol_valF:.2f}, pu={sol_puF:.4f}. "
+                            f"El estudiante reportó en la última fila: qty={_get_num(r4,'Saldo_cant')}, "
+                            f"val={_get_num(r4,'Saldo_total')}, pu={_get_num(r4,'Saldo_pu')}. "
+                            f"Da una explicación de 5-6 líneas con un truco memotécnico y una pista sobre cómo revisar capas/promedios."
+                        )
+                    with st.expander("💬 Feedback de la IA"):
+                        st.write(fb_txt)
+
 
     with tabs[2]:
         st.subheader("Práctica: elige el método correcto")
