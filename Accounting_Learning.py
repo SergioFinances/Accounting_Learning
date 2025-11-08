@@ -1524,27 +1524,65 @@ def page_level2(username):
                 explain_md = "\n".join(explain_lines)
                 return df, explain_md
 
-            # ===== Controles del ejemplo (INSUMOS) =====
-            c1, c2, c3, c4, c5 = st.columns([1,1,1,1,1])
-            with c1:
-                metodo = st.selectbox("Método", ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"], key="n2_kardex_met")
-            with c2:
-                inv0_u  = st.number_input("Inv. inicial (u)", min_value=0, value=100, step=10, key="n2_kx_inv_u")
-            with c3:
-                inv0_pu = st.number_input("Inv. inicial $/u", min_value=0.0, value=10.0, step=0.5, key="n2_kx_inv_pu")
-            with c4:
-                comp_u  = st.number_input("Compra (u)", min_value=0, value=60, step=10, key="n2_kx_comp_u")
-            with c5:
-                comp_pu = st.number_input("Compra $/u", min_value=0.0, value=12.0, step=0.5, key="n2_kx_comp_pu")
+            # ===== Controles del ejemplo (INSUMOS) — Layout narrativo por días =====
+            st.markdown("#### Parámetros del escenario")
 
-            c6, _ = st.columns([1,3])
-            with c6:
-                venta_u = st.number_input("Venta (u)", min_value=0, value=120, step=10, key="n2_kx_venta_u")
+            # — Método en una sola fila —
+            with st.container():
+                st.markdown("**Método de valoración**")
+                metodo = st.selectbox(
+                    "Método",
+                    ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
+                    key="n2_kardex_met",
+                    label_visibility="collapsed"
+                )
+
+            # — Día 1: Saldo inicial —
+            st.markdown("**Día 1.** La empresa reporta un **saldo inicial del inventario** de:")
+            c1a, c1b = st.columns([1,1], gap="small")
+            with c1a:
+                inv0_u = st.number_input(
+                    "Cantidades iniciales",
+                    min_value=0, value=100, step=10,
+                    key="n2_kx_inv_u"
+                )
+            with c1b:
+                inv0_pu = st.number_input(
+                    "Costo unitario",
+                    min_value=0.0, value=10.0, step=0.5,
+                    key="n2_kx_inv_pu"
+                )
+
+            # — Día 2: Compra —
+            st.markdown("**Día 2.** La empresa realizó una **compra** de:")
+            c2a, c2b = st.columns([1,1], gap="small")
+            with c2a:
+                comp_u = st.number_input(
+                    "Compra (unidades)",
+                    min_value=0, value=60, step=10,
+                    key="n2_kx_comp_u"
+                )
+            with c2b:
+                comp_pu = st.number_input(
+                    "Costo de la compra",
+                    min_value=0.0, value=12.0, step=0.5,
+                    key="n2_kx_comp_pu"
+                )
+
+            # — Día 3: Venta —
+            st.markdown("**Día 3.** La empresa realizó una **venta** de:")
+            c3a, _ = st.columns([1,1], gap="small")
+            with c3a:
+                venta_u = st.number_input(
+                    "Venta (unidades)",
+                    min_value=0, value=120, step=10,
+                    key="n2_kx_venta_u"
+                )
+
 
             # =========================
-            # 1) 🎬 DEMOSTRACIÓN NARRADA (primero)
+            # 1) 🎬 DEMOSTRACIÓN NARRADA (primero) — versión compacta
             # =========================
-            st.markdown("---")
             st.markdown("### 🎬 Demostración narrada: llenado del KARDEX paso a paso")
 
             def compute_steps_for_demo(method_name, inv0_u, inv0_pu, comp_u, comp_pu, venta_u):
@@ -1635,31 +1673,32 @@ def page_level2(username):
                 rows[2]["sdo_tot"]= round(s_v, 2)
 
                 narr = [
-                    "Paso 1. Registramos el saldo inicial: anotamos la cantidad disponible y el costo unitario. El saldo total se obtiene multiplicando cantidad por precio.",
-                    "Paso 2. Registramos la compra: cantidad por precio nos da el valor de la entrada. Actualizamos el saldo. Si usamos Promedio Ponderado, recalculamos el costo unitario promedio.",
-                    "Paso 3. Registramos la venta: calculamos el CMV aplicando el método elegido. En Promedio usamos el costo promedio vigente; en PEPS salen primero las unidades más antiguas; en UEPS, las últimas en entrar. Luego actualizamos el saldo."
+                    "Paso 1. Registramos el saldo inicial: cantidad x costo unitario da el saldo total.",
+                    "Paso 2. Registramos la compra: cantidad x precio = valor de entrada y actualizamos el saldo. En Promedio, recalculamos el costo unitario.",
+                    "Paso 3. Registramos la venta: calculamos el CMV según el método y actualizamos el saldo."
                 ]
                 if method_name == "Promedio Ponderado":
-                    narr[2] = "Paso 3. Venta: el CMV se calcula con el costo promedio vigente. Restamos la cantidad vendida, y el saldo final queda con el nuevo promedio si cambió."
+                    narr[2] = "Paso 3. Venta (Promedio): CMV = cantidad vendida x costo promedio vigente; luego actualizamos el saldo."
                 elif method_name == "PEPS (FIFO)":
-                    narr[2] = "Paso 3. Venta: en PEPS salen primero las unidades más antiguas; el CMV usa esos costos históricos. Luego actualizamos el saldo con las capas que quedan."
+                    narr[2] = "Paso 3. Venta (PEPS): salen primero las unidades más antiguas; CMV con esos costos; luego actualizamos el saldo."
                 else:
-                    narr[2] = "Paso 3. Venta: en UEPS salen primero las últimas unidades compradas; el CMV usa esos costos recientes. Después actualizamos el saldo con las capas restantes."
+                    narr[2] = "Paso 3. Venta (UEPS): salen primero las últimas unidades; CMV con costos recientes; luego actualizamos el saldo."
                 return rows, narr
 
             demo_rows, demo_narr = compute_steps_for_demo(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
 
-            # HTML de la demo con marcadores (SIN f-string) y luego reemplazos seguros
+            # HTML (márgenes compactos) — SIN separador '---' después
             import json as _json
             html_demo_template = """
             <style>
-            .kx {border-collapse:collapse;width:100%;font-size:14px}
+            .kx {border-collapse:collapse;width:100%;font-size:14px; margin-bottom:6px}
             .kx th,.kx td {border:1px solid #eaeaea;padding:6px 8px;text-align:center}
             .kx thead th {background:#f8fafc;font-weight:600}
             .kx .hi {background:#fff7e6;box-shadow:inset 0 0 0 9999px rgba(255,165,0,0.08)}
             .fill {transition: background 0.3s, color 0.3s}
-            .controls {display:flex;gap:8px;align-items:center;margin:8px 0}
+            .controls {display:flex;gap:8px;align-items:center;margin:2px 0 6px}
             .badge {display:inline-block;background:#eef;border:1px solid #dde;padding:2px 8px;border-radius:12px;font-size:12px}
+            #narr {margin:6px 0 2px; font-size:15px}
             </style>
             <div class="controls">
             <button id="playDemo">▶️ Reproducir demo</button>
@@ -1698,13 +1737,12 @@ def page_level2(username):
                 </tr>
             </tbody>
             </table>
-            <div id="narr" style="margin-top:8px;font-size:15px;"></div>
+            <div id="narr"></div>
 
             <script>
             (function(){
             const data  = %%DATA%%;
             const narrs = %%NARR%%;
-            const table = document.getElementById("kxtable");
             const narrDiv = document.getElementById("narr");
             const btn = document.getElementById("playDemo");
 
@@ -1713,6 +1751,7 @@ def page_level2(username):
                 catch(e){ return "$"+(Math.round(v*100)/100).toLocaleString('es-CO'); }
             };
             const fmt = (x)=> (x===null || x===undefined || x==="") ? "" : (typeof x==="number" ? (Number.isInteger(x)? x.toString(): (Math.round(x*100)/100).toString().replace(".",",")) : x);
+            const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
 
             function speak(text){
                 return new Promise((resolve)=>{
@@ -1729,8 +1768,6 @@ def page_level2(username):
                 });
             }
 
-            const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
-
             function fillCell(id, val, money=false){
                 const el = document.getElementById(id);
                 if (!el) return;
@@ -1738,7 +1775,7 @@ def page_level2(username):
                 el.style.background = "#fffbe6";
                 el.style.color = "#333";
                 el.textContent = (money ? pesos(val) : fmt(val));
-                setTimeout(()=>{ el.style.background=""; }, 400);
+                setTimeout(()=>{ el.style.background=""; }, 240);
             }
 
             function highlightRow(i){
@@ -1761,17 +1798,16 @@ def page_level2(username):
             }
 
             async function narrAndFill(text, actions){
-                const dur = Math.max(2500, Math.min(6000, text.length * 55));
+                const dur = Math.max(2400, Math.min(5200, text.length * 50));
                 const t1 = Math.floor(dur * 0.33);
                 const t2 = Math.floor(dur * 0.66);
                 const t3 = Math.floor(dur * 0.90);
-
                 const pVoice = speak(text);
                 if (actions[0]) { await sleep(t1); actions[0](); }
                 if (actions[1]) { await sleep(Math.max(0,t2 - t1)); actions[1](); }
                 if (actions[2]) { await sleep(Math.max(0,t3 - t2)); actions[2](); }
                 await pVoice;
-                await sleep(200);
+                await sleep(120);
             }
 
             async function play(){
@@ -1781,51 +1817,42 @@ def page_level2(username):
                 highlightRow(0);
                 narrDiv.textContent = "Paso 1 · Saldo inicial";
                 const r0 = data[0];
-                await narrAndFill(
-                narrs[0],
-                [
-                    ()=> fillCell("r0_sdo_q", r0.sdo_q),
-                    ()=> fillCell("r0_sdo_pu", r0.sdo_pu, true),
-                    ()=> fillCell("r0_sdo_tot", r0.sdo_tot, true)
-                ]
-                );
+                await narrAndFill(narrs[0], [
+                ()=> fillCell("r0_sdo_q",  r0.sdo_q),
+                ()=> fillCell("r0_sdo_pu", r0.sdo_pu, true),
+                ()=> fillCell("r0_sdo_tot",r0.sdo_tot, true)
+                ]);
 
                 // Paso 2
                 highlightRow(1);
                 narrDiv.textContent = "Paso 2 · Compra";
                 const r1 = data[1];
-                await narrAndFill(
-                narrs[1],
-                [
-                    ()=> fillCell("r1_ent_q",  r1.ent_q),
-                    ()=> fillCell("r1_ent_pu", r1.ent_pu, true),
-                    ()=> fillCell("r1_ent_tot",r1.ent_tot, true)
-                ]
-                );
-                await sleep(300);
+                await narrAndFill(narrs[1], [
+                ()=> fillCell("r1_ent_q",  r1.ent_q),
+                ()=> fillCell("r1_ent_pu", r1.ent_pu, true),
+                ()=> fillCell("r1_ent_tot",r1.ent_tot, true)
+                ]);
+                await sleep(180);
                 fillCell("r1_sdo_q",  r1.sdo_q);
-                await sleep(200);
+                await sleep(140);
                 fillCell("r1_sdo_pu", r1.sdo_pu, true);
-                await sleep(200);
+                await sleep(140);
                 fillCell("r1_sdo_tot",r1.sdo_tot, true);
 
                 // Paso 3
                 highlightRow(2);
                 narrDiv.textContent = "Paso 3 · Venta";
                 const r2 = data[2];
-                await narrAndFill(
-                narrs[2],
-                [
-                    ()=> { if (r2.sal_q!=="") fillCell("r2_sal_q", r2.sal_q); },
-                    ()=> { if (r2.sal_pu!=="") fillCell("r2_sal_pu", r2.sal_pu, true); },
-                    ()=> { if (r2.sal_tot!=="") fillCell("r2_sal_tot", r2.sal_tot, true); }
-                ]
-                );
-                await sleep(300);
+                await narrAndFill(narrs[2], [
+                ()=> { if (r2.sal_q!=="")  fillCell("r2_sal_q",  r2.sal_q); },
+                ()=> { if (r2.sal_pu!=="") fillCell("r2_sal_pu", r2.sal_pu, true); },
+                ()=> { if (r2.sal_tot!=="")fillCell("r2_sal_tot",r2.sal_tot, true); }
+                ]);
+                await sleep(180);
                 fillCell("r2_sdo_q",  r2.sdo_q);
-                await sleep(200);
+                await sleep(140);
                 fillCell("r2_sdo_pu", r2.sdo_pu, true);
-                await sleep(200);
+                await sleep(140);
                 fillCell("r2_sdo_tot",r2.sdo_tot, true);
 
                 highlightRow(-1);
@@ -1845,45 +1872,11 @@ def page_level2(username):
                 .replace("%%NARR%%", _json.dumps(demo_narr))
                 .replace("%%METODO%%", metodo)
             )
-            components.html(html_demo, height=420, scrolling=True)
+            # Altura compacta (↓) y sin separador debajo
+            components.html(html_demo, height=190, scrolling=False)
 
             # =========================
-            # 2) 📋 KARDEX (auto-calculado) — después de la demo
-            # =========================
-            st.markdown("---")
-            st.markdown("### 📋 KARDEX (auto-calculado)")
-            df_kx, _ = _kardex_two_ops(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
-
-            def _kardex_format_for_display(df_src: pd.DataFrame) -> pd.DataFrame:
-                df = df_src.copy()
-                sublabels = [c[1].lower() for c in df.columns]
-
-                def _fmt_cell(val, sublab):
-                    if val == "" or val is None:
-                        return ""
-                    if sublab == "cantidad":
-                        try:
-                            return f"{int(round(float(val)))}"
-                        except Exception:
-                            return str(val)
-                    if sublab in ("precio", "total"):
-                        try:
-                            return peso(float(val))
-                        except Exception:
-                            return str(val)
-                    return str(val)
-
-                for j, col in enumerate(df.columns):
-                    sublab = sublabels[j]
-                    df[col] = df[col].map(lambda v: _fmt_cell(v, sublab))
-                    df[col] = df[col].astype("string")
-                return df
-
-            df_kx_display = _kardex_format_for_display(df_kx)
-            st.dataframe(df_kx_display, use_container_width=True)
-
-            # =========================
-            # 3) 📝 Ejercicio editable
+            # 2) 📝 Ejercicio editable
             # =========================
             st.markdown("---")
             st.subheader("📝 Ejercicio: Diligencia tu propio KARDEX")
