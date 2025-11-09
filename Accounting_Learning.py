@@ -2362,6 +2362,267 @@ def page_level2(username):
                     st.write(fb_txt)
 
 
+    # ====== Helpers de performance y parseo ======
+    def _extract_json(txt: str) -> dict:
+        """
+        Intenta extraer el primer bloque JSON válido en un texto.
+        Devuelve {} si no puede parsear.
+        """
+        try:
+            # Busca primer bloque delimitado por { ... }
+            start = txt.find("{")
+            end = txt.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                return json.loads(txt[start:end+1])
+        except Exception:
+            pass
+        return {}
+
+    @st.cache_data(show_spinner=False)
+    def cached_solve_pp(inv0_u, inv0_pu, comp1_u, comp1_pu, venta_u, comp2_u, comp2_pu):
+        # Mismo cuerpo que tu `solve_pp()` actual
+        q0 = inv0_u
+        v0 = inv0_u * inv0_pu
+        # Día 2
+        v1 = v0 + comp1_u * comp1_pu
+        q1 = inv0_u + comp1_u
+        pu1 = (v1 / q1) if q1 > 0 else 0.0
+        saldo_after_c1 = (q1, pu1, v1)
+        # Día 3
+        sale_q = min(venta_u, q1)
+        cmv = sale_q * pu1
+        q2 = q1 - sale_q
+        v2 = v1 - cmv
+        pu2 = (v2 / q2) if q2 > 0 else 0.0
+        saldo_after_sale = (q2, pu2, v2)
+        # Día 4
+        q3 = q2 + comp2_u
+        v3 = v2 + comp2_u * comp2_pu
+        pu3 = (v3 / q3) if q3 > 0 else 0.0
+        saldo_final = (q3, pu3, v3)
+        return saldo_after_c1, saldo_after_sale, saldo_final
+
+    @st.cache_data(show_spinner=False)
+    def cached_solve_peps_rows(peps_inv0_u, peps_inv0_pu, peps_comp1_u, peps_comp1_pu, peps_venta_u, peps_comp2_u, peps_comp2_pu):
+        def _sum_layers(layers):
+            q = sum(q for q, _ in layers)
+            v = sum(q*p for q, p in layers)
+            pu = (v / q) if q > 0 else 0.0
+            return q, pu, v
+        def _consume_layers_detail(layers, qty_out, fifo=True):
+            order = layers[:] if fifo else layers[::-1]
+            remaining = qty_out
+            sale_details = []
+            new_layers = []
+            for q, pu in order:
+                if remaining <= 0:
+                    new_layers.append([q, pu]); continue
+                take = min(q, remaining)
+                if take > 0:
+                    sale_details.append((take, pu, take*pu))
+                    rest = q - take
+                    remaining -= take
+                    if rest > 0:
+                        new_layers.append([rest, pu])
+            layers_after = new_layers if fifo else new_layers[::-1]
+            return sale_details, layers_after
+
+        layers = [[float(peps_inv0_u), float(peps_inv0_pu)]]
+        s_q, s_pu, s_v = _sum_layers(layers)
+        rows = [{
+            "fecha":"Día 1","desc":"Saldo inicial",
+            "ent_q":"","ent_pu":"","ent_tot":"",
+            "sal_q":"","sal_pu":"","sal_tot":"",
+            "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+        }]
+        # Día 2 — saldo día 1 + compra a su costo
+        rows.append({
+            "fecha":"Día 2","desc":"Saldo (día 1)",
+            "ent_q":"","ent_pu":"","ent_tot":"",
+            "sal_q":"","sal_pu":"","sal_tot":"",
+            "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+        })
+        ent_tot = peps_comp1_u * peps_comp1_pu
+        layers.append([float(peps_comp1_u), float(peps_comp1_pu)])
+        rows.append({
+            "fecha":"Día 2","desc":"Compra 1",
+            "ent_q":int(peps_comp1_u),"ent_pu":round(peps_comp1_pu,2),"ent_tot":round(ent_tot,2),
+            "sal_q":"","sal_pu":"","sal_tot":"",
+            "sdo_q":int(peps_comp1_u),"sdo_pu":round(peps_comp1_pu,2),"sdo_tot":round(ent_tot,2)
+        })
+        # Día 3 — venta en tramos
+        def _sum_layers_copy(lrs):
+            q = sum(q for q,_ in lrs); v = sum(q*p for q,p in lrs); pu = (v/q) if q>0 else 0.0
+            return q, pu, v
+
+        sale_details, layers_after = _consume_layers_detail(layers, peps_venta_u, fifo=True)
+        running_layers = [l[:] for l in layers]
+        for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
+            sd, running_layers = _consume_layers_detail(running_layers, q_take, fifo=True)
+            rq, rpu, rv = _sum_layers_copy(running_layers)
+            rows.append({
+                "fecha":"Día 3","desc": f"Venta tramo {i} (PEPS)",
+                "ent_q":"","ent_pu":"","ent_tot":"",
+                "sal_q":int(q_take),"sal_pu":round(pu_take,2),"sal_tot":round(tot_take,2),
+                "sdo_q":int(rq),"sdo_pu":round(rpu,2),"sdo_tot":round(rv,2)
+            })
+        layers = layers_after
+        # Día 4 — compra 2
+        ent2_tot = peps_comp2_u * peps_comp2_pu
+        layers.append([float(peps_comp2_u), float(peps_comp2_pu)])
+        rows.append({
+            "fecha":"Día 4","desc":"Compra 2",
+            "ent_q":int(peps_comp2_u),"ent_pu":round(peps_comp2_pu,2),"ent_tot":round(ent2_tot,2),
+            "sal_q":"","sal_pu":"","sal_tot":"",
+            "sdo_q":int(peps_comp2_u),"sdo_pu":round(peps_comp2_pu,2),"sdo_tot":round(ent2_tot,2)
+        })
+        qF, puF, vF = _sum_layers(layers)
+        return rows, (qF, puF, vF)
+
+    def grade_open_with_ai_batched(ans2: str, ans3: str):
+        """
+        1 request para las dos preguntas abiertas.
+        Devuelve (score2, fb2, score3, fb3)
+        """
+        prompt = f"""
+    Eres un evaluador. Devuelve SOLO un JSON con este formato EXACTO:
+    {{
+    "q2": {{"score": 0|1, "feedback": "texto breve"}},
+    "q3": {{"score": 0|1, "feedback": "texto breve"}}
+    }}
+
+    Criterios:
+    - q2 (importancia de elegir método): puntúa 1 si menciona al menos dos de:
+    CMV/utilidad, estados financieros/comparabilidad, impuestos/decisiones.
+    - q3 (cuando conviene Promedio Ponderado): puntúa 1 si propone un caso plausible
+    (compras frecuentes/costos variables/menor volatilidad/simplificación operativa) y lo justifica.
+
+    Respuestas del estudiante:
+    [Q2]
+    {ans2}
+
+    [Q3]
+    {ans3}
+    """
+        raw = ia_feedback(prompt)
+        data = _extract_json(raw)
+        try:
+            s2 = int(data.get("q2", {}).get("score", 0))
+            f2 = str(data.get("q2", {}).get("feedback", "")).strip()
+            s3 = int(data.get("q3", {}).get("score", 0))
+            f3 = str(data.get("q3", {}).get("feedback", "")).strip()
+            return s2, f2, s3, f3
+        except Exception:
+            def quick(a, kws, minhits):
+                hit = sum(1 for k in kws if k.lower() in (a or "").lower())
+                return (1 if hit >= minhits else 0, "Respuesta breve; refuerza con ejemplos y efectos en CMV/estados.")
+            s2, f2 = quick(ans2, ["CMV","utilidad","estados","financieros","impuestos","decisiones","comparabilidad"], 2)
+            s3, f3 = quick(ans3, ["promedio","compras frecuentes","costos variables","volatilidad","simplificar"], 2)
+            return s2, f2, s3, f3
+        
+
+    def _fail(msg):
+        return False, "❌ No alcanza los criterios.", msg
+
+    def _pass(msg):
+        return True, "✅ Bien logrado.", msg
+
+    def _heuristic_fail(answer: str, min_words=12, banned=None):
+        if banned is None:
+            banned = []
+        a = (answer or "").strip().lower()
+        if len(a.split()) < min_words:
+            return True, "La respuesta es demasiado corta. Explica en 2–4 líneas con ideas completas."
+        for bad in banned:
+            if bad in a:
+                return True, f"La idea central no es pertinente: mencionas “{bad}” sin relacionarlo con valoración/CMV/utilidad."
+        return False, ""
+
+    def n2_eval_open_ai_q2(answer: str):
+        """
+        Q2: Importancia de elegir correctamente el método de valoración.
+        Criterios (necesita 2 de 3): (a) impacto en CMV/utilidad/bruta,
+        (b) estados financieros/comparabilidad, (c) impuestos/decisiones de gestión.
+        """
+        # 1) Heurística previa
+        bad, why = _heuristic_fail(
+            answer,
+            banned=["gastos financieros", "pasivos", "endeudamiento", "apalancamiento"]
+        )
+        if bad:
+            return _fail(f"{why} Debes relacionar la elección del método con **CMV**, **utilidad**, **estados financieros** e **impuestos/decisiones**.")
+
+        # 2) Llamada IA (request separado, formato rígido)
+        prompt = (
+            "Evalúa esta respuesta del estudiante.\n"
+            "Primera línea DEBE SER EXACTAMENTE 'SCORE: 1' o 'SCORE: 0'.\n"
+            "Criterios para SCORE: 1 (cumplir al menos 2):\n"
+            "  • Menciona impacto en CMV y/o utilidad (bruta o neta).\n"
+            "  • Cita efectos en los estados financieros o comparabilidad.\n"
+            "  • Alude a impuestos o decisiones (precios, compras, márgenes).\n"
+            "Tras la primera línea, escribe 2–3 líneas de feedback pedagógico (conciso).\n"
+            f"RESPUESTA DEL ESTUDIANTE:\n{answer}"
+        )
+        fb = ia_feedback(prompt) or ""
+
+        # 3) Parser estricto: primera línea
+        first = fb.strip().splitlines()[0] if fb.strip() else ""
+        m = re.fullmatch(r"SCORE:\s*([01])\s*", first.strip())
+        ok = (m and m.group(1) == "1")
+        # Feedback corto + ampliado
+        fb_short = "✅ Cumple criterios" if ok else "❌ No cumple criterios"
+        fb_formativo = "\n".join(fb.strip().splitlines()[1:]) if fb.strip() else ""
+        if ok:
+            return _pass(fb_formativo)
+        else:
+            # Feedback mínimo si el modelo no devolvió nada útil
+            if not fb_formativo:
+                fb_formativo = ("Recuerda conectar el método con el **CMV y la utilidad**, "
+                                "su efecto en **estados financieros** y posibles impactos en **impuestos/decisiones**.")
+            return _fail(fb_formativo)
+
+    def n2_eval_open_ai_q3(answer: str):
+        """
+        Q3: Situación en que Promedio Ponderado es más conveniente que PEPS/UEPS.
+        Criterios (necesita 2 de 3): (a) compras frecuentes/costos variables,
+        (b) suaviza volatilidad del CMV, (c) simplifica operación/registro.
+        Debe justificar.
+        """
+        bad, why = _heuristic_fail(
+            answer,
+            banned=["pasivos", "gastos financieros", "apalancamiento"]
+        )
+        if bad:
+            return _fail(f"{why} Describe un caso **operativo** (compras frecuentes/costos cambiantes), "
+                        "cómo el promedio **suaviza el CMV** y por qué **simplifica** la gestión.")
+
+        prompt = (
+            "Evalúa esta respuesta del estudiante.\n"
+            "Primera línea DEBE SER EXACTAMENTE 'SCORE: 1' o 'SCORE: 0'.\n"
+            "Criterios para SCORE: 1 (cumplir al menos 2):\n"
+            "  • Compras frecuentes o costos variables → PP es natural.\n"
+            "  • PP reduce la volatilidad del CMV frente a PEPS/UEPS.\n"
+            "  • PP simplifica el registro (un costo unitario corriente).\n"
+            "Debe haber **justificación** explícita.\n"
+            "Tras la primera línea, escribe 2–3 líneas de feedback con un tip.\n"
+            f"RESPUESTA DEL ESTUDIANTE:\n{answer}"
+        )
+        fb = ia_feedback(prompt) or ""
+
+        first = fb.strip().splitlines()[0] if fb.strip() else ""
+        m = re.fullmatch(r"SCORE:\s*([01])\s*", first.strip())
+        ok = (m and m.group(1) == "1")
+
+        fb_short = "✅ Caso y justificación adecuados" if ok else "❌ Caso/justificación insuficiente"
+        fb_formativo = "\n".join(fb.strip().splitlines()[1:]) if fb.strip() else ""
+        if ok:
+            return _pass(fb_formativo)
+        else:
+            if not fb_formativo:
+                fb_formativo = ("Propón un contexto con **compras frecuentes** y **precios cambiantes**, "
+                                "explica que el PP **suaviza el CMV** y resume cómo **simplifica** la operación.")
+            return _fail(fb_formativo)
+
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 2")
         st.caption("Debes acertar **5 de 5** para aprobar y avanzar al siguiente nivel.")
@@ -2416,90 +2677,14 @@ def page_level2(username):
         peps_comp2_u, peps_comp2_pu = 70, 12.0
 
         # ---------- Solución PP ----------
-        def solve_pp():
-            # Día 1
-            layers = [[float(inv0_u), float(inv0_pu)]]
-            # Día 2 (Compra 1) -> promedio
-            q0, pu0, v0 = _sum_layers(layers)
-            v1 = v0 + comp1_u * comp1_pu
-            q1 = q0 + comp1_u
-            pu1 = (v1 / q1) if q1 > 0 else 0.0
-            layers = [[q1, pu1]]
-            saldo_after_c1 = (q1, pu1, v1)
-            # Día 3 (Venta) -> CMV con pu promedio vigente
-            sale_q = min(venta_u, q1)
-            cmv = sale_q * pu1
-            q2 = q1 - sale_q
-            v2 = v1 - cmv
-            pu2 = (v2 / q2) if q2 > 0 else 0.0
-            layers = [[q2, pu2]] if q2 > 0 else []
-            saldo_after_sale = (q2, pu2, v2)
-            # Día 4 (Compra 2) -> promedio
-            q3 = q2 + comp2_u
-            v3 = v2 + comp2_u * comp2_pu
-            pu3 = (v3 / q3) if q3 > 0 else 0.0
-            layers = [[q3, pu3]]
-            saldo_final = (q3, pu3, v3)
-            return saldo_after_c1, saldo_after_sale, saldo_final
-
-        pp_after_c1, pp_after_sale, pp_final = solve_pp()
+        pp_after_c1, pp_after_sale, pp_final = cached_solve_pp(
+            inv0_u, inv0_pu, comp1_u, comp1_pu, venta_u, comp2_u, comp2_pu
+        )
 
         # ---------- Solución PEPS (filas dinámicas) ----------
-        def solve_peps_rows():
-            # Día 1: saldo inicial
-            layers = [[float(peps_inv0_u), float(peps_inv0_pu)]]
-            s_q, s_pu, s_v = _sum_layers(layers)
-            rows = [{
-                "fecha":"Día 1","desc":"Saldo inicial",
-                "ent_q":"","ent_pu":"","ent_tot":"",
-                "sal_q":"","sal_pu":"","sal_tot":"",
-                "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
-            }]
-
-            # Día 2 (PEPS)
-            rows.append({
-                "fecha":"Día 2","desc":"Saldo (día 1)",
-                "ent_q":"","ent_pu":"","ent_tot":"",
-                "sal_q":"","sal_pu":"","sal_tot":"",
-                "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
-            })
-            ent_tot = peps_comp1_u * peps_comp1_pu
-            layers.append([float(peps_comp1_u), float(peps_comp1_pu)])
-            rows.append({
-                "fecha":"Día 2","desc":"Compra 1",
-                "ent_q":int(peps_comp1_u),"ent_pu":round(peps_comp1_pu,2),"ent_tot":round(ent_tot,2),
-                "sal_q":"","sal_pu":"","sal_tot":"",
-                "sdo_q":int(peps_comp1_u),"sdo_pu":round(peps_comp1_pu,2),"sdo_tot":round(ent_tot,2)
-            })
-
-            # Día 3 (Venta)
-            sale_details, layers_after = _consume_layers_detail(layers, peps_venta_u, fifo=True)
-            running_layers = [l[:] for l in layers]
-            for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
-                sd, running_layers = _consume_layers_detail(running_layers, q_take, fifo=True)
-                rq, rpu, rv = _sum_layers(running_layers)
-                rows.append({
-                    "fecha":"Día 3","desc": f"Venta tramo {i} (PEPS)",
-                    "ent_q":"","ent_pu":"","ent_tot":"",
-                    "sal_q":int(q_take),"sal_pu":round(pu_take,2),"sal_tot":round(tot_take,2),
-                    "sdo_q":int(rq),"sdo_pu":round(rpu,2),"sdo_tot":round(rv,2)
-                })
-            layers = layers_after
-
-            # Día 4 (Compra 2)
-            ent2_tot = peps_comp2_u * peps_comp2_pu
-            layers.append([float(peps_comp2_u), float(peps_comp2_pu)])
-            rows.append({
-                "fecha":"Día 4","desc":"Compra 2",
-                "ent_q":int(peps_comp2_u),"ent_pu":round(peps_comp2_pu,2),"ent_tot":round(ent2_tot,2),
-                "sal_q":"","sal_pu":"","sal_tot":"",
-                "sdo_q":int(peps_comp2_u),"sdo_pu":round(peps_comp2_pu,2),"sdo_tot":round(ent2_tot,2)
-            })
-
-            qF, puF, vF = _sum_layers(layers)
-            return rows, (qF, puF, vF)
-
-        peps_rows_expected, peps_final = solve_peps_rows()
+        peps_rows_expected, peps_final = cached_solve_peps_rows(
+            peps_inv0_u, peps_inv0_pu, peps_comp1_u, peps_comp1_pu, peps_venta_u, peps_comp2_u, peps_comp2_pu
+        )
 
         # ========= UI: una sola FORM para todo =========
         with st.form("n2_eval_all"):
@@ -2628,45 +2813,12 @@ def page_level2(username):
             total_score += 1 if mcq_ok else 0
             details_msgs.append(f"Selección múltiple: {'✅' if mcq_ok else '❌'}")
 
-            # --- Abiertas con IA (fallback heurístico si no se pide IA)
-            import re
-            score_a1 = score_a2 = 0
-            fb1 = fb2 = ""
-
-            if ask_ai_open and (a1.strip() or a2.strip()):
-                if a1.strip():
-                    prompt1 = (
-                        "Califica la respuesta en 'SCORE: 1' si explica por qué es importante elegir el método de inventarios, "
-                        "mencionando al menos dos de: (a) CMV y utilidad/bruta, (b) estados financieros, (c) impuestos/decisiones/ comparabilidad. "
-                        "Si no cumple, 'SCORE: 0'. Luego brinda 2-3 líneas de feedback.\n\n"
-                        f"RESPUESTA:\n{a1}"
-                    )
-                    fb1 = ia_feedback(prompt1)
-                    m1 = re.search(r"SCORE:\s*([01])", fb1 or "", re.IGNORECASE)
-                    score_a1 = 1 if (m1 and m1.group(1) == "1") else 0
-
-                if a2.strip():
-                    prompt2 = (
-                        "Califica en 'SCORE: 1' si propone una situación práctica donde el Promedio Ponderado sea más conveniente que PEPS/UEPS "
-                        "(compras frecuentes, costos variables, menor volatilidad del CMV, simplificación operativa) y lo justifica con 1-2 argumentos. "
-                        "Si no cumple, 'SCORE: 0'. Luego brinda 2-3 líneas de feedback.\n\n"
-                        f"RESPUESTA:\n{a2}"
-                    )
-                    fb2 = ia_feedback(prompt2)
-                    m2 = re.search(r"SCORE:\s*([01])", fb2 or "", re.IGNORECASE)
-                    score_a2 = 1 if (m2 and m2.group(1) == "1") else 0
-            else:
-                # Fallback simple sin IA
-                kw1 = ["CMV","utilidad","estados","financieros","impuestos","decisiones","comparabilidad","balance","estado de resultados"]
-                if sum(1 for k in kw1 if k.lower() in (a1 or "").lower()) >= 3:
-                    score_a1 = 1
-                kw2 = ["compras frecuentes","costos variables","volatilidad","simplificar","promedio","operativo","consistencia"]
-                if sum(1 for k in kw2 if k.lower() in (a2 or "").lower()) >= 2:
-                    score_a2 = 1
-
-            total_score += score_a1 + score_a2
-            details_msgs.append(f"Pregunta abierta 2: {'✅' if score_a1==1 else '❌'}")
-            details_msgs.append(f"Pregunta abierta 3: {'✅' if score_a2==1 else '❌'}")
+            # --- Abiertas (cada una en su request, con heurística previa y parser estricto)
+            ok_a1, fb1_short, fb1_formativo = n2_eval_open_ai_q2(a1 or "")
+            ok_a2, fb2_short, fb2_formativo = n2_eval_open_ai_q3(a2 or "")
+            total_score += (1 if ok_a1 else 0) + (1 if ok_a2 else 0)
+            details_msgs.append(f"Pregunta abierta 2: {'✅' if ok_a1 else '❌'}")
+            details_msgs.append(f"Pregunta abierta 3: {'✅' if ok_a2 else '❌'}")
 
             # --- Ejercicio PP (validación clave de saldos por día)
             def _get_num_safe(row, key):
@@ -2760,14 +2912,15 @@ def page_level2(username):
                 )
             else:
                 st.error("No aprobado. Necesitas 5/5. Revisa tus respuestas y vuelve a intentarlo.")
-                if ask_ai_open and (fb1 or fb2):
+                if ask_ai_open:
                     with st.expander("💬 Feedback de la IA (preguntas abiertas)"):
-                        if fb1:
-                            st.markdown("**Pregunta 2**")
-                            st.write(fb1)
-                        if fb2:
-                            st.markdown("**Pregunta 3**")
-                            st.write(fb2)
+                        st.markdown("**Pregunta 2**")
+                        st.write(fb1_short)
+                        st.info(fb1_formativo)
+                        st.markdown("---")
+                        st.markdown("**Pregunta 3**")
+                        st.write(fb2_short)
+                        st.info(fb2_formativo)
 
 # ===========================
 # NIVEL 3 (Devoluciones)
@@ -2775,33 +2928,581 @@ def page_level2(username):
 def page_level3(username):
     st.title("Nivel 3 · Casos con Devoluciones (compras y ventas)")
 
-    tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplos", "🎮 Práctica (IA)", "🏁 Evaluación para aprobar"])
+    tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplos guiados", "🎮 Práctica (IA)", "🏁 Evaluación para aprobar"])
 
     with tabs[0]:
-        theory = (
-            "**Devoluciones de compra**: restan a compras; reducen el pool de costo disponible.\n\n"
-            "**Devoluciones de venta**: el cliente devuelve unidades → reingresan al inventario. "
-            "Su valoración depende del método (PP, PEPS, UEPS). En **periódico**, se suele ajustar en las ventas netas "
-            "y, si corresponde, reconocer el costo del reingreso a inventario.\n\n"
-            "Idea clave: mantén consistencia con el método de inventario y registra contra la cuenta correcta."
+        st.subheader("Teoría · Devoluciones en compras y ventas (PP, PEPS y UEPS)")
+
+        intro = """
+    En inventarios, las **devoluciones** ajustan movimientos ya registrados y afectan directamente el **Costo de la Mercancía Vendida (CMV)** y la utilidad del periodo. 
+    Hay dos tipos: **devoluciones en compras** (a proveedor) y **devoluciones en ventas** (del cliente a la empresa). 
+    Comprender su tratamiento —siempre consistente con el método de valoración (Promedio, PEPS, UEPS)— evita distorsiones en los estados financieros.
+    """
+        st.markdown(intro)
+
+        st.markdown("### 🛒 Devoluciones en compras")
+        st.markdown(
+            "- **Qué son:** mercancía que la empresa **devuelve al proveedor** (defecto, exceso, inconformidad).  \n"
+            "- **Efecto contable:** **disminuyen** el total de compras; por ende, reducen el **pool** de costo disponible para vender.  \n"
+            "- **Compras netas:** se calculan restando las devoluciones de las compras brutas."
         )
-        st.write(theory)
+        st.markdown("**Fórmula:**")
+        st.latex(r"\text{Compras netas} \;=\; \text{Compras brutas} \;-\; \text{Devoluciones en compras}")
+
+        st.markdown("---")
+        st.markdown("### 🧾 Devoluciones en ventas")
+        st.markdown(
+            "- **Qué son:** el **cliente devuelve** unidades previamente vendidas; estas **reingresan al inventario**.  \n"
+            "- **Efecto en el CMV:** el reingreso **reduce el COGS neto** del periodo (parte del costo reconocido como vendido regresa al inventario).  \n"
+            "- **Cómo se valora el reingreso?** Depende del método:"
+        )
+        st.markdown(
+            "  - **Promedio Ponderado (PP):** reingresa al **costo promedio vigente**.  \n"
+            "  - **PEPS (FIFO):** se presume que vuelven con **costos más antiguos** (los primeros que salieron).  \n"
+            "  - **UEPS (LIFO):** reingresan con **costos más recientes** (los últimos que salieron)."
+        )
+
+        st.markdown("**Relación simple con el CMV neto:**")
+        st.latex(r"\text{COGS neto} \;\approx\; \text{COGS bruto} \;-\; \text{Costo de unidades devueltas (reingresadas)}")
+
+        st.markdown("---")
+        st.markdown("### 🔎 Coherencia con el método (PP, PEPS, UEPS)")
+        st.markdown(
+            "- **PP:** todo se valora a un **costo promedio** actualizado; las devoluciones usan ese promedio del momento del reingreso.  \n"
+            "- **PEPS:** se respeta la **cronología**: las primeras capas son las que salen primero; las devoluciones se reconocen con costos de capas antiguas.  \n"
+            "- **UEPS:** salen primero las capas más recientes; las devoluciones se reconocen con costos recientes.  \n"
+            "- **Nota en Colombia:** el **UEPS no es aceptado fiscalmente**, pero se usa en análisis internos o ejercicios académicos."
+        )
+
+        st.markdown("---")
+        st.markdown("### 💡 Idea clave")
+        st.markdown(
+            "Registra siempre las devoluciones de forma **consistente con el método de inventario** y contra la cuenta correcta "
+            "(**Devoluciones en compras** / **Devoluciones en ventas**). Así mantienes el **CMV** y la **utilidad** correctamente medidos, "
+            "facilitando decisiones y la comparabilidad entre periodos."
+        )
+
         with st.expander("🔊 Escuchar explicación"):
-            speak_block(theory, key_prefix="teo-n3", lang_hint="es")
+            full_text = "\n\n".join([
+                intro.strip(),
+                "Devoluciones en compras: disminuyen las compras y el pool de costo disponible.",
+                "Devoluciones en ventas: reingresan unidades y reducen el COGS neto; el costo de reingreso depende del método.",
+                "Coherencia con PP/PEPS/UEPS y nota sobre UEPS en Colombia.",
+                "Ejemplo y idea clave sobre consistencia y efectos en CMV y utilidad."
+            ])
+            speak_block(full_text, key_prefix="teo-n3", lang_hint="es")
+
 
     with tabs[1]:
-        st.subheader("Devolución de compra (impacto directo en Compras)")
-        compra = st.number_input("Compra bruta ($)", min_value=0.0, value=5000.0, step=100.0, key="n3_ej_compra")
-        dev_comp = st.number_input("Devolución a proveedor ($)", min_value=0.0, value=600.0, step=50.0, key="n3_ej_devcomp")
-        compras_net = compra - dev_comp
-        st.info(f"**Compras netas = {peso(compra)} − {peso(dev_comp)} = {peso(compras_net)}")
+        st.subheader("KARDEX dinámico con devoluciones (PP · PEPS · UEPS)")
+        st.caption("Días 1–3 prellenados. La demostración narrada inicia en el Día 4 (devolución de compra) y Día 5 (devolución de venta).")
 
-        st.subheader("Devolución de venta (reingreso de unidades)")
-        st.caption("Escenario simple PP: el costo reingresado es el costo promedio vigente.")
-        prom = st.number_input("Costo promedio vigente ($/u)", min_value=0.0, value=16.8, step=0.1, key="n3_ej_prompp")
-        dev_venta_u = st.number_input("Unidades devueltas por cliente", min_value=0, value=10, step=1, key="n3_ej_devventa_u")
-        costo_reingreso = prom * dev_venta_u
-        st.success(f"**Reingreso inventario**: {dev_venta_u} u × {peso(prom)} = {peso(costo_reingreso)}")
+        # ========= Helpers =========
+        def _fmt_money(v):
+            try:
+                return peso(float(v))
+            except Exception:
+                return str(v)
+
+        def _sum_layers(layers):
+            q = sum(q for q, _ in layers)
+            v = sum(q*p for q, p in layers)
+            pu = (v/q) if q > 0 else 0.0
+            return q, pu, v
+
+        def _consume_layers_detail(layers, qty_out, fifo=True):
+            """
+            Devuelve (sale_details, layers_after)
+            sale_details: lista de tramos [(take_qty, pu, total), ...]
+            layers_after: capas restantes tras consumir qty_out
+            """
+            order = layers[:] if fifo else layers[::-1]
+            remaining = qty_out
+            sale_details = []
+            new_layers = []
+            for q, pu in order:
+                if remaining <= 0:
+                    new_layers.append([q, pu])
+                    continue
+                take = min(q, remaining)
+                if take > 0:
+                    sale_details.append((take, pu, take*pu))
+                    rest = q - take
+                    remaining -= take
+                    if rest > 0:
+                        new_layers.append([rest, pu])
+            layers_after = new_layers if fifo else new_layers[::-1]
+            return sale_details, layers_after
+
+        # ========= Parámetros del escenario =========
+        st.markdown("#### Parámetros del escenario")
+
+        # Método en una sola fila
+        st.markdown("**Método de valoración**")
+        metodo = st.selectbox(
+            "Método",
+            ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
+            key="n3_kx_met",
+            label_visibility="collapsed"
+        )
+
+        # Días 1–3: iguales a tu demo previa
+        st.markdown("📦 **Día 1.** Saldo inicial:")
+        c1a, c1b = st.columns([1,1], gap="small")
+        with c1a:
+            inv0_u = st.number_input("Cantidad (u)", min_value=0, value=100, step=10, key="n3_kx_inv_u")
+        with c1b:
+            inv0_pu = st.number_input("Costo unitario ($/u)", min_value=0.0, value=10.0, step=0.5, key="n3_kx_inv_pu")
+
+        st.markdown("🛒 **Día 2.** Compra:")
+        c2a, c2b = st.columns([1,1], gap="small")
+        with c2a:
+            comp_u = st.number_input("Compra (u)", min_value=0, value=60, step=10, key="n3_kx_comp_u")
+        with c2b:
+            comp_pu = st.number_input("Costo compra ($/u)", min_value=0.0, value=12.0, step=0.5, key="n3_kx_comp_pu")
+
+        st.markdown("💰 **Día 3.** Venta:")
+        venta_u = st.number_input("Venta (u)", min_value=0, value=120, step=10, key="n3_kx_venta_u")
+
+        st.markdown("---")
+        st.markdown("↩️ **Día 4.** Devolución de compra (a proveedor):")
+        # En PP no pedimos precio devuelto: se usará el costo unitario vigente del saldo (s_pu)
+        dev_comp_u = st.number_input(
+            "Unidades devueltas al proveedor",
+            min_value=0, value=10, step=5, key="n3_kx_dev_comp_u"
+        )
+        if metodo == "Promedio Ponderado":
+            st.caption("En Promedio Ponderado, la devolución se valora con el **costo unitario vigente del saldo** (promedio actual).")
+
+        st.markdown("↪️ **Día 5.** Devolución de venta (del cliente):")
+        dev_venta_u = st.number_input("Unidades devueltas por el cliente", min_value=0, value=8, step=2, key="n3_kx_dev_venta_u")
+
+        st.markdown("---")
+        st.markdown("### 🎬 Demostración narrada (arranca en Día 4 y 5)")
+
+        c_demo_a, c_demo_b = st.columns([1,1])
+        with c_demo_a:
+            narr_speed = st.slider("Velocidad de narración", 0.75, 1.50, 1.00, 0.05, key="n3_kx_rate")
+        with c_demo_b:
+            narr_muted = st.toggle("Silenciar voz", value=False, key="n3_kx_mute")
+
+        # ========= Generación de filas y guion =========
+        def compute_rows_and_script_with_returns(
+            method_name, inv0_u, inv0_pu, comp_u, comp_pu, venta_u,
+            dev_comp_u, dev_venta_u
+        ):
+            """
+            Construye todas las filas (Día 1–5).
+            Días 1–3: se dejan **prellenados** (sin narración).
+            Días 4–5: se narran (acciones en script) y deben aparecer VACÍOS al inicio en la tabla.
+            """
+            rows = []
+            script = []
+
+            # Día 1 — Saldo inicial
+            layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
+            s_q, s_pu, s_v = _sum_layers(layers)
+            rows.append({
+                "fecha":"Día 1","desc":"Saldo inicial",
+                "ent_q":"","ent_pu":"","ent_tot":"",
+                "sal_q":"","sal_pu":"","sal_tot":"",
+                "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+            })
+
+            # Día 2 — Compra
+            if method_name == "Promedio Ponderado":
+                ent_tot = comp_u * comp_pu
+                new_q = s_q + comp_u
+                new_v = s_v + ent_tot
+                new_p = (new_v/new_q) if new_q>0 else 0.0
+                layers = [[new_q, new_p]]
+                s_q, s_pu, s_v = _sum_layers(layers)
+                rows.append({
+                    "fecha":"Día 2","desc":"Compra",
+                    "ent_q":int(comp_u),"ent_pu":round(comp_pu,2),"ent_tot":round(ent_tot,2),
+                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+                })
+            else:
+                rows.append({
+                    "fecha":"Día 2","desc":"Saldo (día 1)",
+                    "ent_q":"","ent_pu":"","ent_tot":"",
+                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+                })
+                ent_tot = comp_u * comp_pu
+                layers.append([float(comp_u), float(comp_pu)])
+                rows.append({
+                    "fecha":"Día 2","desc":"Compra",
+                    "ent_q":int(comp_u),"ent_pu":round(comp_pu,2),"ent_tot":round(ent_tot,2),
+                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sdo_q":int(comp_u),"sdo_pu":round(comp_pu,2),"sdo_tot":round(ent_tot,2)
+                })
+                s_q, s_pu, s_v = _sum_layers(layers)
+
+            # Día 3 — Venta (prellenado)
+            if venta_u > 0 and s_q > 0:
+                if method_name == "Promedio Ponderado":
+                    sal_q = min(venta_u, s_q)
+                    sal_pu = layers[0][1] if layers else 0.0
+                    sal_tot = sal_q * sal_pu
+                    new_q = s_q - sal_q
+                    new_v = s_v - sal_tot
+                    new_p = (new_v/new_q) if new_q>0 else 0.0
+                    layers = [[new_q, new_p]] if new_q>0 else []
+                    s_q, s_pu, s_v = _sum_layers(layers)
+                    rows.append({
+                        "fecha":"Día 3","desc":"Venta",
+                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "sal_q":int(sal_q),"sal_pu":round(sal_pu,2),"sal_tot":round(sal_tot,2),
+                        "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+                    })
+                else:
+                    fifo = (method_name == "PEPS (FIFO)")
+                    sale_details, layers_after = _consume_layers_detail(layers, venta_u, fifo=fifo)
+                    running_layers = [l[:] for l in layers]
+                    for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
+                        _tmp, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
+                        rq, rpu, rv = _sum_layers(running_layers)
+                        rows.append({
+                            "fecha":"Día 3","desc":f"Venta tramo {i} ({'PEPS' if fifo else 'UEPS'})",
+                            "ent_q":"","ent_pu":"","ent_tot":"",
+                            "sal_q":int(q_take),"sal_pu":round(pu_take,2),"sal_tot":round(tot_take,2),
+                            "sdo_q":int(rq),"sdo_pu":round(rpu,2),"sdo_tot":round(rv,2)
+                        })
+                    layers = layers_after
+                    s_q, s_pu, s_v = _sum_layers(layers)
+            else:
+                rows.append({
+                    "fecha":"Día 3","desc":"Venta",
+                    "ent_q":"","ent_pu":"","ent_tot":"",
+                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+                })
+
+            # === Aquí marcamos desde dónde inicia la narración ===
+            narr_start_idx = len(rows)  # todo lo de aquí en adelante inicia vacío y se rellena con el script
+
+            # Día 4 — Devolución de compra (se narra)
+            if dev_comp_u > 0:
+                if method_name == "Promedio Ponderado":
+                    # Usar costo unitario vigente del saldo (promedio actual)
+                    take_q = min(dev_comp_u, s_q)
+                    take_pu = s_pu
+                    take_val = take_q * take_pu
+
+                    new_q = max(s_q - take_q, 0)
+                    new_v = max(s_v - take_val, 0.0)
+                    new_p = (new_v/new_q) if new_q>0 else 0.0
+                    layers = [[new_q, new_p]] if new_q>0 else []
+                    s_q, s_pu, s_v = _sum_layers(layers)
+
+                    rows.append({
+                        "fecha":"Día 4","desc":"Devolución de compra",
+                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "sal_q":int(take_q),"sal_pu":round(take_pu,2),"sal_tot":round(take_val,2),
+                        "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+                    })
+                    script.append({
+                        "title":"Día 4 · Devolución de compra (PP)",
+                        "text":"Salida por devolución al proveedor valorada al **costo unitario vigente del saldo** (promedio actual). Se recalcula el promedio tras disminuir unidades y valor.",
+                        "actions":[
+                            {"row":len(rows)-1,"cell":"sal_q","money":False,"val":int(take_q)},
+                            {"row":len(rows)-1,"cell":"sal_pu","money":True, "val":round(take_pu,2)},
+                            {"row":len(rows)-1,"cell":"sal_tot","money":True,"val":round(take_val,2)},
+                            {"row":len(rows)-1,"cell":"sdo_q","money":False,"val":int(s_q)},
+                            {"row":len(rows)-1,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                            {"row":len(rows)-1,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                        ]
+                    })
+                else:
+                    # PEPS/UEPS: consumir capas según el método (no se pide precio)
+                    fifo = (method_name == "PEPS (FIFO)")
+                    sale_details, layers_after = _consume_layers_detail(layers, dev_comp_u, fifo=fifo)
+                    layers = layers_after
+                    s_q, s_pu, s_v = _sum_layers(layers)
+                    take_q = sum(q for q,_,_ in sale_details)
+                    take_val = sum(t for _,_,t in sale_details)
+                    take_pu = (take_val/take_q) if take_q>0 else 0.0
+
+                    rows.append({
+                        "fecha":"Día 4","desc":"Devolución de compra",
+                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "sal_q":int(take_q),"sal_pu":round(take_pu,2),"sal_tot":round(take_val,2),
+                        "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+                    })
+                    script.append({
+                        "title":f"Día 4 · Devolución de compra ({'PEPS' if fifo else 'UEPS'})",
+                        "text":"Reducimos inventario consumiendo capas conforme al método (PEPS: antiguas; UEPS: recientes).",
+                        "actions":[
+                            {"row":len(rows)-1,"cell":"sal_q","money":False,"val":int(take_q)},
+                            {"row":len(rows)-1,"cell":"sal_pu","money":True, "val":round(take_pu,2)},
+                            {"row":len(rows)-1,"cell":"sal_tot","money":True,"val":round(take_val,2)},
+                            {"row":len(rows)-1,"cell":"sdo_q","money":False,"val":int(s_q)},
+                            {"row":len(rows)-1,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                            {"row":len(rows)-1,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                        ]
+                    })
+
+            # Día 5 — Devolución de venta (se narra)
+            if dev_venta_u > 0:
+                if method_name == "Promedio Ponderado":
+                    in_q = dev_venta_u
+                    in_pu = s_pu
+                    in_val = in_q * in_pu
+                    new_q = s_q + in_q
+                    new_v = s_v + in_val
+                    new_p = (new_v/new_q) if new_q>0 else 0.0
+                    layers = [[new_q, new_p]]
+                    s_q, s_pu, s_v = _sum_layers(layers)
+
+                    rows.append({
+                        "fecha":"Día 5","desc":"Devolución de venta (reingreso)",
+                        "ent_q":int(in_q),"ent_pu":round(in_pu,2),"ent_tot":round(in_val,2),
+                        "sal_q":"","sal_pu":"","sal_tot":"",
+                        "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+                    })
+                    script.append({
+                        "title":"Día 5 · Devolución de venta (PP)",
+                        "text":"Reingresan unidades al costo promedio vigente. Actualizamos saldo y nuevo promedio.",
+                        "actions":[
+                            {"row":len(rows)-1,"cell":"ent_q","money":False,"val":int(in_q)},
+                            {"row":len(rows)-1,"cell":"ent_pu","money":True, "val":round(in_pu,2)},
+                            {"row":len(rows)-1,"cell":"ent_tot","money":True,"val":round(in_val,2)},
+                            {"row":len(rows)-1,"cell":"sdo_q","money":False,"val":int(s_q)},
+                            {"row":len(rows)-1,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                            {"row":len(rows)-1,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                        ]
+                    })
+                else:
+                    fifo = (method_name == "PEPS (FIFO)")
+                    if fifo:
+                        in_pu = layers[0][1] if layers else s_pu
+                        layers = [[float(dev_venta_u), float(in_pu)]] + layers
+                    else:
+                        in_pu = layers[-1][1] if layers else s_pu
+                        layers = layers + [[float(dev_venta_u), float(in_pu)]]
+                    s_q, s_pu, s_v = _sum_layers(layers)
+                    in_val = dev_venta_u * in_pu
+
+                    rows.append({
+                        "fecha":"Día 5","desc":"Devolución de venta (reingreso)",
+                        "ent_q":int(dev_venta_u),"ent_pu":round(in_pu,2),"ent_tot":round(in_val,2),
+                        "sal_q":"","sal_pu":"","sal_tot":"",
+                        "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+                    })
+                    script.append({
+                        "title":f"Día 5 · Devolución de venta ({'PEPS' if fifo else 'UEPS'})",
+                        "text":"Reingresamos unidades con el costo acorde al método (antiguas en PEPS / recientes en UEPS).",
+                        "actions":[
+                            {"row":len(rows)-1,"cell":"ent_q","money":False,"val":int(dev_venta_u)},
+                            {"row":len(rows)-1,"cell":"ent_pu","money":True, "val":round(in_pu,2)},
+                            {"row":len(rows)-1,"cell":"ent_tot","money":True,"val":round(in_val,2)},
+                            {"row":len(rows)-1,"cell":"sdo_q","money":False,"val":int(s_q)},
+                            {"row":len(rows)-1,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                            {"row":len(rows)-1,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                        ]
+                    })
+
+            return rows, script, narr_start_idx
+
+        # Llamada
+        demo_rows, demo_script, narr_start_idx = compute_rows_and_script_with_returns(
+            metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u,
+            dev_comp_u, dev_venta_u
+        )
+
+
+        import json as _json
+        html_demo_template = """
+        <style>
+        .kx {border-collapse:collapse;width:100%;font-size:14px;margin-bottom:6px}
+        .kx th,.kx td {border:1px solid #eaeaea;padding:6px 8px;text-align:center}
+        .kx thead th {background:#f8fafc;font-weight:600}
+        .kx .hi {background:#fff7e6;box-shadow:inset 0 0 0 9999px rgba(255,165,0,0.08)}
+        .fill {transition: background 0.3s, color 0.3s}
+        .controls {display:flex;gap:8px;align-items:center;margin:6px 0}
+        .badge {display:inline-block;background:#eef;border:1px solid #dde;padding:2px 8px;border-radius:12px;font-size:12px}
+        .btn {padding:6px 10px; border:1px solid #ddd; background:#fafafa; cursor:pointer; border-radius:6px;}
+        .btn:hover {background:#f0f0f0}
+        .muted {color:#999}
+        #narr {margin-top:6px;font-size:15px}
+        </style>
+
+        <div class="controls">
+        <button id="playDemo" class="btn">▶️ Reproducir demo</button>
+        <button id="resetDemo" class="btn">↺ Reiniciar</button>
+        <span class="badge">%%METODO%%</span>
+        </div>
+
+        <table class="kx" id="kxtable">
+        <thead>
+            <tr>
+            <th></th><th></th>
+            <th colspan="3">Entrada</th>
+            <th colspan="3">Salida</th>
+            <th colspan="3">Saldo</th>
+            </tr>
+            <tr>
+            <th>Fecha</th><th>Descripción</th>
+            <th>Cantidad</th><th>Precio</th><th>Total</th>
+            <th>Cantidad</th><th>Precio</th><th>Total</th>
+            <th>Cantidad</th><th>Precio</th><th>Total</th>
+            </tr>
+        </thead>
+        <tbody id="kbody"></tbody>
+        </table>
+        <div id="narr"></div>
+
+        <script>
+        (function(){
+        const rows   = %%ROWS%%;
+        const script = %%SCRIPT%%;
+        const metodo = "%%METODO%%";
+        const narrStart = %%NARRSTART%%;   // filas desde aquí se rellenan con la narración
+        const narrMuted = %%MUTED%%;
+        const rate = %%RATE%%;
+
+        const tbody = document.getElementById("kbody");
+        const narrDiv = document.getElementById("narr");
+        const btnPlay = document.getElementById("playDemo");
+        const btnReset = document.getElementById("resetDemo");
+
+        const pesos = (v)=> {
+            try { return new Intl.NumberFormat('es-CO',{style:'currency', currency:'COP', maximumFractionDigits:2}).format(v); }
+            catch(e){ return "$"+(Math.round(v*100)/100).toLocaleString('es-CO'); }
+        };
+        const fmt = (x)=> (x===null || x===undefined || x==="")
+            ? ""
+            : (typeof x==="number" ? (Number.isInteger(x)? x.toString() : (Math.round(x*100)/100).toString().replace(".",",")) : x);
+
+        function buildTable(){
+            tbody.innerHTML = "";
+            rows.forEach((r, i)=>{
+            const tr = document.createElement("tr");
+            tr.id = "row"+i;
+
+            // Si i >= narrStart, mostramos celdas VACÍAS (se llenarán durante la narración)
+            const isNarr = (i >= narrStart);
+
+            const ent_q   = isNarr ? "" : fmt(r.ent_q);
+            const ent_pu  = isNarr ? "" : (r.ent_pu!==""? (isNaN(r.ent_pu)? fmt(r.ent_pu) : pesos(r.ent_pu)):"");
+            const ent_tot = isNarr ? "" : (r.ent_tot!==""? pesos(r.ent_tot):"");
+
+            const sal_q   = isNarr ? "" : fmt(r.sal_q);
+            const sal_pu  = isNarr ? "" : (r.sal_pu!==""? (isNaN(r.sal_pu)? fmt(r.sal_pu) : pesos(r.sal_pu)):"");
+            const sal_tot = isNarr ? "" : (r.sal_tot!==""? pesos(r.sal_tot):"");
+
+            const sdo_q   = isNarr ? "" : fmt(r.sdo_q);
+            const sdo_pu  = isNarr ? "" : (r.sdo_pu!==""? (isNaN(r.sdo_pu)? fmt(r.sdo_pu) : pesos(r.sdo_pu)):"");
+            const sdo_tot = isNarr ? "" : (r.sdo_tot!==""? pesos(r.sdo_tot):"");
+
+            tr.innerHTML = `
+                <td>${r.fecha}</td><td>${r.desc}</td>
+                <td id="r${i}_ent_q"  class="fill">${ent_q}</td>
+                <td id="r${i}_ent_pu" class="fill">${ent_pu}</td>
+                <td id="r${i}_ent_tot"class="fill">${ent_tot}</td>
+                <td id="r${i}_sal_q"  class="fill">${sal_q}</td>
+                <td id="r${i}_sal_pu" class="fill">${sal_pu}</td>
+                <td id="r${i}_sal_tot"class="fill">${sal_tot}</td>
+                <td id="r${i}_sdo_q"  class="fill">${sdo_q}</td>
+                <td id="r${i}_sdo_pu" class="fill">${sdo_pu}</td>
+                <td id="r${i}_sdo_tot"class="fill">${sdo_tot}</td>
+            `;
+            tbody.appendChild(tr);
+            });
+        }
+
+        function clearHi(){
+            [...tbody.querySelectorAll("tr")].forEach(tr=> tr.classList.remove("hi"));
+        }
+        function highlightRow(i){
+            clearHi();
+            const tr = document.getElementById("row"+i);
+            if (tr) tr.classList.add("hi");
+        }
+        function fillCell(rowIdx, key, val, money=false){
+            const el = document.getElementById(`r${rowIdx}_${key}`);
+            if (!el) return;
+            el.textContent = money ? pesos(val) : fmt(val);
+            el.style.background = "#fffbe6";
+            setTimeout(()=>{ el.style.background=""; }, 300);
+        }
+
+        // === utilidades que faltaban ===
+        const sleep = (ms)=> new Promise(r => setTimeout(r, ms));
+
+        function speak(text){
+            return new Promise((resolve)=>{
+            if (narrMuted) return resolve();   // respeta el toggle "Silenciar voz"
+            try{
+                if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text);
+                // escoger voz en español si está disponible
+                const voices = window.speechSynthesis.getVoices();
+                const pick = voices.find(v => /es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
+                if (pick) u.voice = pick;
+                u.rate = rate;
+                u.pitch = 1.0;
+                u.onend = () => resolve();
+                window.speechSynthesis.speak(u);
+            } catch(e){
+                resolve(); // no bloquear si el TTS falla
+            }
+            });
+        }
+        if (window.speechSynthesis) {
+            // ayuda a cargar las voces en algunos navegadores
+            window.speechSynthesis.onvoiceschanged = ()=>{};
+        }
+
+        async function runScript(){
+            // Reproduce únicamente los pasos de los días narrados (4 y 5)
+            for (const step of script){
+            narrDiv.textContent = step.title;
+            if (step.actions && step.actions.length>0){
+                highlightRow(step.actions[0].row);
+            }
+            const dur = Math.max(2200, Math.min(7000, step.text.length * 55 / rate));
+            const chunks = Math.max(3, step.actions.length);
+            const waits = Array.from({length:chunks-1}, (_,k)=> Math.floor(dur*(k+1)/chunks));
+
+            const pVoice = speak(step.text);
+
+            for (let i=0;i<step.actions.length;i++){
+                const a = step.actions[i];
+                if (i>0){ await sleep(waits[i-1]); }
+                fillCell(a.row, a.cell, a.val, !!a.money);
+            }
+            await pVoice;
+            await sleep(200);
+            }
+            clearHi();
+        }
+
+        buildTable();
+        btnPlay.onclick  = runScript;
+        btnReset.onclick = ()=>{
+            buildTable();
+            clearHi();
+            narrDiv.textContent = "";
+            try{ if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel(); }catch(e){}
+        };
+        })();
+        </script>
+        """
+
+        html_demo = (
+            html_demo_template
+            .replace("%%ROWS%%", _json.dumps(demo_rows))
+            .replace("%%SCRIPT%%", _json.dumps(demo_script))
+            .replace("%%METODO%%", metodo)
+            .replace("%%NARRSTART%%", str(narr_start_idx))   # <-- NUEVO
+            .replace("%%MUTED%%", "true" if narr_muted else "false")
+            .replace("%%RATE%%", str(narr_speed))
+        )
+
+        components.html(html_demo, height=360, scrolling=True)
 
     with tabs[2]:
         st.subheader("Práctica: combina compras netas y devolución de venta (PP)")
