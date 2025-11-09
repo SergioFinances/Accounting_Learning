@@ -3506,7 +3506,7 @@ def page_level3(username):
 
     with tabs[2]:
         st.subheader("Práctica IA: diligencia tu propio KARDEX")
-        st.caption("Elige un método y genera un escenario (o edítalo). Los días 1–3 vienen prellenados. Diligencia SOLO Día 4 (devolución de compra) y Día 5 (devolución de venta).")
+        st.caption("Elige un método y genera un escenario (o edítalo). Los días 1–3 vienen prellenados y también la Compra 2. Diligencia SOLO Día 4 (devolución de compra) y Día 5 (devolución de venta).")
 
         # =========================
         # Utilidades de estado
@@ -3521,6 +3521,7 @@ def page_level3(username):
             ss.setdefault("n3_ex_comp1_u", 40)
             ss.setdefault("n3_ex_comp1_pu", 11.0)
             ss.setdefault("n3_ex_venta_u", 90)
+            # Compra 2
             ss.setdefault("n3_ex_comp2_u", 50)
             ss.setdefault("n3_ex_comp2_pu", 13.0)
             # Días 4–5 (solo cantidades; PP usa s_pu vigente)
@@ -3572,15 +3573,13 @@ def page_level3(username):
                 ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
                 key="n3_prac_metodo"
             )
-        with c0b:
-            st.button("🎲 Generar escenario aleatorio", key="n3_ex_rand_btn", on_click=_request_randomize)
 
         # =========================
         # Escenario editable (solo devoluciones)
         # =========================
-        st.markdown("#### 🎯 Escenario del ejercicio (Días 1–3 prellenados)")
+        st.markdown("#### 🎯 Escenario del ejercicio (Días 1–3 y Compra 2 prellenados)")
 
-        # Día 1–3 base
+        # Día 1–3 base y Compra 2
         inv0_u_ex  = st.session_state["n3_ex_inv0_u"]
         inv0_pu_ex = st.session_state["n3_ex_inv0_pu"]
         comp1_u    = st.session_state["n3_ex_comp1_u"]
@@ -3595,6 +3594,13 @@ def page_level3(username):
 
         st.markdown("**Día 5.** Devolución de venta (del cliente)")
         dev_venta_u = st.number_input("Unidades devueltas por el cliente — Día 5", min_value=0, step=1, key="n3_ex_dev_venta_u")
+
+        # Botón aleatorio DEBAJO del día 5
+        st.button(
+            "🎲 Generar escenario aleatorio",
+            key="n3_ex_rand_btn",
+            on_click=_request_randomize
+        )
 
         # =========================
         # Helpers de cálculo
@@ -3712,8 +3718,7 @@ def page_level3(username):
                 layers = layers_after
                 s_q, s_p, s_v = _sum_layers(layers)
 
-            # Día 4: Compra 2 (prellenado, porque en práctica de devoluciones el estudiante solo diligencia devoluciones)
-            # NOTA: mantenemos igual que en los ejemplos guiados
+            # Día 4: Compra 2 (prellenado)
             if method_name == "Promedio Ponderado":
                 ent2_tot = comp2_u * comp2_pu
                 q3 = s_q + comp2_u
@@ -3738,8 +3743,7 @@ def page_level3(username):
                 })
                 s_q, s_p, s_v = _sum_layers(layers)
 
-            # Día 4: Devolución de compra (FILA a diligenciar por estudiante)
-            # Calculamos la EXPECTATIVA para validar
+            # Día 4: Devolución de compra (EXPECTATIVA para validar)
             if ex_metodo == "Promedio Ponderado":
                 take_q  = min(dev_comp_u, s_q)
                 take_pu = s_p  # promedio vigente
@@ -3769,10 +3773,9 @@ def page_level3(username):
                     "Salida_cant": take_q, "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 }
-            # agregamos la fila EXPECTATIVA (servirá para validar, pero al estudiante se le deja en blanco)
             rows.append(exp_d4)
 
-            # Día 5: Devolución de venta (FILA a diligenciar por estudiante)
+            # Día 5: Devolución de venta (EXPECTATIVA para validar)
             if ex_metodo == "Promedio Ponderado":
                 in_q = dev_venta_u
                 in_pu = s_p
@@ -3802,53 +3805,104 @@ def page_level3(username):
                     "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
                     "Saldo_cant": s_q2, "Saldo_pu": round(s_p2,2), "Saldo_total": round(s_v2,2)
                 }
-
             rows.append(exp_d5)
             return rows
 
         expected_rows = build_expected_rows(ex_metodo)
 
         # =========================
-        # Plantilla para edición: prellenamos Días 1–3 y "Compra 2", y dejamos EN BLANCO las dos filas de devoluciones
+        # Tabla de referencia (bloqueada) + Tabla editable (solo devoluciones)
         # =========================
-        def _to_row_for_editor(r, lock=False):
-            """Si lock=True, devolvemos los valores numéricos prellenados; si False, dejamos en blanco."""
-            editable = not lock
-            def keep_or_blank(k):
-                return "" if editable else r[k]
+        def _row_dict(r):
             return {
                 "Fecha": r["Fecha"], "Descripción": r["Descripción"],
-                "Entrada_cant": keep_or_blank("Entrada_cant"),
-                "Entrada_pu":   keep_or_blank("Entrada_pu"),
-                "Entrada_total":keep_or_blank("Entrada_total"),
-                "Salida_cant":  keep_or_blank("Salida_cant"),
-                "Salida_pu":    keep_or_blank("Salida_pu"),
-                "Salida_total": keep_or_blank("Salida_total"),
-                "Saldo_cant":   keep_or_blank("Saldo_cant"),
-                "Saldo_pu":     keep_or_blank("Saldo_pu"),
-                "Saldo_total":  keep_or_blank("Saldo_total"),
+                "Entrada_cant": r["Entrada_cant"], "Entrada_pu": r["Entrada_pu"], "Entrada_total": r["Entrada_total"],
+                "Salida_cant": r["Salida_cant"], "Salida_pu": r["Salida_pu"], "Salida_total": r["Salida_total"],
+                "Saldo_cant": r["Saldo_cant"], "Saldo_pu": r["Saldo_pu"], "Saldo_total": r["Saldo_total"],
             }
 
-        # Identificamos índices de las filas que son devoluciones (últimas dos filas)
+        # Índices de las dos últimas filas (devoluciones)
         idx_d4 = len(expected_rows) - 2
         idx_d5 = len(expected_rows) - 1
 
-        plant_rows = []
-        for i, r in enumerate(expected_rows):
-            # Lock (prellenado) para todo excepto días 4 y 5 (devoluciones)
-            lock = (i not in [idx_d4, idx_d5])
-            plant_rows.append(_to_row_for_editor(r, lock=lock))
+        # Partes
+        top_locked_rows   = [_row_dict(expected_rows[i]) for i in range(idx_d4)]                   # Días 1–3 (+ Compra 2)
+        tail_edit_rows    = [_row_dict(expected_rows[i]) for i in range(idx_d4, len(expected_rows))]  # D4 y D5
 
-        plant = pd.DataFrame(plant_rows)
+        df_top_locked    = pd.DataFrame(top_locked_rows)
+        df_tail_editable = pd.DataFrame(tail_edit_rows).copy()
 
-        st.markdown("#### ✍️ Completa SOLO las filas de devoluciones (Día 4 y Día 5)")
-        st.caption("Las primeras filas están prellenadas para guiarte. No necesitas editarlas.")
-        edited = st.data_editor(
-            plant,
+        st.markdown("#### 🧾 Referencia (no editable): Días 1–3 y Compra 2")
+        st.data_editor(
+            df_top_locked,
             use_container_width=True,
             num_rows="fixed",
-            key="n3_kardex_student_table_returns"
+            disabled=True,
+            key="n3_kardex_top_locked"
         )
+
+        st.markdown("#### ✍️ Completa SOLO las filas de devoluciones (Día 4 y Día 5)")
+        st.caption("Tabla vacía para diligenciar: edita todas las columnas excepto Fecha y Descripción.")
+
+        # --- Asegurar columnas, orden y tipos para habilitar edición numérica ---
+        all_cols = ["Fecha","Descripción",
+                    "Entrada_cant","Entrada_pu","Entrada_total",
+                    "Salida_cant","Salida_pu","Salida_total",
+                    "Saldo_cant","Saldo_pu","Saldo_total"]
+
+        for c in all_cols:
+            if c not in df_tail_editable.columns:
+                df_tail_editable[c] = ""
+
+        df_tail_editable = df_tail_editable[all_cols]
+
+        num_cols = ["Entrada_cant","Entrada_pu","Entrada_total",
+                    "Salida_cant","Salida_pu","Salida_total",
+                    "Saldo_cant","Saldo_pu","Saldo_total"]
+
+        # 1) Normaliza 'None' a NaN (en TODA la tabla)
+        df_tail_for_editor = df_tail_editable.replace({None: np.nan, "None": np.nan})
+
+        # 2) Columnas de texto: que nunca muestren 'None'
+        df_tail_for_editor["Fecha"] = df_tail_for_editor["Fecha"].astype("string").fillna("")
+        df_tail_for_editor["Descripción"] = df_tail_for_editor["Descripción"].astype("string").fillna("")
+
+        # 3) Columnas numéricas: fuerzo a float y dejo NaN (se verán en blanco)
+        for c in num_cols:
+            df_tail_for_editor[c] = pd.to_numeric(df_tail_for_editor[c], errors="coerce")  # -> float con NaN
+            # Si quieres partir 100% en blanco independientemente del cálculo anterior:
+            df_tail_for_editor[c] = np.nan
+
+        tail_column_config = {
+            "Fecha":          st.column_config.TextColumn(disabled=True),
+            "Descripción":    st.column_config.TextColumn(disabled=True),
+
+            # Todas las demás columnas editables:
+            "Entrada_cant":   st.column_config.NumberColumn(step=1,    help="Unidades que ingresan"),
+            "Entrada_pu":     st.column_config.NumberColumn(step=0.01, help="Costo unitario de la entrada"),
+            "Entrada_total":  st.column_config.NumberColumn(step=0.01, help="Valor total de la entrada"),
+            "Salida_cant":    st.column_config.NumberColumn(step=1,    help="Unidades que salen"),
+            "Salida_pu":      st.column_config.NumberColumn(step=0.01, help="Costo unitario de la salida"),
+            "Salida_total":   st.column_config.NumberColumn(step=0.01, help="Valor total de la salida"),
+            "Saldo_cant":     st.column_config.NumberColumn(step=1,    help="Unidades en saldo"),
+            "Saldo_pu":       st.column_config.NumberColumn(step=0.01, help="Costo unitario del saldo"),
+            "Saldo_total":    st.column_config.NumberColumn(step=0.01, help="Valor total del saldo"),
+        }
+
+        edited_tail = st.data_editor(
+            df_tail_for_editor,
+            use_container_width=True,
+            num_rows="fixed",
+            disabled=False,
+            column_config=tail_column_config,
+            column_order=all_cols,
+            hide_index=True,
+            key="n3_kardex_tail_editable_v4"  # key nuevo para limpiar el estado previo
+        )
+
+
+        # Para validar, concatenamos referencia + edición
+        edited_full = pd.concat([df_top_locked, edited_tail], ignore_index=True)
 
         # =========================
         # Validación y feedback (solo Día 4 y Día 5)
@@ -3858,11 +3912,16 @@ def page_level3(username):
             submitted_ex = st.form_submit_button("✅ Validar mis devoluciones")
 
         if submitted_ex:
+            import math
             tol = 0.5
 
             def _to_float(x):
                 try:
-                    if x in (None, ""): return None
+                    if x in (None, ""): 
+                        return None
+                    # ✅ si viene NaN (float) tratar como vacío
+                    if isinstance(x, float) and math.isnan(x):
+                        return None
                     return float(x)
                 except Exception:
                     return None
@@ -3872,11 +3931,10 @@ def page_level3(username):
                 return abs(a - b) <= tol
 
             flags = []
-            # Validamos SOLO las filas de devoluciones
             rows_to_check = [idx_d4, idx_d5]
             check_labels = []
             for i in rows_to_check:
-                user = edited.iloc[i].to_dict()
+                user = edited_full.iloc[i].to_dict()
                 exp  = expected_rows[i]
                 ok_cells = []
                 for key in ["Entrada_cant","Entrada_pu","Entrada_total","Salida_cant","Salida_pu","Salida_total","Saldo_cant","Saldo_pu","Saldo_total"]:
@@ -3903,19 +3961,18 @@ def page_level3(username):
 
             # Feedback IA opcional
             if ask_ai:
-                def _row_summary(idx):
-                    r = edited.iloc[idx].to_dict()
+                def _row_summary(df, idx):
+                    r = df.iloc[idx].to_dict()
                     def g(k):
                         v = _to_float(r.get(k, ""))
                         return "—" if v is None else f"{v:.2f}" if isinstance(v, float) else str(v)
-                    return (f"{edited.iloc[idx]['Fecha']} {edited.iloc[idx]['Descripción']}: "
+                    return (f"{df.iloc[idx]['Fecha']} {df.iloc[idx]['Descripción']}: "
                             f"E({g('Entrada_cant')},{g('Entrada_pu')},{g('Entrada_total')}) | "
                             f"S({g('Salida_cant')},{g('Salida_pu')},{g('Salida_total')}) | "
                             f"Saldo({g('Saldo_cant')},{g('Saldo_pu')},{g('Saldo_total')})")
 
-                intento = "\n".join(_row_summary(i) for i in [idx_d4, idx_d5])
+                intento = "\n".join(_row_summary(edited_full, i) for i in rows_to_check)
 
-                # Datos clave para guía de la IA
                 final_exp_d5 = expected_rows[idx_d5]
                 exp_qtyF = final_exp_d5["Saldo_cant"] if final_exp_d5["Saldo_cant"] != "" else None
                 exp_valF = final_exp_d5["Saldo_total"] if final_exp_d5["Saldo_total"] != "" else None
@@ -3937,7 +3994,6 @@ def page_level3(username):
                     )
                 with st.expander("💬 Retroalimentación de la IA"):
                     st.write(fb_txt)
-
 
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 3")
