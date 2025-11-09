@@ -3861,7 +3861,7 @@ def page_level3(username):
                     "Saldo_cant","Saldo_pu","Saldo_total"]
 
         # 1) Normaliza 'None' a NaN (en TODA la tabla)
-        df_tail_for_editor = df_tail_editable.replace({None: np.nan, "None": np.nan})
+        df_tail_for_editor = df_tail_editable.replace({None: "", "None": ""})
 
         # 2) Columnas de texto: que nunca muestren 'None'
         df_tail_for_editor["Fecha"] = df_tail_for_editor["Fecha"].astype("string").fillna("")
@@ -3871,7 +3871,7 @@ def page_level3(username):
         for c in num_cols:
             df_tail_for_editor[c] = pd.to_numeric(df_tail_for_editor[c], errors="coerce")  # -> float con NaN
             # Si quieres partir 100% en blanco independientemente del cálculo anterior:
-            df_tail_for_editor[c] = np.nan
+            df_tail_for_editor[c] = ""
 
         tail_column_config = {
             "Fecha":          st.column_config.TextColumn(disabled=True),
@@ -3899,7 +3899,6 @@ def page_level3(username):
             hide_index=True,
             key="n3_kardex_tail_editable_v4"  # key nuevo para limpiar el estado previo
         )
-
 
         # Para validar, concatenamos referencia + edición
         edited_full = pd.concat([df_top_locked, edited_tail], ignore_index=True)
