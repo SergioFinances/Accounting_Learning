@@ -1538,7 +1538,7 @@ def page_level2(username):
                 )
 
             # — Día 1: Saldo inicial —
-            st.markdown("**Día 1.** La empresa reporta un **saldo inicial del inventario** de:")
+            st.markdown("📦 **Día 1.** La empresa reporta un **saldo inicial del inventario** de:")
             c1a, c1b = st.columns([1,1], gap="small")
             with c1a:
                 inv0_u = st.number_input(
@@ -1554,7 +1554,7 @@ def page_level2(username):
                 )
 
             # — Día 2: Compra —
-            st.markdown("**Día 2.** La empresa realizó una **compra** de:")
+            st.markdown("🛒 **Día 2.** La empresa realizó una **compra** de:")
             c2a, c2b = st.columns([1,1], gap="small")
             with c2a:
                 comp_u = st.number_input(
@@ -1570,7 +1570,7 @@ def page_level2(username):
                 )
 
             # — Día 3: Venta —
-            st.markdown("**Día 3.** La empresa realizó una **venta** de:")
+            st.markdown("💰 **Día 3.** La empresa realizó una **venta** de:")
             c3a, _ = st.columns([1,1], gap="small")
             with c3a:
                 venta_u = st.number_input(
@@ -1581,129 +1581,252 @@ def page_level2(username):
 
 
             # =========================
-            # 1) 🎬 DEMOSTRACIÓN NARRADA (primero) — versión compacta
+            # 🎬 DEMOSTRACIÓN NARRADA (PEPS/UEPS con filas por capas)
             # =========================
-            st.markdown("### 🎬 Demostración narrada: llenado del KARDEX paso a paso")
+            st.markdown("---")
+            st.markdown("### 🎬 Demostración narrada: llenado del KARDEX por método y capas")
 
-            def compute_steps_for_demo(method_name, inv0_u, inv0_pu, comp_u, comp_pu, venta_u):
-                rows = [
-                    {"fecha":"Día 1","desc":"Saldo inicial",
+            c_demo_a, c_demo_b = st.columns([1,1])
+            with c_demo_a:
+                narr_speed = st.slider("Velocidad de narración", 0.75, 1.50, 1.00, 0.05)
+            with c_demo_b:
+                narr_muted = st.toggle("Silenciar voz", value=False)
+
+            def _sum_layers(layers):
+                q = sum(q for q,_ in layers)
+                v = sum(q*p for q,p in layers)
+                pu = (v/q) if q>0 else 0.0
+                return q, pu, v
+
+            def _consume_layers_detail(layers, qty_out, fifo=True):
+                """Devuelve (detalles_salida, layers_after) donde detalles_salida es lista de (qty, pu, total)."""
+                order = layers[:] if fifo else layers[::-1]
+                remaining = qty_out
+                details = []
+                after = []
+                for (q,pu) in order:
+                    if remaining <= 0:
+                        after.append([q,pu]); continue
+                    take = min(q, remaining)
+                    if take > 0:
+                        details.append([take, pu, take*pu])
+                        q_rest = q - take
+                        remaining -= take
+                        if q_rest > 0:
+                            after.append([q_rest, pu])
+                    else:
+                        after.append([q,pu])
+                # Reconstruir en orden lógico original
+                layers_after = after if fifo else after[::-1]
+                return details, layers_after
+
+            def compute_rows_and_script(method_name, inv0_u, inv0_pu, comp_u, comp_pu, venta_u):
+                rows = []   # cada fila: dict con keys: fecha, desc, ent_q, ent_pu, ent_tot, sal_q, sal_pu, sal_tot, sdo_q, sdo_pu, sdo_tot
+                script = [] # cada paso: {"title","text","actions":[{"row":i,"cell":"rX","money":bool,"val":v}, ...]}
+
+                # Día 1: Saldo inicial (1 fila)
+                layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u>0 else []
+                s_q, s_pu, s_v = _sum_layers(layers)
+                rows.append({
+                    "fecha":"Día 1", "desc":"Saldo inicial",
                     "ent_q":"","ent_pu":"","ent_tot":"",
                     "sal_q":"","sal_pu":"","sal_tot":"",
-                    "sdo_q":"","sdo_pu":"","sdo_tot":""},
-                    {"fecha":"Día 2","desc":"Compra",
-                    "ent_q":"","ent_pu":"","ent_tot":"",
-                    "sal_q":"","sal_pu":"","sal_tot":"",
-                    "sdo_q":"","sdo_pu":"","sdo_tot":""},
-                    {"fecha":"Día 3","desc":"Venta",
-                    "ent_q":"","ent_pu":"","ent_tot":"",
-                    "sal_q":"","sal_pu":"","sal_tot":"",
-                    "sdo_q":"","sdo_pu":"","sdo_tot":""},
-                ]
+                    "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                })
+                script.append({
+                    "title":"Paso 1 · Saldo inicial",
+                    "text":"Registramos cantidad y costo unitario del inventario existente. Calculamos el saldo: cantidad por precio.",
+                    "actions":[
+                        {"row":0,"cell":"sdo_q","money":False,"val":int(s_q)},
+                        {"row":0,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                        {"row":0,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                    ]
+                })
 
-                # Paso 1
-                saldo_layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
-                s_q = sum(q for q,_ in saldo_layers)
-                s_v = sum(q*p for q,p in saldo_layers)
-                s_p = (s_v/s_q) if s_q>0 else 0.0
-                rows[0]["sdo_q"]  = int(s_q)
-                rows[0]["sdo_pu"] = round(s_p, 2)
-                rows[0]["sdo_tot"]= round(s_v, 2)
-
-                # Paso 2
-                ent_tot = comp_u * comp_pu
+                # Día 2: Compra
                 if method_name == "Promedio Ponderado":
+                    # una sola fila de compra
+                    ent_tot = comp_u*comp_pu
+                    # saldo nuevo (promedio)
                     new_q = s_q + comp_u
                     new_v = s_v + ent_tot
                     new_p = (new_v/new_q) if new_q>0 else 0.0
-                    saldo_layers = [[new_q, new_p]]
-                    s_q, s_v, s_p = new_q, new_v, new_p
+                    layers = [[new_q, new_p]]
+                    s_q, s_pu, s_v = _sum_layers(layers)
+                    rows.append({
+                        "fecha":"Día 2", "desc":"Compra",
+                        "ent_q":int(comp_u), "ent_pu":round(comp_pu,2), "ent_tot":round(ent_tot,2),
+                        "sal_q":"","sal_pu":"","sal_tot":"",
+                        "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                    })
+                    script.append({
+                        "title":"Paso 2 · Compra",
+                        "text":"Anotamos cantidad y costo de la compra, calculamos el valor de entrada y actualizamos el saldo. En Promedio, el costo unitario se recalcula.",
+                        "actions":[
+                            {"row":1,"cell":"ent_q","money":False,"val":int(comp_u)},
+                            {"row":1,"cell":"ent_pu","money":True, "val":round(comp_pu,2)},
+                            {"row":1,"cell":"ent_tot","money":True,"val":round(ent_tot,2)},
+                            {"row":1,"cell":"sdo_q","money":False,"val":int(s_q)},
+                            {"row":1,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                            {"row":1,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                        ]
+                    })
+                    start_sale_row_index = 2
                 else:
-                    saldo_layers.append([float(comp_u), float(comp_pu)])
-                    s_q = sum(q for q,_ in saldo_layers)
-                    s_v = sum(q*p for q,p in saldo_layers)
-                    s_p = (s_v/s_q) if s_q>0 else 0.0
+                    # PEPS/UEPS: dos filas en día 2
+                    # Fila 1: "Saldo (día 1)" (copia del saldo previo, mantiene costo por capa)
+                    rows.append({
+                        "fecha":"Día 2", "desc":"Saldo (día 1)",
+                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "sal_q":"","sal_pu":"","sal_tot":"",
+                        "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                    })
+                    script.append({
+                        "title":"Paso 2A · Saldo que viene del día 1",
+                        "text":"Antes de registrar la compra, dejamos claro el saldo existente y su costo por capa.",
+                        "actions":[
+                            {"row":1,"cell":"sdo_q","money":False,"val":int(s_q)},
+                            {"row":1,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                            {"row":1,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                        ]
+                    })
 
-                rows[1]["ent_q"]  = int(comp_u)
-                rows[1]["ent_pu"] = round(comp_pu, 2)
-                rows[1]["ent_tot"]= round(ent_tot, 2)
-                rows[1]["sdo_q"]  = int(s_q)
-                rows[1]["sdo_pu"] = round(s_p, 2)
-                rows[1]["sdo_tot"]= round(s_v, 2)
+                # Fila 2: "Compra" (entrada EXACTA 60 u @ 12) + en Saldo SOLO la capa de compra
+                ent_tot = comp_u * comp_pu                      # 60 * 12 = 720
+                layers.append([float(comp_u), float(comp_pu)])  # agrega la nueva capa a 12
 
-                # Paso 3
-                sal_q = min(venta_u, s_q)
-                sal_pu_mostrar = 0.0
-                sal_tot = 0.0
-                if venta_u>0 and s_q>0:
+                rows.append({
+                    "fecha":"Día 2", "desc":"Compra",
+                    "ent_q":int(comp_u), "ent_pu":round(comp_pu,2), "ent_tot":round(ent_tot,2),
+                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    # Saldo muestra SOLO la capa comprada (no el acumulado):
+                    "sdo_q":int(comp_u), "sdo_pu":round(comp_pu,2), "sdo_tot":round(ent_tot,2)
+                })
+                script.append({
+                    "title":"Paso 2B · Registro de la compra",
+                    "text":"Registramos la entrada a su costo unitario (sin promediar). En la columna Saldo de esta fila mostramos únicamente la capa comprada.",
+                    "actions":[
+                        {"row":2,"cell":"ent_q","money":False,"val":int(comp_u)},
+                        {"row":2,"cell":"ent_pu","money":True, "val":round(comp_pu,2)},
+                        {"row":2,"cell":"ent_tot","money":True,"val":round(ent_tot,2)},
+                        {"row":2,"cell":"sdo_q","money":False,"val":int(comp_u)},
+                        {"row":2,"cell":"sdo_pu","money":True, "val":round(comp_pu,2)},
+                        {"row":2,"cell":"sdo_tot","money":True,"val":round(ent_tot,2)},
+                    ]
+                })
+                start_sale_row_index = 3
+
+                # Día 3: Venta (puede dividirse en varias filas si consume varias capas)
+                if venta_u > 0 and s_q > 0:
                     if method_name == "Promedio Ponderado":
-                        sal_pu_mostrar = s_p
-                        sal_tot = sal_q * sal_pu_mostrar
+                        sal_q = min(venta_u, s_q)
+                        sal_pu = layers[0][1] if layers else 0.0
+                        sal_tot = sal_q * sal_pu
+                        # saldo tras la venta
                         new_q = s_q - sal_q
                         new_v = s_v - sal_tot
                         new_p = (new_v/new_q) if new_q>0 else 0.0
-                        saldo_layers = [[new_q, new_p]] if new_q>0 else []
-                        s_q, s_v, s_p = new_q, new_v, new_p
+                        layers = [[new_q, new_p]] if new_q>0 else []
+                        s_q, s_pu, s_v = _sum_layers(layers)
+                        rows.append({
+                            "fecha":"Día 3", "desc":"Venta",
+                            "ent_q":"","ent_pu":"","ent_tot":"",
+                            "sal_q":int(sal_q), "sal_pu":round(sal_pu,2), "sal_tot":round(sal_tot,2),
+                            "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                        })
+                        script.append({
+                            "title":"Paso 3 · Venta (Promedio)",
+                            "text":"Aplicamos el costo promedio vigente para calcular el CMV y actualizamos el saldo.",
+                            "actions":[
+                                {"row":start_sale_row_index,"cell":"sal_q","money":False,"val":int(sal_q)},
+                                {"row":start_sale_row_index,"cell":"sal_pu","money":True, "val":round(sal_pu,2)},
+                                {"row":start_sale_row_index,"cell":"sal_tot","money":True,"val":round(sal_tot,2)},
+                                {"row":start_sale_row_index,"cell":"sdo_q","money":False,"val":int(s_q)},
+                                {"row":start_sale_row_index,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                                {"row":start_sale_row_index,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                            ]
+                        })
                     else:
-                        layers = saldo_layers[:] if method_name=="PEPS (FIFO)" else saldo_layers[::-1]
-                        remaining = sal_q
-                        cost = 0.0
-                        new_layers = []
-                        for q,pu in layers:
-                            if remaining<=0:
-                                new_layers.append([q,pu]); continue
-                            take = min(q, remaining)
-                            cost += take*pu
-                            rest = q - take
-                            remaining -= take
-                            if rest>0:
-                                new_layers.append([rest, pu])
-                        saldo_layers = new_layers if method_name=="PEPS (FIFO)" else new_layers[::-1]
-                        sal_tot = cost
-                        sal_pu_mostrar = (sal_tot/sal_q) if sal_q>0 else 0.0
-                        s_q = sum(q for q,_ in saldo_layers)
-                        s_v = sum(q*p for q,p in saldo_layers)
-                        s_p = (s_v/s_q) if s_q>0 else 0.0
+                        fifo = (method_name == "PEPS (FIFO)")
+                        sale_details, layers_after = _consume_layers_detail(layers, venta_u, fifo=fifo)
+                        # Genera una fila por cada tramo de venta (cada capa consumida)
+                        remaining_expl = "PEPS" if fifo else "UEPS"
+                        acc_row = start_sale_row_index
+                        running_layers = [l[:] for l in layers]  # copia para ir actualizando saldo por tramo
 
-                rows[2]["sal_q"]  = int(sal_q) if sal_q>0 else ""
-                rows[2]["sal_pu"] = round(sal_pu_mostrar, 2) if sal_q!="" else ""
-                rows[2]["sal_tot"]= round(sal_tot, 2) if sal_q!="" else ""
-                rows[2]["sdo_q"]  = int(s_q)
-                rows[2]["sdo_pu"] = round(s_p, 2)
-                rows[2]["sdo_tot"]= round(s_v, 2)
+                        for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
+                            # Actualiza running_layers consumiendo este tramo para mostrar saldo tras CADA tramo
+                            running_details, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
+                            rq, rpu, rv = _sum_layers(running_layers)
 
-                narr = [
-                    "Paso 1. Registramos el saldo inicial: cantidad x costo unitario da el saldo total.",
-                    "Paso 2. Registramos la compra: cantidad x precio = valor de entrada y actualizamos el saldo. En Promedio, recalculamos el costo unitario.",
-                    "Paso 3. Registramos la venta: calculamos el CMV según el método y actualizamos el saldo."
-                ]
-                if method_name == "Promedio Ponderado":
-                    narr[2] = "Paso 3. Venta (Promedio): CMV = cantidad vendida x costo promedio vigente; luego actualizamos el saldo."
-                elif method_name == "PEPS (FIFO)":
-                    narr[2] = "Paso 3. Venta (PEPS): salen primero las unidades más antiguas; CMV con esos costos; luego actualizamos el saldo."
+                            rows.append({
+                                "fecha":"Día 3", "desc": f"Venta tramo {i} ({remaining_expl})",
+                                "ent_q":"","ent_pu":"","ent_tot":"",
+                                "sal_q":int(q_take), "sal_pu":round(pu_take,2), "sal_tot":round(tot_take,2),
+                                "sdo_q":int(rq), "sdo_pu":round(rpu,2), "sdo_tot":round(rv,2)
+                            })
+                            script.append({
+                                "title": f"Paso 3 · Venta (tramo {i})",
+                                "text": ("Salimos con el costo de la capa correspondiente: "
+                                        "en PEPS se consumen primero las antiguas; en UEPS, las más recientes. "
+                                        "Actualizamos el saldo tras este tramo."),
+                                "actions":[
+                                    {"row":acc_row,"cell":"sal_q","money":False,"val":int(q_take)},
+                                    {"row":acc_row,"cell":"sal_pu","money":True, "val":round(pu_take,2)},
+                                    {"row":acc_row,"cell":"sal_tot","money":True,"val":round(tot_take,2)},
+                                    {"row":acc_row,"cell":"sdo_q","money":False,"val":int(rq)},
+                                    {"row":acc_row,"cell":"sdo_pu","money":True, "val":round(rpu,2)},
+                                    {"row":acc_row,"cell":"sdo_tot","money":True,"val":round(rv,2)},
+                                ]
+                            })
+                            acc_row += 1
+
+                        # Actualiza layers finales
+                        layers = layers_after
                 else:
-                    narr[2] = "Paso 3. Venta (UEPS): salen primero las últimas unidades; CMV con costos recientes; luego actualizamos el saldo."
-                return rows, narr
+                    # Sin venta o sin saldo
+                    rows.append({
+                        "fecha":"Día 3", "desc":"Venta",
+                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "sal_q":"","sal_pu":"","sal_tot":"",
+                        "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                    })
+                    script.append({
+                        "title":"Paso 3 · Venta",
+                        "text":"No hay venta o no hay saldo para consumir; el inventario permanece igual.",
+                        "actions":[
+                            {"row":start_sale_row_index,"cell":"sdo_q","money":False,"val":int(s_q)},
+                            {"row":start_sale_row_index,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
+                            {"row":start_sale_row_index,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                        ]
+                    })
 
-            demo_rows, demo_narr = compute_steps_for_demo(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
+                return rows, script
 
-            # HTML (márgenes compactos) — SIN separador '---' después
+            demo_rows, demo_script = compute_rows_and_script(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
+
             import json as _json
             html_demo_template = """
             <style>
-            .kx {border-collapse:collapse;width:100%;font-size:14px; margin-bottom:6px}
+            .kx {border-collapse:collapse;width:100%;font-size:14px;margin-bottom:6px}
             .kx th,.kx td {border:1px solid #eaeaea;padding:6px 8px;text-align:center}
             .kx thead th {background:#f8fafc;font-weight:600}
             .kx .hi {background:#fff7e6;box-shadow:inset 0 0 0 9999px rgba(255,165,0,0.08)}
             .fill {transition: background 0.3s, color 0.3s}
-            .controls {display:flex;gap:8px;align-items:center;margin:2px 0 6px}
+            .controls {display:flex;gap:8px;align-items:center;margin:6px 0}
             .badge {display:inline-block;background:#eef;border:1px solid #dde;padding:2px 8px;border-radius:12px;font-size:12px}
-            #narr {margin:6px 0 2px; font-size:15px}
+            .btn {padding:6px 10px; border:1px solid #ddd; background:#fafafa; cursor:pointer; border-radius:6px;}
+            .btn:hover {background:#f0f0f0}
+            .muted {color:#999}
+            #narr {margin-top:6px;font-size:15px}
             </style>
+
             <div class="controls">
-            <button id="playDemo">▶️ Reproducir demo</button>
+            <button id="playDemo" class="btn">▶️ Reproducir demo</button>
+            <button id="resetDemo" class="btn">↺ Reiniciar</button>
             <span class="badge">%%METODO%%</span>
             </div>
+
             <table class="kx" id="kxtable">
             <thead>
                 <tr>
@@ -1719,161 +1842,135 @@ def page_level2(username):
                 <th>Cantidad</th><th>Precio</th><th>Total</th>
                 </tr>
             </thead>
-            <tbody>
-                <tr id="row0"><td>Día 1</td><td>Saldo inicial</td>
-                <td id="r0_ent_q" class="fill muted"></td><td id="r0_ent_pu" class="fill muted"></td><td id="r0_ent_tot" class="fill muted"></td>
-                <td id="r0_sal_q" class="fill muted"></td><td id="r0_sal_pu" class="fill muted"></td><td id="r0_sal_tot" class="fill muted"></td>
-                <td id="r0_sdo_q" class="fill muted"></td><td id="r0_sdo_pu" class="fill muted"></td><td id="r0_sdo_tot" class="fill muted"></td>
-                </tr>
-                <tr id="row1"><td>Día 2</td><td>Compra</td>
-                <td id="r1_ent_q" class="fill muted"></td><td id="r1_ent_pu" class="fill muted"></td><td id="r1_ent_tot" class="fill muted"></td>
-                <td id="r1_sal_q" class="fill muted"></td><td id="r1_sal_pu" class="fill muted"></td><td id="r1_sal_tot" class="fill muted"></td>
-                <td id="r1_sdo_q" class="fill muted"></td><td id="r1_sdo_pu" class="fill muted"></td><td id="r1_sdo_tot" class="fill muted"></td>
-                </tr>
-                <tr id="row2"><td>Día 3</td><td>Venta</td>
-                <td id="r2_ent_q" class="fill muted"></td><td id="r2_ent_pu" class="fill muted"></td><td id="r2_ent_tot" class="fill muted"></td>
-                <td id="r2_sal_q" class="fill muted"></td><td id="r2_sal_pu" class="fill muted"></td><td id="r2_sal_tot" class="fill muted"></td>
-                <td id="r2_sdo_q" class="fill muted"></td><td id="r2_sdo_pu" class="fill muted"></td><td id="r2_sdo_tot" class="fill muted"></td>
-                </tr>
-            </tbody>
+            <tbody id="kbody"></tbody>
             </table>
             <div id="narr"></div>
 
             <script>
             (function(){
-            const data  = %%DATA%%;
-            const narrs = %%NARR%%;
+            const rows = %%ROWS%%;
+            const script = %%SCRIPT%%;
+            const metodo = "%%METODO%%";
+            const narrMuted = %%MUTED%%;
+            const rate = %%RATE%%;
+
+            const tbody = document.getElementById("kbody");
             const narrDiv = document.getElementById("narr");
-            const btn = document.getElementById("playDemo");
+            const btnPlay = document.getElementById("playDemo");
+            const btnReset = document.getElementById("resetDemo");
 
             const pesos = (v)=> {
                 try { return new Intl.NumberFormat('es-CO',{style:'currency', currency:'COP', maximumFractionDigits:2}).format(v); }
                 catch(e){ return "$"+(Math.round(v*100)/100).toLocaleString('es-CO'); }
             };
             const fmt = (x)=> (x===null || x===undefined || x==="") ? "" : (typeof x==="number" ? (Number.isInteger(x)? x.toString(): (Math.round(x*100)/100).toString().replace(".",",")) : x);
-            const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
 
             function speak(text){
                 return new Promise((resolve)=>{
+                if (narrMuted) return resolve();
                 try{
                     if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
                     const u = new SpeechSynthesisUtterance(text);
                     const voices = window.speechSynthesis.getVoices();
                     const pick = voices.find(v=>/es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
                     if (pick) u.voice = pick;
-                    u.rate = 1.0; u.pitch = 1.0;
+                    u.rate = rate; u.pitch = 1.0;
                     u.onend = ()=> resolve();
                     window.speechSynthesis.speak(u);
                 }catch(e){ resolve(); }
                 });
             }
+            const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
 
-            function fillCell(id, val, money=false){
-                const el = document.getElementById(id);
+            function buildTable(){
+                tbody.innerHTML = "";
+                rows.forEach((r, i)=>{
+                const tr = document.createElement("tr");
+                tr.id = "row"+i;
+                tr.innerHTML = `
+                    <td>${r.fecha}</td><td>${r.desc}</td>
+                    <td id="r${i}_ent_q"  class="fill muted"></td>
+                    <td id="r${i}_ent_pu" class="fill muted"></td>
+                    <td id="r${i}_ent_tot"class="fill muted"></td>
+                    <td id="r${i}_sal_q"  class="fill muted"></td>
+                    <td id="r${i}_sal_pu" class="fill muted"></td>
+                    <td id="r${i}_sal_tot"class="fill muted"></td>
+                    <td id="r${i}_sdo_q"  class="fill muted"></td>
+                    <td id="r${i}_sdo_pu" class="fill muted"></td>
+                    <td id="r${i}_sdo_tot"class="fill muted"></td>
+                `;
+                tbody.appendChild(tr);
+                });
+            }
+            function clearTable(){
+                [...tbody.querySelectorAll("td")].forEach(td=>{
+                if (td.id) { td.textContent = ""; td.classList.add("muted"); }
+                });
+                [...tbody.querySelectorAll("tr")].forEach(tr=> tr.classList.remove("hi"));
+                narrDiv.textContent = "";
+            }
+            function highlightRow(i){
+                [...tbody.querySelectorAll("tr")].forEach((tr, idx)=>{
+                tr.classList.toggle("hi", idx === i);
+                });
+            }
+            function fillCell(rowIdx, key, val, money=false){
+                const el = document.getElementById(`r${rowIdx}_${key}`);
                 if (!el) return;
                 el.classList.remove("muted");
                 el.style.background = "#fffbe6";
                 el.style.color = "#333";
-                el.textContent = (money ? pesos(val) : fmt(val));
-                setTimeout(()=>{ el.style.background=""; }, 240);
+                el.textContent = money ? pesos(val) : fmt(val);
+                setTimeout(()=>{ el.style.background=""; }, 300);
             }
 
-            function highlightRow(i){
-                [0,1,2].forEach(r=>{
-                const tr = document.getElementById("row"+r);
-                if(!tr) return;
-                tr.classList.toggle("hi", r===i);
-                });
-            }
-
-            function clearTable(){
-                ['r0','r1','r2'].forEach(r=>{
-                ['ent_q','ent_pu','ent_tot','sal_q','sal_pu','sal_tot','sdo_q','sdo_pu','sdo_tot'].forEach(c=>{
-                    const el = document.getElementById(r+"_"+c);
-                    if (el) { el.textContent = ""; el.classList.add("muted"); }
-                });
-                });
-                narrDiv.textContent = "";
-                highlightRow(-1);
-            }
-
-            async function narrAndFill(text, actions){
-                const dur = Math.max(2400, Math.min(5200, text.length * 50));
-                const t1 = Math.floor(dur * 0.33);
-                const t2 = Math.floor(dur * 0.66);
-                const t3 = Math.floor(dur * 0.90);
-                const pVoice = speak(text);
-                if (actions[0]) { await sleep(t1); actions[0](); }
-                if (actions[1]) { await sleep(Math.max(0,t2 - t1)); actions[1](); }
-                if (actions[2]) { await sleep(Math.max(0,t3 - t2)); actions[2](); }
-                await pVoice;
-                await sleep(120);
-            }
-
-            async function play(){
+            async function runScript(){
                 clearTable();
+                // Pintar título de cada paso, resaltar fila y llenar celdas en orden
+                for (const step of script){
+                narrDiv.textContent = step.title;
+                // resaltar filas involucradas: la primera acción indica la fila
+                if (step.actions && step.actions.length>0){
+                    highlightRow(step.actions[0].row);
+                }
+                // duración base proporcional al texto
+                const dur = Math.max(2200, Math.min(7000, step.text.length * 55 / rate));
+                const chunks = Math.max(3, step.actions.length);
+                const waits = Array.from({length:chunks-1}, (_,k)=> Math.floor(dur*(k+1)/chunks));
 
-                // Paso 1
-                highlightRow(0);
-                narrDiv.textContent = "Paso 1 · Saldo inicial";
-                const r0 = data[0];
-                await narrAndFill(narrs[0], [
-                ()=> fillCell("r0_sdo_q",  r0.sdo_q),
-                ()=> fillCell("r0_sdo_pu", r0.sdo_pu, true),
-                ()=> fillCell("r0_sdo_tot",r0.sdo_tot, true)
-                ]);
+                const pVoice = speak(step.text);
 
-                // Paso 2
-                highlightRow(1);
-                narrDiv.textContent = "Paso 2 · Compra";
-                const r1 = data[1];
-                await narrAndFill(narrs[1], [
-                ()=> fillCell("r1_ent_q",  r1.ent_q),
-                ()=> fillCell("r1_ent_pu", r1.ent_pu, true),
-                ()=> fillCell("r1_ent_tot",r1.ent_tot, true)
-                ]);
-                await sleep(180);
-                fillCell("r1_sdo_q",  r1.sdo_q);
-                await sleep(140);
-                fillCell("r1_sdo_pu", r1.sdo_pu, true);
-                await sleep(140);
-                fillCell("r1_sdo_tot",r1.sdo_tot, true);
+                for (let i=0;i<step.actions.length;i++){
+                    const a = step.actions[i];
+                    if (i>0){ await sleep(waits[i-1]); }
+                    fillCell(a.row, a.cell, a.val, !!a.money);
+                }
 
-                // Paso 3
-                highlightRow(2);
-                narrDiv.textContent = "Paso 3 · Venta";
-                const r2 = data[2];
-                await narrAndFill(narrs[2], [
-                ()=> { if (r2.sal_q!=="")  fillCell("r2_sal_q",  r2.sal_q); },
-                ()=> { if (r2.sal_pu!=="") fillCell("r2_sal_pu", r2.sal_pu, true); },
-                ()=> { if (r2.sal_tot!=="")fillCell("r2_sal_tot",r2.sal_tot, true); }
-                ]);
-                await sleep(180);
-                fillCell("r2_sdo_q",  r2.sdo_q);
-                await sleep(140);
-                fillCell("r2_sdo_pu", r2.sdo_pu, true);
-                await sleep(140);
-                fillCell("r2_sdo_tot",r2.sdo_tot, true);
-
+                await pVoice;
+                await sleep(200);
+                }
                 highlightRow(-1);
             }
 
-            btn.onclick = play;
-            if (window.speechSynthesis) {
-                window.speechSynthesis.onvoiceschanged = ()=>{};
-            }
+            buildTable();
+            btnPlay.onclick  = runScript;
+            btnReset.onclick = ()=>{ clearTable(); buildTable(); };
+            if (window.speechSynthesis) { window.speechSynthesis.onvoiceschanged = ()=>{}; }
             })();
             </script>
             """
 
             html_demo = (
                 html_demo_template
-                .replace("%%DATA%%", _json.dumps(demo_rows))
-                .replace("%%NARR%%", _json.dumps(demo_narr))
+                .replace("%%ROWS%%", _json.dumps(demo_rows))
+                .replace("%%SCRIPT%%", _json.dumps(demo_script))
                 .replace("%%METODO%%", metodo)
+                .replace("%%MUTED%%", "true" if narr_muted else "false")
+                .replace("%%RATE%%", str(narr_speed))
             )
-            # Altura compacta (↓) y sin separador debajo
-            components.html(html_demo, height=190, scrolling=False)
+
+            components.html(html_demo, height=300, scrolling=True)
+
 
             # =========================
             # 2) 📝 Ejercicio editable
