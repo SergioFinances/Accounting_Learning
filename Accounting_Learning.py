@@ -3505,56 +3505,439 @@ def page_level3(username):
         components.html(html_demo, height=360, scrolling=True)
 
     with tabs[2]:
-        st.subheader("Práctica: combina compras netas y devolución de venta (PP)")
+        st.subheader("Práctica IA: diligencia tu propio KARDEX")
+        st.caption("Elige un método y genera un escenario (o edítalo). Los días 1–3 vienen prellenados. Diligencia SOLO Día 4 (devolución de compra) y Día 5 (devolución de venta).")
 
-        if "n3_inv0" not in st.session_state:
-            n3_new_case()
-        st.button("🔄 Nuevo escenario", on_click=n3_new_case, key="n3_new_case_btn")
+        # =========================
+        # Utilidades de estado
+        # =========================
+        def _ensure_default_state():
+            ss = st.session_state
+            # Método
+            ss.setdefault("n3_prac_metodo", "Promedio Ponderado")
+            # Días 1–3 base
+            ss.setdefault("n3_ex_inv0_u", 80)
+            ss.setdefault("n3_ex_inv0_pu", 10.0)
+            ss.setdefault("n3_ex_comp1_u", 40)
+            ss.setdefault("n3_ex_comp1_pu", 11.0)
+            ss.setdefault("n3_ex_venta_u", 90)
+            ss.setdefault("n3_ex_comp2_u", 50)
+            ss.setdefault("n3_ex_comp2_pu", 13.0)
+            # Días 4–5 (solo cantidades; PP usa s_pu vigente)
+            ss.setdefault("n3_ex_dev_comp_u", 8)
+            ss.setdefault("n3_ex_dev_venta_u", 6)
 
-        inv0    = st.session_state.n3_inv0
-        prom0   = st.session_state.n3_prom0
-        comp    = st.session_state.n3_comp
-        comp_pu = st.session_state.n3_comp_pu
-        dev_comp= st.session_state.n3_dev_comp
-        venta_u = st.session_state.n3_venta_u
-        dev_venta_u = st.session_state.n3_dev_v_u
+        def _randomize_scenario_values():
+            import random
+            inv0_u  = random.choice([60, 80, 100, 120, 150])
+            inv0_pu = random.choice([8.0, 9.0, 10.0, 11.0, 12.0])
+            comp1_u = random.choice([30, 40, 50, 60, 70])
+            comp1_pu= random.choice([inv0_pu - 1, inv0_pu, inv0_pu + 1, inv0_pu + 2])
+            venta_u = random.choice([40, 60, 90, 110, 130])
+            comp2_u = random.choice([30, 40, 50, 60, 80])
+            comp2_pu= random.choice([comp1_pu - 1, comp1_pu, comp1_pu + 1, comp1_pu + 2])
+            # sugerencias de devolución (relativas al tamaño del escenario)
+            dev_comp_u  = max(0, min(comp1_u, random.choice([5, 8, 10, 12, 15])))
+            dev_venta_u = max(0, min(venta_u, random.choice([4, 6, 8, 10, 12])))
 
-        st.write(
-            f"Inv0: {inv0} u @ {peso(prom0)} | Compra: {comp} u @ {peso(comp_pu)} | "
-            f"Devol. compra: {peso(dev_comp)} (resta $) | Venta: {venta_u} u | Devol. venta: {dev_venta_u} u"
+            ss = st.session_state
+            ss["n3_ex_inv0_u"]  = inv0_u
+            ss["n3_ex_inv0_pu"] = float(max(1.0, round(inv0_pu, 2)))
+            ss["n3_ex_comp1_u"] = comp1_u
+            ss["n3_ex_comp1_pu"]= float(max(1.0, round(comp1_pu, 2)))
+            ss["n3_ex_venta_u"] = venta_u
+            ss["n3_ex_comp2_u"] = comp2_u
+            ss["n3_ex_comp2_pu"]= float(max(1.0, round(comp2_pu, 2)))
+            ss["n3_ex_dev_comp_u"]  = dev_comp_u
+            ss["n3_ex_dev_venta_u"] = dev_venta_u
+
+        def _request_randomize():
+            st.session_state["n3_ex_rand_request"] = True
+
+        _ensure_default_state()
+
+        # Atender aleatorización ANTES de instanciar widgets
+        if st.session_state.get("n3_ex_rand_request", False):
+            _randomize_scenario_values()
+            st.session_state.pop("n3_ex_rand_request", None)
+            st.rerun()
+
+        # =========================
+        # Método independiente del ejercicio
+        # =========================
+        c0a, c0b = st.columns([1, 3])
+        with c0a:
+            ex_metodo = st.selectbox(
+                "Método (ejercicio)",
+                ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
+                key="n3_prac_metodo"
+            )
+        with c0b:
+            st.button("🎲 Generar escenario aleatorio", key="n3_ex_rand_btn", on_click=_request_randomize)
+
+        # =========================
+        # Escenario editable (solo devoluciones)
+        # =========================
+        st.markdown("#### 🎯 Escenario del ejercicio (Días 1–3 prellenados)")
+
+        # Día 1–3 base
+        inv0_u_ex  = st.session_state["n3_ex_inv0_u"]
+        inv0_pu_ex = st.session_state["n3_ex_inv0_pu"]
+        comp1_u    = st.session_state["n3_ex_comp1_u"]
+        comp1_pu   = st.session_state["n3_ex_comp1_pu"]
+        venta_ex_u = st.session_state["n3_ex_venta_u"]
+        comp2_u    = st.session_state["n3_ex_comp2_u"]
+        comp2_pu   = st.session_state["n3_ex_comp2_pu"]
+
+        # Día 4–5 (entradas del estudiante)
+        st.markdown("**Día 4.** Devolución de compra (a proveedor)")
+        dev_comp_u = st.number_input("Unidades devueltas al proveedor — Día 4", min_value=0, step=1, key="n3_ex_dev_comp_u")
+
+        st.markdown("**Día 5.** Devolución de venta (del cliente)")
+        dev_venta_u = st.number_input("Unidades devueltas por el cliente — Día 5", min_value=0, step=1, key="n3_ex_dev_venta_u")
+
+        # =========================
+        # Helpers de cálculo
+        # =========================
+        def _sum_layers(layers):
+            q = sum(q for q, _ in layers)
+            v = sum(q * p for q, p in layers)
+            pu = (v / q) if q > 0 else 0.0
+            return q, pu, v
+
+        def _consume_layers_detail(layers, qty_out, fifo=True):
+            order = layers[:] if fifo else layers[::-1]
+            remaining = qty_out
+            sale_details = []
+            updated = []
+            for q, pu in order:
+                if remaining <= 0:
+                    updated.append([q, pu]); continue
+                take = min(q, remaining)
+                if take > 0:
+                    sale_details.append((take, pu, take * pu))
+                    rest = q - take
+                    remaining -= take
+                    if rest > 0:
+                        updated.append([rest, pu])
+                else:
+                    updated.append([q, pu])
+            final_layers = updated if fifo else updated[::-1]
+            return sale_details, final_layers
+
+        # =========================
+        # Construcción PARAMÉTRICA de filas esperadas (Días 1–5)
+        # =========================
+        def build_expected_rows(method_name):
+            rows = []
+
+            # Día 1: Saldo inicial
+            layers = [[float(inv0_u_ex), float(inv0_pu_ex)]] if inv0_u_ex > 0 else []
+            s_q, s_p, s_v = _sum_layers(layers)
+            rows.append({
+                "Fecha":"Día 1", "Descripción":"Saldo inicial",
+                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+            })
+
+            # Día 2: Compra 1
+            if method_name == "Promedio Ponderado":
+                ent_tot = comp1_u * comp1_pu
+                q_new = s_q + comp1_u
+                v_new = s_v + ent_tot
+                p_new = (v_new / q_new) if q_new > 0 else 0.0
+                layers = [[q_new, p_new]]
+                s_q, s_p, s_v = _sum_layers(layers)
+                rows.append({
+                    "Fecha":"Día 2", "Descripción":"Compra 1",
+                    "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu,2), "Entrada_total": round(ent_tot,2),
+                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                })
+            else:
+                rows.append({
+                    "Fecha":"Día 2", "Descripción":"Saldo (día 1)",
+                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                    "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                    "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                })
+                ent_tot = comp1_u * comp1_pu
+                layers.append([float(comp1_u), float(comp1_pu)])
+                rows.append({
+                    "Fecha":"Día 2", "Descripción":"Compra 1",
+                    "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu,2), "Entrada_total": round(ent_tot,2),
+                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Saldo_cant": comp1_u, "Saldo_pu": round(comp1_pu,2), "Saldo_total": round(ent_tot,2)
+                })
+
+            # Día 3: Venta
+            if method_name == "Promedio Ponderado":
+                if s_q > 0 and venta_ex_u > 0:
+                    sale_q  = min(venta_ex_u, s_q)
+                    sale_pu = layers[0][1] if layers else 0.0
+                    sale_tot= sale_q * sale_pu
+                    q2 = s_q - sale_q
+                    v2 = s_v - sale_tot
+                    p2 = (v2 / q2) if q2 > 0 else 0.0
+                    layers = [[q2, p2]] if q2 > 0 else []
+                    s_q, s_p, s_v = _sum_layers(layers)
+                    rows.append({
+                        "Fecha":"Día 3", "Descripción":"Venta",
+                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Salida_cant": sale_q, "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
+                        "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                    })
+                else:
+                    rows.append({
+                        "Fecha":"Día 3", "Descripción":"Venta",
+                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                        "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                    })
+            else:
+                fifo = (method_name == "PEPS (FIFO)")
+                sale_details, layers_after = _consume_layers_detail(layers, venta_ex_u, fifo=fifo)
+                running_layers = [l[:] for l in layers]
+                metodo_tag = "PEPS" if fifo else "UEPS"
+                for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
+                    sub_details, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
+                    rq, rpu, rv = _sum_layers(running_layers)
+                    rows.append({
+                        "Fecha":"Día 3", "Descripción": f"Venta tramo {i} ({metodo_tag})",
+                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Salida_cant": q_take, "Salida_pu": round(pu_take,2), "Salida_total": round(tot_take,2),
+                        "Saldo_cant": rq, "Saldo_pu": round(rpu,2), "Saldo_total": round(rv,2)
+                    })
+                layers = layers_after
+                s_q, s_p, s_v = _sum_layers(layers)
+
+            # Día 4: Compra 2 (prellenado, porque en práctica de devoluciones el estudiante solo diligencia devoluciones)
+            # NOTA: mantenemos igual que en los ejemplos guiados
+            if method_name == "Promedio Ponderado":
+                ent2_tot = comp2_u * comp2_pu
+                q3 = s_q + comp2_u
+                v3 = s_v + ent2_tot
+                p3 = (v3 / q3) if q3 > 0 else 0.0
+                layers = [[q3, p3]]
+                s_q, s_p, s_v = _sum_layers(layers)
+                rows.append({
+                    "Fecha":"Día 4", "Descripción":"Compra 2",
+                    "Entrada_cant": comp2_u, "Entrada_pu": round(comp2_pu,2), "Entrada_total": round(ent2_tot,2),
+                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                })
+            else:
+                ent2_tot = comp2_u * comp2_pu
+                layers.append([float(comp2_u), float(comp2_pu)])
+                rows.append({
+                    "Fecha":"Día 4", "Descripción":"Compra 2",
+                    "Entrada_cant": comp2_u, "Entrada_pu": round(comp2_pu,2), "Entrada_total": round(ent2_tot,2),
+                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Saldo_cant": comp2_u, "Saldo_pu": round(comp2_pu,2), "Saldo_total": round(ent2_tot,2)
+                })
+                s_q, s_p, s_v = _sum_layers(layers)
+
+            # Día 4: Devolución de compra (FILA a diligenciar por estudiante)
+            # Calculamos la EXPECTATIVA para validar
+            if ex_metodo == "Promedio Ponderado":
+                take_q  = min(dev_comp_u, s_q)
+                take_pu = s_p  # promedio vigente
+                take_val= take_q * take_pu
+                q4 = max(s_q - take_q, 0)
+                v4 = max(s_v - take_val, 0.0)
+                p4 = (v4 / q4) if q4 > 0 else 0.0
+                exp_d4 = {
+                    "Fecha":"Día 4", "Descripción":"Devolución de compra",
+                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                    "Salida_cant": take_q, "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
+                    "Saldo_cant": q4, "Saldo_pu": round(p4,2), "Saldo_total": round(v4,2)
+                }
+                layers = [[q4, p4]] if q4 > 0 else []
+                s_q, s_p, s_v = _sum_layers(layers)
+            else:
+                fifo = (ex_metodo == "PEPS (FIFO)")
+                sale_details, layers_after = _consume_layers_detail(layers, dev_comp_u, fifo=fifo)
+                take_q  = sum(q for q,_,_ in sale_details)
+                take_val= sum(t for _,_,t in sale_details)
+                take_pu = (take_val/take_q) if take_q>0 else 0.0
+                layers = layers_after
+                s_q, s_p, s_v = _sum_layers(layers)
+                exp_d4 = {
+                    "Fecha":"Día 4", "Descripción":"Devolución de compra",
+                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                    "Salida_cant": take_q, "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
+                    "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                }
+            # agregamos la fila EXPECTATIVA (servirá para validar, pero al estudiante se le deja en blanco)
+            rows.append(exp_d4)
+
+            # Día 5: Devolución de venta (FILA a diligenciar por estudiante)
+            if ex_metodo == "Promedio Ponderado":
+                in_q = dev_venta_u
+                in_pu = s_p
+                in_val= in_q * in_pu
+                q5 = s_q + in_q
+                v5 = s_v + in_val
+                p5 = (v5 / q5) if q5 > 0 else 0.0
+                exp_d5 = {
+                    "Fecha":"Día 5", "Descripción":"Devolución de venta (reingreso)",
+                    "Entrada_cant": in_q, "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
+                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Saldo_cant": q5, "Saldo_pu": round(p5,2), "Saldo_total": round(v5,2)
+                }
+            else:
+                fifo = (ex_metodo == "PEPS (FIFO)")
+                if fifo:
+                    in_pu = layers[0][1] if layers else s_p
+                    layers = [[float(dev_venta_u), float(in_pu)]] + layers
+                else:
+                    in_pu = layers[-1][1] if layers else s_p
+                    layers = layers + [[float(dev_venta_u), float(in_pu)]]
+                s_q2, s_p2, s_v2 = _sum_layers(layers)
+                in_val = dev_venta_u * in_pu
+                exp_d5 = {
+                    "Fecha":"Día 5", "Descripción":"Devolución de venta (reingreso)",
+                    "Entrada_cant": dev_venta_u, "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
+                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Saldo_cant": s_q2, "Saldo_pu": round(s_p2,2), "Saldo_total": round(s_v2,2)
+                }
+
+            rows.append(exp_d5)
+            return rows
+
+        expected_rows = build_expected_rows(ex_metodo)
+
+        # =========================
+        # Plantilla para edición: prellenamos Días 1–3 y "Compra 2", y dejamos EN BLANCO las dos filas de devoluciones
+        # =========================
+        def _to_row_for_editor(r, lock=False):
+            """Si lock=True, devolvemos los valores numéricos prellenados; si False, dejamos en blanco."""
+            editable = not lock
+            def keep_or_blank(k):
+                return "" if editable else r[k]
+            return {
+                "Fecha": r["Fecha"], "Descripción": r["Descripción"],
+                "Entrada_cant": keep_or_blank("Entrada_cant"),
+                "Entrada_pu":   keep_or_blank("Entrada_pu"),
+                "Entrada_total":keep_or_blank("Entrada_total"),
+                "Salida_cant":  keep_or_blank("Salida_cant"),
+                "Salida_pu":    keep_or_blank("Salida_pu"),
+                "Salida_total": keep_or_blank("Salida_total"),
+                "Saldo_cant":   keep_or_blank("Saldo_cant"),
+                "Saldo_pu":     keep_or_blank("Saldo_pu"),
+                "Saldo_total":  keep_or_blank("Saldo_total"),
+            }
+
+        # Identificamos índices de las filas que son devoluciones (últimas dos filas)
+        idx_d4 = len(expected_rows) - 2
+        idx_d5 = len(expected_rows) - 1
+
+        plant_rows = []
+        for i, r in enumerate(expected_rows):
+            # Lock (prellenado) para todo excepto días 4 y 5 (devoluciones)
+            lock = (i not in [idx_d4, idx_d5])
+            plant_rows.append(_to_row_for_editor(r, lock=lock))
+
+        plant = pd.DataFrame(plant_rows)
+
+        st.markdown("#### ✍️ Completa SOLO las filas de devoluciones (Día 4 y Día 5)")
+        st.caption("Las primeras filas están prellenadas para guiarte. No necesitas editarlas.")
+        edited = st.data_editor(
+            plant,
+            use_container_width=True,
+            num_rows="fixed",
+            key="n3_kardex_student_table_returns"
         )
 
-        with st.form("n3_prac_form"):
-            ans_cogs = st.number_input("Tu COGS estimado (PP)", min_value=0.0, value=0.0, step=10.0, key="n3_prac_cogs")
-            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n3_prac_ai", value=False)
-            submitted = st.form_submit_button("✅ Validar práctica N3")
+        # =========================
+        # Validación y feedback (solo Día 4 y Día 5)
+        # =========================
+        with st.form("n3_kardex_check_returns"):
+            ask_ai = st.checkbox("💬 Pedir retroalimentación de IA (procedimiento)", value=False, key="n3_kardex_ai_feedback_returns")
+            submitted_ex = st.form_submit_button("✅ Validar mis devoluciones")
 
-        if submitted:
-            st.toast("✅ Respuesta recibida, validando...", icon="✅")
-            inv0_val = inv0 * prom0
-            comp_val = comp * comp_pu
-            comp_net_val = comp_val - dev_comp
-            total_val = inv0_val + comp_net_val
-            total_u = inv0 + comp
-            prom = total_val / total_u if total_u > 0 else 0.0
-            venta_neta_u = max(venta_u - dev_venta_u, 0)
-            correct = venta_neta_u * prom
+        if submitted_ex:
+            tol = 0.5
 
-            ok = abs(ans_cogs - correct) <= 0.5
-            if ok:
-                st.success(f"COGS (venta neta) ≈ {peso(correct)} con PP")
+            def _to_float(x):
+                try:
+                    if x in (None, ""): return None
+                    return float(x)
+                except Exception:
+                    return None
+
+            def _near(a, b):
+                if a is None or b is None: return False
+                return abs(a - b) <= tol
+
+            flags = []
+            # Validamos SOLO las filas de devoluciones
+            rows_to_check = [idx_d4, idx_d5]
+            check_labels = []
+            for i in rows_to_check:
+                user = edited.iloc[i].to_dict()
+                exp  = expected_rows[i]
+                ok_cells = []
+                for key in ["Entrada_cant","Entrada_pu","Entrada_total","Salida_cant","Salida_pu","Salida_total","Saldo_cant","Saldo_pu","Saldo_total"]:
+                    exp_val = exp[key]
+                    usr_val = _to_float(user.get(key, ""))
+                    if exp_val == "":
+                        ok = (usr_val is None)  # si no aplica, debe quedar vacío
+                    else:
+                        ok = _near(usr_val, float(exp_val))
+                    ok_cells.append(ok)
+                ok_row = all(ok_cells)
+                flags.append(ok_row)
+                check_labels.append(f"{exp['Fecha']} · {exp['Descripción']}")
+
+            aciertos = sum(1 for ok in flags if ok)
+            st.metric("Aciertos (devoluciones)", f"{aciertos}/2")
+            st.write(("✅ " if flags[0] else "❌ ") + check_labels[0])
+            st.write(("✅ " if flags[1] else "❌ ") + check_labels[1])
+
+            if aciertos == 2:
+                st.success("¡Muy bien! Tus devoluciones están correctamente valoradas y los saldos coinciden con el método.")
             else:
-                st.error(f"COGS esperado ≈ {peso(correct)}")
+                st.warning("Revisa cantidades, costos unitarios y saldos en las filas de devoluciones. Piensa: ¿con qué costo se valora cada devolución según el método?")
 
+            # Feedback IA opcional
             if ask_ai:
-                with st.spinner("Generando feedback con IA..."):
-                    fb = ia_feedback(
-                        f"N3 práctica PP con devoluciones. Datos: Inv0={inv0}@{prom0}, Comp={comp}@{comp_pu}, "
-                        f"DevCompra=${dev_comp}, Venta={venta_u}, DevVenta={dev_venta_u}. "
-                        f"COGS_est={ans_cogs}, COGS_correcto={correct}. Explica el razonamiento."
+                def _row_summary(idx):
+                    r = edited.iloc[idx].to_dict()
+                    def g(k):
+                        v = _to_float(r.get(k, ""))
+                        return "—" if v is None else f"{v:.2f}" if isinstance(v, float) else str(v)
+                    return (f"{edited.iloc[idx]['Fecha']} {edited.iloc[idx]['Descripción']}: "
+                            f"E({g('Entrada_cant')},{g('Entrada_pu')},{g('Entrada_total')}) | "
+                            f"S({g('Salida_cant')},{g('Salida_pu')},{g('Salida_total')}) | "
+                            f"Saldo({g('Saldo_cant')},{g('Saldo_pu')},{g('Saldo_total')})")
+
+                intento = "\n".join(_row_summary(i) for i in [idx_d4, idx_d5])
+
+                # Datos clave para guía de la IA
+                final_exp_d5 = expected_rows[idx_d5]
+                exp_qtyF = final_exp_d5["Saldo_cant"] if final_exp_d5["Saldo_cant"] != "" else None
+                exp_valF = final_exp_d5["Saldo_total"] if final_exp_d5["Saldo_total"] != "" else None
+                exp_puF  = final_exp_d5["Saldo_pu"] if final_exp_d5["Saldo_pu"] != "" else None
+
+                sol_desc = (
+                    f"Método: {ex_metodo}. "
+                    f"Saldo final esperado (tras Día 5): cant={exp_qtyF}, val={exp_valF}, pu={exp_puF}. "
+                    f"Filas a evaluar: 2 (Día 4 y Día 5)."
+                )
+
+                with st.spinner("Generando retroalimentación de IA…"):
+                    fb_txt = ia_feedback(
+                        "Evalúa SOLO las devoluciones del KARDEX (Día 4 y Día 5). " + sol_desc +
+                        "\nEl estudiante diligenció:\n" + intento +
+                        "\nIndica: (1) si usa el costo correcto según el método (promedio/PEPS/UEPS), "
+                        "(2) errores típicos y dónde corregir, "
+                        "(3) un tip memotécnico breve."
                     )
-                with st.expander("💬 Feedback de la IA"):
-                    st.write(fb)
+                with st.expander("💬 Retroalimentación de la IA"):
+                    st.write(fb_txt)
+
 
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 3")
