@@ -2364,57 +2364,410 @@ def page_level2(username):
 
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 2")
-        st.caption("Necesitas acertar **2 de 3**.")
+        st.caption("Debes acertar **5 de 5** para aprobar y avanzar al siguiente nivel.")
 
-        with st.form("n2_eval_form"):
-            q1 = st.radio("1) En inflación, ¿cuál suele dar mayor COGS?",
-                          ["PEPS", "UEPS", "Promedio Ponderado"], index=None, key="n2_eval_q1")
-            q2 = st.radio("2) En PEPS, ¿con qué costos se valora el inventario final?",
-                          ["Con los más antiguos", "Con los más recientes"], index=None, key="n2_eval_q2")
-            q3 = st.radio("3) El Promedio Ponderado:",
-                          ["Usa costo del último lote", "Mezcla costos para un único costo unitario"], index=None, key="n2_eval_q3")
-            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n2_eval_ai", value=False)
-            submitted = st.form_submit_button("🧪 Validar evaluación N2")
+        # ========= Helpers comunes (PEPS dinámico y PP) =========
+        def _fmt_money(x):
+            try: return peso(float(x))
+            except: return str(x)
 
-        if submitted:
-            st.toast("✅ Respuesta recibida, validando...", icon="✅")
-            correct = {
-                "n2_eval_q1": "UEPS",
-                "n2_eval_q2": "Con los más recientes",
-                "n2_eval_q3": "Mezcla costos para un único costo unitario"
-            }
-            answers = {"n2_eval_q1": q1, "n2_eval_q2": q2, "n2_eval_q3": q3}
-            score = sum(1 for k,v in answers.items() if v == correct[k])
-            passed = score >= 2
+        def _sum_layers(layers):
+            """layers: [[qty, pu], ...]  -> (qty_total, pu_promedio, val_total)"""
+            q = sum(q for q, _ in layers)
+            v = sum(q*p for q, p in layers)
+            pu = (v / q) if q > 0 else 0.0
+            return q, pu, v
 
-            record_attempt(username, level=2, score=score, passed=passed)
+        def _consume_layers_detail(layers, qty_out, fifo=True):
+            """
+            Devuelve (sale_details, layers_after)
+            sale_details: lista de tramos [(take_qty, pu, total), ...]
+            layers_after: capas restantes tras consumir qty_out
+            """
+            order = layers[:] if fifo else layers[::-1]
+            remaining = qty_out
+            sale_details = []
+            new_layers = []
+            for q, pu in order:
+                if remaining <= 0:
+                    new_layers.append([q, pu])
+                    continue
+                take = min(q, remaining)
+                if take > 0:
+                    sale_details.append((take, pu, take*pu))
+                    rest = q - take
+                    remaining -= take
+                    if rest > 0:
+                        new_layers.append([rest, pu])
+            layers_after = new_layers if fifo else new_layers[::-1]
+            return sale_details, layers_after
 
-            fb = None
-            if ask_ai:
-                with st.spinner("Generando feedback con IA..."):
-                    fb = ia_feedback(
-                        f"Nivel 2 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
-                        f"Aciertos: {score}/3. Da feedback amable y breve."
+        # ========= Escenarios diferenciados =========
+        # --- Promedio Ponderado (Bolsos)
+        inv0_u, inv0_pu = 80, 10.0
+        comp1_u, comp1_pu = 40, 11.0
+        venta_u = 90
+        comp2_u, comp2_pu = 50, 13.0
+
+        # --- PEPS (Camisas)
+        peps_inv0_u, peps_inv0_pu = 100, 9.0
+        peps_comp1_u, peps_comp1_pu = 60, 10.5
+        peps_venta_u = 120
+        peps_comp2_u, peps_comp2_pu = 70, 12.0
+
+        # ---------- Solución PP ----------
+        def solve_pp():
+            # Día 1
+            layers = [[float(inv0_u), float(inv0_pu)]]
+            # Día 2 (Compra 1) -> promedio
+            q0, pu0, v0 = _sum_layers(layers)
+            v1 = v0 + comp1_u * comp1_pu
+            q1 = q0 + comp1_u
+            pu1 = (v1 / q1) if q1 > 0 else 0.0
+            layers = [[q1, pu1]]
+            saldo_after_c1 = (q1, pu1, v1)
+            # Día 3 (Venta) -> CMV con pu promedio vigente
+            sale_q = min(venta_u, q1)
+            cmv = sale_q * pu1
+            q2 = q1 - sale_q
+            v2 = v1 - cmv
+            pu2 = (v2 / q2) if q2 > 0 else 0.0
+            layers = [[q2, pu2]] if q2 > 0 else []
+            saldo_after_sale = (q2, pu2, v2)
+            # Día 4 (Compra 2) -> promedio
+            q3 = q2 + comp2_u
+            v3 = v2 + comp2_u * comp2_pu
+            pu3 = (v3 / q3) if q3 > 0 else 0.0
+            layers = [[q3, pu3]]
+            saldo_final = (q3, pu3, v3)
+            return saldo_after_c1, saldo_after_sale, saldo_final
+
+        pp_after_c1, pp_after_sale, pp_final = solve_pp()
+
+        # ---------- Solución PEPS (filas dinámicas) ----------
+        def solve_peps_rows():
+            # Día 1: saldo inicial
+            layers = [[float(peps_inv0_u), float(peps_inv0_pu)]]
+            s_q, s_pu, s_v = _sum_layers(layers)
+            rows = [{
+                "fecha":"Día 1","desc":"Saldo inicial",
+                "ent_q":"","ent_pu":"","ent_tot":"",
+                "sal_q":"","sal_pu":"","sal_tot":"",
+                "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+            }]
+
+            # Día 2 (PEPS)
+            rows.append({
+                "fecha":"Día 2","desc":"Saldo (día 1)",
+                "ent_q":"","ent_pu":"","ent_tot":"",
+                "sal_q":"","sal_pu":"","sal_tot":"",
+                "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
+            })
+            ent_tot = peps_comp1_u * peps_comp1_pu
+            layers.append([float(peps_comp1_u), float(peps_comp1_pu)])
+            rows.append({
+                "fecha":"Día 2","desc":"Compra 1",
+                "ent_q":int(peps_comp1_u),"ent_pu":round(peps_comp1_pu,2),"ent_tot":round(ent_tot,2),
+                "sal_q":"","sal_pu":"","sal_tot":"",
+                "sdo_q":int(peps_comp1_u),"sdo_pu":round(peps_comp1_pu,2),"sdo_tot":round(ent_tot,2)
+            })
+
+            # Día 3 (Venta)
+            sale_details, layers_after = _consume_layers_detail(layers, peps_venta_u, fifo=True)
+            running_layers = [l[:] for l in layers]
+            for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
+                sd, running_layers = _consume_layers_detail(running_layers, q_take, fifo=True)
+                rq, rpu, rv = _sum_layers(running_layers)
+                rows.append({
+                    "fecha":"Día 3","desc": f"Venta tramo {i} (PEPS)",
+                    "ent_q":"","ent_pu":"","ent_tot":"",
+                    "sal_q":int(q_take),"sal_pu":round(pu_take,2),"sal_tot":round(tot_take,2),
+                    "sdo_q":int(rq),"sdo_pu":round(rpu,2),"sdo_tot":round(rv,2)
+                })
+            layers = layers_after
+
+            # Día 4 (Compra 2)
+            ent2_tot = peps_comp2_u * peps_comp2_pu
+            layers.append([float(peps_comp2_u), float(peps_comp2_pu)])
+            rows.append({
+                "fecha":"Día 4","desc":"Compra 2",
+                "ent_q":int(peps_comp2_u),"ent_pu":round(peps_comp2_pu,2),"ent_tot":round(ent2_tot,2),
+                "sal_q":"","sal_pu":"","sal_tot":"",
+                "sdo_q":int(peps_comp2_u),"sdo_pu":round(peps_comp2_pu,2),"sdo_tot":round(ent2_tot,2)
+            })
+
+            qF, puF, vF = _sum_layers(layers)
+            return rows, (qF, puF, vF)
+
+        peps_rows_expected, peps_final = solve_peps_rows()
+
+        # ========= UI: una sola FORM para todo =========
+        with st.form("n2_eval_all"):
+            # 1) Selección múltiple
+            st.markdown("### 1) Selección múltiple (1 punto)")
+            st.markdown(
+                "¿Cuál de los siguientes métodos de valoración de inventarios genera normalmente una **mayor utilidad bruta** cuando los precios de compra están en aumento?"
+            )
+            q1 = st.radio(
+                "Elige una opción:",
+                [
+                    "A) UEPS (Último en Entrar, Primero en Salir)",
+                    "B) PEPS (Primero en Entrar, Primero en Salir)",
+                    "C) Promedio Ponderado",
+                    "D) Ninguno, todos generan la misma utilidad",
+                ],
+                index=None,
+                key="n2_eval_q1_new",
+            )
+
+            st.markdown("---")
+
+            # 2) Preguntas abiertas
+            st.markdown("### 2) Preguntas abiertas (2 puntos)")
+            a1 = st.text_area(
+                "2) Explica, con tus propias palabras, por qué es importante elegir correctamente el método de valoración de inventarios en una empresa.",
+                key="n2_eval_a1", height=130
+            )
+            a2 = st.text_area(
+                "3) Describe una situación práctica en la que el método del **Promedio Ponderado** podría ser más conveniente que PEPS o UEPS, y justifica tu respuesta.",
+                key="n2_eval_a2", height=130
+            )
+            ask_ai_open = st.checkbox("💬 Pedir calificación y feedback de IA para las preguntas abiertas", value=True)
+
+            st.markdown("---")
+
+            # 3) Ejercicio PP (tabla fija 4 filas)
+            st.markdown("### 3) Ejercicio (1 punto): Promedio Ponderado")
+            st.markdown(
+                f"""
+                **Contexto:**  
+                La empresa **ABC S.A.S.**, dedicada a la venta de bolsos, desea calcular el costo de su inventario bajo el método **Promedio Ponderado**.  
+                A continuación se describe el movimiento de mercancías durante la semana:
+
+                - **Día 1:** Inventario inicial de **{inv0_u} bolsos** a un costo unitario de **${inv0_pu:,.2f}**.  
+                - **Día 2:** Compra de **{comp1_u} bolsos adicionales** a **${comp1_pu:,.2f}** cada uno.  
+                - **Día 3:** Venta de **{venta_u} bolsos**.  
+                - **Día 4:** Nueva compra de **{comp2_u} bolsos** a **${comp2_pu:,.2f}** por unidad.  
+
+                Completa el siguiente **Kardex**, aplicando correctamente el método de **Promedio Ponderado**.
+                """
+            )
+
+            pp_template = pd.DataFrame([
+                {"Fecha":"Día 1","Descripción":"Saldo inicial",
+                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                {"Fecha":"Día 2","Descripción":"Compra 1",
+                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                {"Fecha":"Día 3","Descripción":"Venta",
+                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                {"Fecha":"Día 4","Descripción":"Compra 2",
+                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+            ])
+            pp_edit = st.data_editor(
+                pp_template.astype("string"),
+                use_container_width=True,
+                num_rows="fixed",
+                key="n2_eval_pp_tbl"
+            )
+
+            st.markdown("---")
+
+            # 4) Ejercicio PEPS (tabla dinámica por filas esperadas)
+            st.markdown("### 4) Ejercicio (1 punto): PEPS (FIFO)")
+            st.markdown(
+                f"""
+                **Contexto:**  
+                La empresa **MODA JOVEN S.A.S.**, dedicada a la comercialización de camisas, aplica el método **PEPS (Primero en Entrar, Primero en Salir)** para valorar su inventario.  
+                Durante la semana ocurrieron los siguientes movimientos:
+
+                - **Día 1:** Inventario inicial de **{peps_inv0_u} camisas** a un costo unitario de **${peps_inv0_pu:,.2f}**.  
+                - **Día 2:** Compra de **{peps_comp1_u} camisas** a **${peps_comp1_pu:,.2f}** cada una.  
+                - **Día 3:** Venta de **{peps_venta_u} camisas**.  
+                - **Día 4:** Nueva compra de **{peps_comp2_u} camisas** a **${peps_comp2_pu:,.2f}** por unidad.  
+
+                Diligencia el siguiente **Kardex PEPS**, asegurando que las salidas respeten el orden cronológico de entrada.
+                """
+            )
+
+            # Construimos plantilla con la MISMA cantidad de filas esperadas
+            peps_cols = ["Fecha","Descripción",
+                        "Entrada_cant","Entrada_pu","Entrada_total",
+                        "Salida_cant","Salida_pu","Salida_total",
+                        "Saldo_cant","Saldo_pu","Saldo_total"]
+            peps_template = pd.DataFrame([{k: "" for k in peps_cols} for _ in range(len(peps_rows_expected))])
+            for i, r in enumerate(peps_rows_expected):
+                peps_template.loc[i, "Fecha"] = r["fecha"]
+                peps_template.loc[i, "Descripción"] = r["desc"]
+
+            peps_edit = st.data_editor(
+                peps_template.astype("string"),
+                use_container_width=True,
+                num_rows="fixed",
+                key="n2_eval_peps_tbl"
+            )
+
+            # ===== Submit único
+            submitted_all = st.form_submit_button("🧪 Validar evaluación N2")
+
+        # ========= Evaluación / Puntuación =========
+        if submitted_all:
+            total_score = 0
+            details_msgs = []
+
+            # --- MCQ
+            correct_label = "B) PEPS (Primero en Entrar, Primero en Salir)"
+            mcq_ok = (q1 == correct_label)
+            total_score += 1 if mcq_ok else 0
+            details_msgs.append(f"Selección múltiple: {'✅' if mcq_ok else '❌'}")
+
+            # --- Abiertas con IA (fallback heurístico si no se pide IA)
+            import re
+            score_a1 = score_a2 = 0
+            fb1 = fb2 = ""
+
+            if ask_ai_open and (a1.strip() or a2.strip()):
+                if a1.strip():
+                    prompt1 = (
+                        "Califica la respuesta en 'SCORE: 1' si explica por qué es importante elegir el método de inventarios, "
+                        "mencionando al menos dos de: (a) CMV y utilidad/bruta, (b) estados financieros, (c) impuestos/decisiones/ comparabilidad. "
+                        "Si no cumple, 'SCORE: 0'. Luego brinda 2-3 líneas de feedback.\n\n"
+                        f"RESPUESTA:\n{a1}"
                     )
+                    fb1 = ia_feedback(prompt1)
+                    m1 = re.search(r"SCORE:\s*([01])", fb1 or "", re.IGNORECASE)
+                    score_a1 = 1 if (m1 and m1.group(1) == "1") else 0
+
+                if a2.strip():
+                    prompt2 = (
+                        "Califica en 'SCORE: 1' si propone una situación práctica donde el Promedio Ponderado sea más conveniente que PEPS/UEPS "
+                        "(compras frecuentes, costos variables, menor volatilidad del CMV, simplificación operativa) y lo justifica con 1-2 argumentos. "
+                        "Si no cumple, 'SCORE: 0'. Luego brinda 2-3 líneas de feedback.\n\n"
+                        f"RESPUESTA:\n{a2}"
+                    )
+                    fb2 = ia_feedback(prompt2)
+                    m2 = re.search(r"SCORE:\s*([01])", fb2 or "", re.IGNORECASE)
+                    score_a2 = 1 if (m2 and m2.group(1) == "1") else 0
+            else:
+                # Fallback simple sin IA
+                kw1 = ["CMV","utilidad","estados","financieros","impuestos","decisiones","comparabilidad","balance","estado de resultados"]
+                if sum(1 for k in kw1 if k.lower() in (a1 or "").lower()) >= 3:
+                    score_a1 = 1
+                kw2 = ["compras frecuentes","costos variables","volatilidad","simplificar","promedio","operativo","consistencia"]
+                if sum(1 for k in kw2 if k.lower() in (a2 or "").lower()) >= 2:
+                    score_a2 = 1
+
+            total_score += score_a1 + score_a2
+            details_msgs.append(f"Pregunta abierta 2: {'✅' if score_a1==1 else '❌'}")
+            details_msgs.append(f"Pregunta abierta 3: {'✅' if score_a2==1 else '❌'}")
+
+            # --- Ejercicio PP (validación clave de saldos por día)
+            def _get_num_safe(row, key):
+                v = row.get(key, "")
+                try:
+                    if v in (None, ""): return None
+                    return float(v)
+                except:
+                    return None
+
+            tol = 0.5
+            def near(a,b):
+                return (a is not None) and (abs(a-b) <= tol)
+
+            # Esperados PP
+            pp_r1_q = inv0_u
+            pp_r1_tot = inv0_u * inv0_pu
+            pp_r2_q, pp_r2_pu, pp_r2_tot = pp_after_c1[0], pp_after_c1[1], pp_after_c1[2]
+            pp_r3_q, pp_r3_pu, pp_r3_tot = pp_after_sale[0], pp_after_sale[1], pp_after_sale[2]
+            pp_r4_q, pp_r4_pu, pp_r4_tot = pp_final[0], pp_final[1], pp_final[2]
+
+            try:
+                r1 = pp_edit.iloc[0].to_dict()
+                r2 = pp_edit.iloc[1].to_dict()
+                r3 = pp_edit.iloc[2].to_dict()
+                r4 = pp_edit.iloc[3].to_dict()
+
+                ok_pp = (
+                    near(_get_num_safe(r1,"Saldo_cant"), pp_r1_q) and
+                    near(_get_num_safe(r1,"Saldo_total"), pp_r1_tot) and
+                    near(_get_num_safe(r2,"Saldo_cant"), pp_r2_q) and
+                    ( (_get_num_safe(r2,"Saldo_pu") is None) or near(_get_num_safe(r2,"Saldo_pu"), pp_r2_pu) ) and
+                    near(_get_num_safe(r2,"Saldo_total"), pp_r2_tot) and
+                    near(_get_num_safe(r3,"Saldo_cant"), pp_r3_q) and
+                    ( (_get_num_safe(r3,"Saldo_pu") is None) or near(_get_num_safe(r3,"Saldo_pu"), pp_r3_pu) ) and
+                    near(_get_num_safe(r3,"Saldo_total"), pp_r3_tot) and
+                    near(_get_num_safe(r4,"Saldo_cant"), pp_r4_q) and
+                    ( (_get_num_safe(r4,"Saldo_pu") is None) or near(_get_num_safe(r4,"Saldo_pu"), pp_r4_pu) ) and
+                    near(_get_num_safe(r4,"Saldo_total"), pp_r4_tot)
+                )
+            except Exception:
+                ok_pp = False
+
+            total_score += 1 if ok_pp else 0
+            details_msgs.append(f"Ejercicio PP: {'✅' if ok_pp else '❌'}")
+
+            # --- Ejercicio PEPS (validación por fila esperada, con tolerancia)
+            ok_peps = True
+            try:
+                for i, exp in enumerate(peps_rows_expected):
+                    row = peps_edit.iloc[i].to_dict()
+                    # Entrada (si aplica)
+                    if exp["ent_q"] != "":
+                        ok_peps &= near(_get_num_safe(row,"Entrada_cant"), exp["ent_q"])
+                        ok_peps &= near(_get_num_safe(row,"Entrada_pu"), exp["ent_pu"])
+                        ok_peps &= near(_get_num_safe(row,"Entrada_total"), exp["ent_tot"])
+                    # Salida (si aplica)
+                    if exp["sal_q"] != "":
+                        ok_peps &= near(_get_num_safe(row,"Salida_cant"), exp["sal_q"])
+                        ok_peps &= near(_get_num_safe(row,"Salida_pu"), exp["sal_pu"])
+                        ok_peps &= near(_get_num_safe(row,"Salida_total"), exp["sal_tot"])
+                    # Saldo
+                    ok_peps &= ( (_get_num_safe(row,"Saldo_cant") is None) or near(_get_num_safe(row,"Saldo_cant"), exp["sdo_q"]) )
+                    ok_peps &= ( (_get_num_safe(row,"Saldo_pu")   is None) or near(_get_num_safe(row,"Saldo_pu"),   exp["sdo_pu"]) )
+                    ok_peps &= ( (_get_num_safe(row,"Saldo_total")is None) or near(_get_num_safe(row,"Saldo_total"),exp["sdo_tot"]) )
+            except Exception:
+                ok_peps = False
+
+            total_score += 1 if ok_peps else 0
+            details_msgs.append(f"Ejercicio PEPS: {'✅' if ok_peps else '❌'}")
+
+            # ===== Resultado final =====
+            st.markdown("---")
+            st.metric("Puntaje total", f"{total_score}/5")
+            st.write(" | ".join(details_msgs))
+
+            passed = (total_score >= 5)
+            record_attempt(username, level=2, score=total_score, passed=passed)
 
             if passed:
-                set_level_passed(st.session_state["progress_col"], username, "level2", score)
+                set_level_passed(st.session_state["progress_col"], username, "level2", total_score)
                 st.session_state["sidebar_next_select"] = "Nivel 3: Devoluciones"
                 start_celebration(
                     message_md=(
-                        "<b>¡Nivel 2 completado!</b> 🧠✨<br><br>"
-                        "Ya dominas <b>PP / PEPS / UEPS</b>. Vamos a meterle realismo: "
-                        "<b>devoluciones</b> que ajustan compras y ventas."
+                        "<b>¡Nivel 2 aprobado!</b> 🎉<br><br>"
+                        "Dominaste <b>PP / PEPS / UEPS</b> en teoría y práctica. "
+                        "Sigamos con el <b>Nivel 3</b>: <i>Devoluciones</i>."
                     ),
-                    next_label="Nivel 3",
+                    next_label="Ir al Nivel 3",
                     next_key_value="Nivel 3: Devoluciones"
                 )
-
             else:
-                st.error(f"No aprobado. Aciertos {score}/3. Repasa y vuelve a intentar.")
-                if fb:
-                    with st.expander("💬 Feedback de la IA"):
-                        st.write(fb)
+                st.error("No aprobado. Necesitas 5/5. Revisa tus respuestas y vuelve a intentarlo.")
+                if ask_ai_open and (fb1 or fb2):
+                    with st.expander("💬 Feedback de la IA (preguntas abiertas)"):
+                        if fb1:
+                            st.markdown("**Pregunta 2**")
+                            st.write(fb1)
+                        if fb2:
+                            st.markdown("**Pregunta 3**")
+                            st.write(fb2)
 
 # ===========================
 # NIVEL 3 (Devoluciones)
