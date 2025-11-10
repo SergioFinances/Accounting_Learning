@@ -5240,10 +5240,10 @@ def page_level4(username):
         components.html(html, height=860, scrolling=True)
 
     with tabs[2]:
-        st.subheader("Práctica IA: KARDEX y Estado de Resultados (Nivel 4)")
-        st.caption("Genera un escenario, completa el KARDEX y luego construye el Estado de Resultados. Valida y recibe retroalimentación.")
+        st.subheader("Práctica IA: Estado de Resultados (Nivel 4)")
+        st.caption("Genera un escenario, observa el KARDEX de referencia y completa el Estado de Resultados. Valida y recibe retroalimentación.")
 
-        # ========= Namespacing de claves para evitar colisiones =========
+        # ========= Prefijo de claves (namespacing) =========
         KP = "lvl4_"
         K = lambda name: f"{KP}{name}"
 
@@ -5270,7 +5270,7 @@ def page_level4(username):
             ss.setdefault(K("otros_ing"), 40.0)
             ss.setdefault(K("otros_egr"), 20.0)
             ss.setdefault(K("tasa"), 0.30)
-            # para vista KARDEX de referencia
+            # método para visualizar KARDEX de referencia
             ss.setdefault(K("kdx_view_metodo"), ss[K("metodo")])
 
         def _n4_randomize_scenario():
@@ -5286,7 +5286,7 @@ def page_level4(username):
             go_vals = sorted(random.sample([80.0, 90.0, 100.0, 120.0, 140.0, 150.0], 3))
             otros_ing = random.choice([20.0, 30.0, 40.0, 50.0])
             otros_egr = random.choice([10.0, 15.0, 20.0, 25.0])
-            tasa = random.choice([0.19, 0.25, 0.3])
+            tasa = random.choice([0.19, 0.25, 0.30])
 
             ss = st.session_state
             ss[K("inv0_u")]  = inv0_u
@@ -5308,7 +5308,7 @@ def page_level4(username):
 
         _n4_ensure_default_state()
 
-        # ====== CONTROLES SUPERIORES (método + aleatorio) — ANTES de todo ======
+        # ====== CONTROLES SUPERIORES: Método + Aleatorio (ANTES del KARDEX) ======
         ctop1, ctop2 = st.columns([1.3, 1])
         with ctop1:
             st.selectbox(
@@ -5327,7 +5327,7 @@ def page_level4(username):
         # =========================
         # Escenario visible (inputs)
         # =========================
-        st.markdown("#### 🎯 Escenario del ejercicio (fijado para este intento)")
+        st.markdown("#### 🎯 Escenario del ejercicio")
         colA, colB, colC = st.columns(3)
         with colA:
             st.number_input("Día 1: inventario inicial (u)", min_value=0, step=1, key=K("inv0_u"))
@@ -5395,7 +5395,7 @@ def page_level4(username):
             return sale_details, final_layers
 
         # =========================
-        # Construcción de KARDEX esperado (según método)
+        # KARDEX de referencia (según método)
         # =========================
         def _build_kardex_expected(method_name):
             ss = st.session_state
@@ -5408,12 +5408,10 @@ def page_level4(username):
             rows = []
             layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
             s_q, s_p, s_v = _sum_layers(layers)
-            rows.append({
-                "Fecha":"Día 1","Descripción":"Saldo inicial",
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
-                "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-            })
+            rows.append({"Fecha":"Día 1","Descripción":"Saldo inicial",
+                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                        "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             if method_name == "Promedio Ponderado":
                 ent_tot = c1_u * c1_pu
@@ -5422,27 +5420,21 @@ def page_level4(username):
                 p_new = (v_new / q_new) if q_new > 0 else 0.0
                 layers = [[q_new, p_new]]
                 s_q, s_p, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha":"Día 2","Descripción":"Compra",
-                    "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                })
+                rows.append({"Fecha":"Día 2","Descripción":"Compra",
+                            "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
+                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
             else:
-                rows.append({
-                    "Fecha":"Día 2","Descripción":"Saldo (día 1)",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                })
+                rows.append({"Fecha":"Día 2","Descripción":"Saldo (día 1)",
+                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
                 ent_tot = c1_u * c1_pu
                 layers.append([float(c1_u), float(c1_pu)])
-                rows.append({
-                    "Fecha":"Día 2","Descripción":"Compra",
-                    "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
-                    "Saldo_cant": c1_u, "Saldo_pu": round(c1_pu,2), "Saldo_total": round(ent_tot,2)
-                })
+                rows.append({"Fecha":"Día 2","Descripción":"Compra",
+                            "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
+                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Saldo_cant": c1_u, "Saldo_pu": round(c1_pu,2), "Saldo_total": round(ent_tot,2)})
                 s_q, s_p, s_v = _sum_layers(layers)
 
             if v_u > 0 and s_q > 0:
@@ -5455,13 +5447,10 @@ def page_level4(username):
                     p2 = (v2/q2) if q2 > 0 else 0.0
                     layers = [[q2, p2]] if q2 > 0 else []
                     s_q, s_p, s_v = _sum_layers(layers)
-                    rows.append({
-                        "Fecha":"Día 3","Descripción":"Venta",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                        "Salida_cant": sale_q, "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
-                        "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                    })
-                    sale_details = [(sale_q, sale_pu, sale_tot)]
+                    rows.append({"Fecha":"Día 3","Descripción":"Venta",
+                                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                                "Salida_cant": sale_q, "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
+                                "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
                 else:
                     fifo = (method_name == "PEPS (FIFO)")
                     sale_details, layers_after = _consume_layers_detail(layers, v_u, fifo=fifo)
@@ -5470,22 +5459,17 @@ def page_level4(username):
                     for i,(q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
                         _, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
                         rq, rpu, rv = _sum_layers(running_layers)
-                        rows.append({
-                            "Fecha":"Día 3","Descripción": f"Venta tramo {i} ({tag})",
-                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                            "Salida_cant": q_take, "Salida_pu": round(pu_take,2), "Salida_total": round(tot_take,2),
-                            "Saldo_cant": rq, "Saldo_pu": round(rpu,2), "Saldo_total": round(rv,2)
-                        })
+                        rows.append({"Fecha":"Día 3","Descripción": f"Venta tramo {i} ({tag})",
+                                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                                    "Salida_cant": q_take, "Salida_pu": round(pu_take,2), "Salida_total": round(tot_take,2),
+                                    "Saldo_cant": rq, "Saldo_pu": round(rpu,2), "Saldo_total": round(rv,2)})
                     layers = layers_after
                     s_q, s_p, s_v = _sum_layers(layers)
             else:
-                rows.append({
-                    "Fecha":"Día 3","Descripción":"Venta",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                })
-                sale_details = []
+                rows.append({"Fecha":"Día 3","Descripción":"Venta",
+                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             # D4 devolución compra
             if method_name == "Promedio Ponderado":
@@ -5497,12 +5481,10 @@ def page_level4(username):
                 p4 = (v4/q4) if q4 > 0 else 0.0
                 layers = [[q4, p4]] if q4 > 0 else []
                 s_q, s_p, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha":"Día 4","Descripción":"Devolución de compra",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant": int(take_q), "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                })
+                rows.append({"Fecha":"Día 4","Descripción":"Devolución de compra",
+                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                            "Salida_cant": int(take_q), "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
+                            "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
             else:
                 send_back = st.session_state[K("dev_comp_u")]
                 rev = layers[::-1]
@@ -5521,69 +5503,38 @@ def page_level4(username):
                         new_rev.append([rest, pu])
                 layers = new_rev[::-1]
                 s_q, s_p, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha":"Día 4","Descripción":"Devolución de compra",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant": int(take_q_total), "Salida_pu":"", "Salida_total": round(dev_val,2),
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                })
+                rows.append({"Fecha":"Día 4","Descripción":"Devolución de compra",
+                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                            "Salida_cant": int(take_q_total), "Salida_pu":"", "Salida_total": round(dev_val,2),
+                            "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             # D5 devolución venta
             if st.session_state[K("dev_vent_u")] > 0:
                 dvent = st.session_state[K("dev_vent_u")]
-                if method_name == "Promedio Ponderado":
-                    in_q  = dvent
-                    in_pu = s_p
-                    in_val= in_q * in_pu
-                    q5 = s_q + in_q
-                    v5 = s_v + in_val
-                    p5 = (v5/q5) if q5 > 0 else 0.0
-                    layers = [[q5, p5]]
-                    s_q, s_p, s_v = _sum_layers(layers)
-                    rows.append({
-                        "Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
-                        "Entrada_cant": int(in_q), "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
-                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
-                        "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                    })
-                else:
-                    # Reincorporar a costos usados
-                    devolver = dvent
-                    details = []
-                    # reconstruimos sale_details para costo (si no existe, aproximamos por capas)
-                    # Para validar al estudiante solo importa el saldo final correcto y movimientos coherentes
-                    # Tomamos el costo desde las capas consumidas en la venta anterior:
-                    # (para simplicidad en referencia, usamos el costo promedio actual)
-                    in_pu = s_p
-                    layers.append([float(devolver), float(in_pu)])
-                    s_q, s_p, s_v = _sum_layers(layers)
-                    in_val = devolver * in_pu
-                    rows.append({
-                        "Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
-                        "Entrada_cant": int(devolver), "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
-                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
-                        "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                    })
+                in_pu = s_p  # referencia para mostrar
+                in_val= dvent * in_pu
+                layers.append([float(dvent), float(in_pu)])
+                s_q, s_p, s_v = _sum_layers(layers)
+                rows.append({"Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
+                            "Entrada_cant": int(dvent), "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
+                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
             else:
-                rows.append({
-                    "Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
-                })
+                rows.append({"Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
+                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             return rows
 
         # =========================
-        # PyG esperado (para validador del ER)
+        # PyG esperado (para el validador del ER)
         # =========================
         def _build_pyg_expected_from_kardex():
             ss = st.session_state
-            # usamos el método principal
             method_name = ss[K("metodo")]
             rows = _build_kardex_expected(method_name)
 
-            # Calcular CMV bruto y costo de devolución venta desde las filas del KARDEX:
             cmvb = 0.0
             cdev = 0.0
             for r in rows:
@@ -5595,11 +5546,10 @@ def page_level4(username):
                     val_in = r.get("Entrada_total","")
                     cdev += float(val_in) if val_in != "" else 0.0
 
-            ventas_brutas     = st.session_state[K("venta_u")] * st.session_state[K("p_venta")]
-            dev_ventas_brutas = st.session_state[K("dev_vent_u")] * st.session_state[K("p_venta")]
-            compras_brutas    = st.session_state[K("comp1_u")] * st.session_state[K("comp1_pu")]
+            ventas_brutas     = ss[K("venta_u")] * ss[K("p_venta")]
+            dev_ventas_brutas = ss[K("dev_vent_u")] * ss[K("p_venta")]
+            compras_brutas    = ss[K("comp1_u")] * ss[K("comp1_pu")]
 
-            # Devolución en compras desde KARDEX:
             dev_compras_valor = 0.0
             for r in rows:
                 if r["Fecha"]=="Día 4" and "Devolución de compra" in r["Descripción"]:
@@ -5612,12 +5562,12 @@ def page_level4(username):
             cmv_neto      = cmvb - cdev
             utilidad_bruta= ventas_netas - cmv_neto
 
-            go_vals = [st.session_state[K("go_1_val")], st.session_state[K("go_2_val")], st.session_state[K("go_3_val")]]
+            go_vals = [ss[K("go_1_val")], ss[K("go_2_val")], ss[K("go_3_val")]]
             gastos_op = sum(go_vals)
 
             resultado_operativo = utilidad_bruta - gastos_op
-            utilidad_ai = resultado_operativo + float(st.session_state[K("otros_ing")]) - float(st.session_state[K("otros_egr")])
-            impuesto = max(utilidad_ai, 0.0) * float(st.session_state[K("tasa")])
+            utilidad_ai = resultado_operativo + float(ss[K("otros_ing")]) - float(ss[K("otros_egr")])
+            impuesto = max(utilidad_ai, 0.0) * float(ss[K("tasa")])
             utilidad_neta = utilidad_ai - impuesto
 
             return {
@@ -5633,153 +5583,32 @@ def page_level4(username):
                 "Utilidad bruta": utilidad_bruta,
                 "Gastos operativos": gastos_op,
                 "Resultado operativo": resultado_operativo,
-                "Otros ingresos": float(st.session_state[K("otros_ing")]),
-                "Otros egresos": float(st.session_state[K("otros_egr")]),
+                "Otros ingresos": float(ss[K("otros_ing")]),
+                "Otros egresos": float(ss[K("otros_egr")]),
                 "Utilidad antes de impuesto": utilidad_ai,
                 "Impuesto": impuesto,
                 "Utilidad neta": utilidad_neta
             }
 
         # =========================
-        # Secciones: KARDEX (práctica y referencia) + Estado de Resultados
+        # Mostrar KARDEX de referencia (desplegable por método)
         # =========================
         st.markdown("---")
-        st.markdown("### 🧮 KARDEX del período")
-
-        # --- Selector del método para ver el KARDEX de referencia
+        st.markdown("### 🧮 KARDEX de referencia")
         st.selectbox(
-            "KARDEX de referencia — método",
+            "Visualizar KARDEX con método:",
             ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
             key=K("kdx_view_metodo")
         )
-
-        # --- KARDEX de referencia (calculado)
-        expected_rows_for_view = _build_kardex_expected(st.session_state[K("kdx_view_metodo")])
-        df_kdx_ref = pd.DataFrame(expected_rows_for_view)
-        with st.expander("👀 Ver KARDEX de referencia (calculado)"):
-            st.dataframe(df_kdx_ref, use_container_width=True)
-
-        # --- KARDEX práctica (plantilla en blanco + validador)
-        st.markdown("#### ✍️ Completa tu KARDEX (Días 1–5)")
-        st.caption("Deja en BLANCO las celdas no aplicables. Luego valida.")
-        # Plantilla en blanco basada en el método principal (para que coincida con PyG)
-        expected_rows_for_practice = _build_kardex_expected(st.session_state[K("metodo")])
-
-        def _blank_like(r):
-            return {
-                "Fecha": r["Fecha"], "Descripción": r["Descripción"],
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
-                "Saldo_cant":"",   "Saldo_pu":"",   "Saldo_total":""
-            }
-        plant_rows = [_blank_like(r) for r in expected_rows_for_practice]
-        all_cols = ["Fecha","Descripción",
-                    "Entrada_cant","Entrada_pu","Entrada_total",
-                    "Salida_cant","Salida_pu","Salida_total",
-                    "Saldo_cant","Saldo_pu","Saldo_total"]
-        df_kdx_blank = pd.DataFrame(plant_rows)[all_cols]
-
-        col_config_kdx = {
-            "Fecha":          st.column_config.TextColumn(disabled=True),
-            "Descripción":    st.column_config.TextColumn(disabled=True),
-            "Entrada_cant":   st.column_config.NumberColumn(step=1,    help="Unidades que ingresan"),
-            "Entrada_pu":     st.column_config.NumberColumn(step=0.01, help="Costo unitario de la entrada"),
-            "Entrada_total":  st.column_config.NumberColumn(step=0.01, help="Valor total de la entrada"),
-            "Salida_cant":    st.column_config.NumberColumn(step=1,    help="Unidades que salen"),
-            "Salida_pu":      st.column_config.NumberColumn(step=0.01, help="Costo unitario de la salida"),
-            "Salida_total":   st.column_config.NumberColumn(step=0.01, help="Valor total de la salida"),
-            "Saldo_cant":     st.column_config.NumberColumn(step=1,    help="Unidades en saldo"),
-            "Saldo_pu":       st.column_config.NumberColumn(step=0.01, help="Costo unitario del saldo"),
-            "Saldo_total":    st.column_config.NumberColumn(step=0.01, help="Valor total del saldo"),
-        }
-
-        edited_kdx = st.data_editor(
-            df_kdx_blank,
-            use_container_width=True,
-            hide_index=True,
-            column_config=col_config_kdx,
-            key=K("kdx_student_editor"),
-            num_rows="fixed",
-            disabled=False
-        )
-
-        with st.form(K("kdx_check_form")):
-            ask_ai_kdx = st.checkbox("💬 Retroalimentación de IA (opcional) para KARDEX", value=False, key=K("ai_kdx_cb"))
-            submitted_kdx = st.form_submit_button("✅ Validar mi KARDEX")
-
-        if submitted_kdx:
-            tol = 0.5
-            def _to_float(x):
-                try:
-                    if x in (None,""): return None
-                    return float(x)
-                except: return None
-            def _near(a,b):
-                if a is None or b is None: return False
-                return abs(a-b) <= tol
-
-            kdx_checks = []
-            ok_rows = 0
-            for i in range(len(expected_rows_for_practice)):
-                user = edited_kdx.iloc[i].to_dict()
-                exp  = expected_rows_for_practice[i]
-                ok_cells = []
-                for key in ["Entrada_cant","Entrada_pu","Entrada_total",
-                            "Salida_cant","Salida_pu","Salida_total",
-                            "Saldo_cant","Saldo_pu","Saldo_total"]:
-                    exp_val = exp[key]
-                    usr_val = _to_float(user.get(key,""))
-                    if exp_val == "":
-                        ok = (usr_val is None)
-                    else:
-                        ok = _near(usr_val, float(exp_val))
-                    ok_cells.append(ok)
-                row_ok = all(ok_cells)
-                if row_ok: ok_rows += 1
-                kdx_checks.append((f"{exp['Fecha']} · {exp['Descripción']}", row_ok))
-
-            st.metric("KARDEX — filas correctas", f"{ok_rows}/{len(expected_rows_for_practice)}")
-            for label, ok in kdx_checks:
-                st.write(("✅ " if ok else "❌ ") + label)
-
-            if ok_rows == len(expected_rows_for_practice):
-                st.success("¡Excelente! Tu KARDEX coincide con el método y movimientos del período.")
-            else:
-                st.warning("Hay diferencias. Revisa cantidades, costos y el método aplicado por día.")
-
-            if ask_ai_kdx:
-                try:
-                    def _row_summary(idx):
-                        r = edited_kdx.iloc[idx].to_dict()
-                        def g(k):
-                            v = _to_float(r.get(k,""))
-                            return "—" if v is None else f"{v:.2f}"
-                        return (f"{edited_kdx.iloc[idx]['Fecha']} {edited_kdx.iloc[idx]['Descripción']}: "
-                                f"E({g('Entrada_cant')},{g('Entrada_pu')},{g('Entrada_total')}) | "
-                                f"S({g('Salida_cant')},{g('Salida_pu')},{g('Salida_total')}) | "
-                                f"Saldo({g('Saldo_cant')},{g('Saldo_pu')},{g('Saldo_total')})")
-                    intento = "\n".join(_row_summary(i) for i in range(len(expected_rows_for_practice)))
-                    metodo = st.session_state[K("metodo")]
-                    with st.spinner("Generando retroalimentación de IA…"):
-                        fb_kdx = ia_feedback(
-                            "Evalúa el KARDEX diligenciado por el estudiante (Días 1–5). "
-                            f"Método: {metodo}. Indica errores por fila, coherencia en costos unitarios "
-                            "y tips para no confundir promedios con PEPS/UEPS.\n\n"
-                            "Entradas del estudiante:\n" + intento
-                        )
-                    with st.expander("💬 Retroalimentación de la IA (KARDEX)"):
-                        st.write(fb_kdx)
-                except Exception as e:
-                    st.info("Retroalimentación de IA (KARDEX) no disponible en este entorno.")
-                    st.caption(f"Detalle técnico: {e}")
+        df_kdx_ref = pd.DataFrame(_build_kardex_expected(st.session_state[K("kdx_view_metodo")]))
+        st.dataframe(df_kdx_ref, use_container_width=True)
 
         # =========================
         # Estado de Resultados (editor + validador)
         # =========================
         st.markdown("---")
-        st.markdown("### 📑 Estado de Resultados")
+        st.markdown("### 📑 Estado de Resultados — completa los valores")
 
-        # PyG esperado se arma a partir del KARDEX (del método principal)
         pyg_expected = _build_pyg_expected_from_kardex()
 
         order_rows = [
@@ -5803,8 +5632,7 @@ def page_level4(username):
         ]
         df_blank_pyg = pd.DataFrame({"Rubro": order_rows, "Valor": [""]*len(order_rows)})
 
-        st.markdown("#### ✍️ Diligencia el Estado de Resultados")
-        st.caption("Ingresa los valores numéricos. El validador exige coherencia total con tu KARDEX y el método seleccionado.")
+        st.caption("Ingresa los valores numéricos. El validador exige coherencia total con el escenario y el método seleccionado.")
         edited_pyg = st.data_editor(
             df_blank_pyg,
             use_container_width=True,
@@ -5850,7 +5678,7 @@ def page_level4(username):
             if correct_rows == len(order_rows):
                 st.success("¡Excelente! Tu Estado de Resultados es consistente con el escenario y el método.")
             else:
-                st.warning("Hay diferencias. Revisa la secuencia y los vínculos con el KARDEX: Ventas/Compras/CMV/Impuesto.")
+                st.warning("Hay diferencias. Revisa la secuencia y los vínculos con el KARDEX (Ventas/Compras/CMV/Impuesto).")
 
             if ask_ai:
                 try:
@@ -5868,7 +5696,7 @@ def page_level4(username):
                         "(3) tips para no confundir CMV bruto/neto, compras netas y cálculo del impuesto."
                     )
                     with st.spinner("Generando retroalimentación de IA…"):
-                        fb_text = ia_feedback(prompt_fb)
+                        fb_text = ia_feedback(prompt_fb)  # si no existe, caerá al except
                     with st.expander("💬 Retroalimentación de la IA (Estado de Resultados)"):
                         st.write(fb_text)
                 except Exception as e:
