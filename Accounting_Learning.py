@@ -3953,22 +3953,19 @@ def page_level3(username):
                 "lo que sesga la utilidad y las decisiones de gestión."
             )
 
-        def _general_fallback(q1_ok: bool, q2_ok: bool, q3_ok: bool, q4_ok: bool, q5_ok: bool) -> str:
-            """Feedback global si la IA no responde."""
-            tips = []
-            if not q1_ok:
-                tips.append("Revisa que la devolución en **compras** disminuye compras netas y el costo disponible.")
-            if not q2_ok:
-                tips.append("En **PEPS**, reingresa devoluciones de venta con **capas antiguas**.")
-            if not q3_ok:
-                tips.append("Una devolución en venta **disminuye el CMV neto** del periodo.")
-            if not q4_ok:
-                tips.append("Explica el **costo correcto según el método** y su efecto en **CMV/saldo/comparabilidad**.")
-            if not q5_ok:
-                tips.append("En **PP**, calcula con el **promedio vigente** antes de cada salida/entrada.")
-            if not tips:
-                tips = ["Buen trabajo; consolida el criterio de costeo de devoluciones y su impacto en CMV e inventarios."]
-            return "Feedback general:\n- " + "\n- ".join(tips[:3])
+        def _sanitize_on_topic_q4(text: str) -> str:
+            """Filtra contenido fuera de tema (debe/haber, IVA, asientos, etc.) y devuelve fallback si aparece."""
+            if not text:
+                return _on_topic_fallback_q4()
+            banned = [
+                "debe", "haber", "asiento", "apertura", "cierre", "diario",
+                "iva repercutido", "iva soportado", "iva", "cuentas t",
+                "resultado del ejercicio", "balance de comprobación"
+            ]
+            low = text.lower()
+            if any(b in low for b in banned):
+                return _on_topic_fallback_q4()
+            return text
 
         def safe_ia_feedback(prompt: str, default: str = "", tries: int = 3, base_sleep: float = 0.8) -> str:
             """
@@ -4163,6 +4160,9 @@ def page_level3(username):
                 key="n3_q4"
             )
 
+            # Solo feedback de IA para Q4
+            ask_ai_q4 = st.checkbox("💬 Pedir feedback SOLO para la pregunta 4 (opcional)", key="n3_eval_ai_q4", value=False)
+
             st.markdown("### Ejercicio tipo práctica (Promedio Ponderado)")
             st.caption("**Q5**: Completa el KARDEX D1–D5. Tabla completamente en blanco. **Método: Promedio Ponderado**.")
 
@@ -4217,7 +4217,6 @@ def page_level3(username):
                 key="n3_q5_editor_v3"   # clave nueva para evitar reciclar valores
             )
 
-            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n3_eval_ai", value=False)
             submitted = st.form_submit_button("🧪 Enviar evaluación")
 
         # =========================
@@ -4269,8 +4268,14 @@ def page_level3(username):
 
             q4_score1, q4_fb = grade_open_q4(q4_text or "")
 
+            # Solo mostramos feedback IA para Q4 si el usuario lo pidió
+            if ask_ai_q4:
+                q4_fb = _sanitize_on_topic_q4(q4_fb)
+            else:
+                q4_fb = ""
+
             # Q5 validación (tolerancia)
-            TOL = 0.5
+            TOL = 10
             num_keys = [
                 "Entrada_cant","Entrada_pu","Entrada_total",
                 "Salida_cant","Salida_pu","Salida_total",
@@ -4306,24 +4311,6 @@ def page_level3(username):
             total_hits = int(q1_ok) + int(q2_ok) + int(q3_ok) + int(q4_score1) + int(q5_ok)
             passed = (total_hits == 5)
 
-            # --- Genera feedback general (si se pidió) ANTES de renderizar expanders ---
-            fb_general = None
-            if ask_ai:
-                # pedir IA; si hay 429, se marca el flag y se usa fallback
-                with st.spinner("Generando feedback general…"):
-                    prompt_general = (
-                        "Genera feedback global (120-160 palabras), tono docente y concreto, sin emojis.\n"
-                        "Estructura: (1) síntesis del desempeño; (2) 2–3 tips accionables.\n"
-                        f"Resultados: Q1 ok={q1_ok}, Q2 ok={q2_ok}, Q3 ok={q3_ok}, "
-                        f"Q4 ok={q4_score1==1}, Q5 ok={q5_ok}.\n"
-                        "Enfócate en devoluciones, método de valoración, CMV y saldo."
-                    )
-                    tmp = safe_ia_feedback(prompt_general, default="")
-                    rate_limited = bool(st.session_state.get("n3_ai_rate_limited", False))
-                    fb_general = tmp if (tmp and not rate_limited) else _general_fallback(
-                        q1_ok, q2_ok, q3_ok, q4_score1==1, q5_ok
-                    )
-
             try:
                 record_attempt(username, level=3, score=total_hits, passed=passed)
             except Exception:
@@ -4334,27 +4321,18 @@ def page_level3(username):
             with cA: st.metric("Aciertos", f"{total_hits}/5")
             with cB: st.metric("Estado", "APROBADO ✅" if passed else "NO APROBADO ❌")
 
-            # Solo DETALLE en este expander (no anidar otro expander adentro)
+            # Solo DETALLE en este expander
             with st.expander("Detalle de corrección"):
                 st.write(f"**Q1:** {'✅' if q1_ok else '❌'}")
                 st.write(f"**Q2:** {'✅' if q2_ok else '❌'}")
                 st.write(f"**Q3:** {'✅' if q3_ok else '❌'}")
                 st.write(f"**Q4 (abierta):** {'✅' if q4_score1==1 else '❌'}")
-                if q4_fb:
-                    st.write("**Feedback Q4:**")
+                if ask_ai_q4 and q4_fb:
+                    st.write("**Feedback Q4 (IA):**")
                     st.write(q4_fb)
                 st.write(f"**Q5 (KARDEX PP):** {'✅' if q5_ok else '❌'}")
                 if not q5_ok:
                     st.caption("Pistas: revisa el costo promedio vigente antes de cada devolución y cómo impacta el saldo.")
-
-            # Renderiza el feedback general FUERA del expander de detalle
-            if ask_ai and fb_general:
-                st.markdown("### 💬 Feedback general")
-                st.write(fb_general)
-                # Aviso si hubo rate-limit
-                if st.session_state.get("n3_ai_rate_limited"):
-                    st.info("El servicio de IA externo está temporalmente limitado (429). "
-                            "Te mostré un **feedback local** basado en la rúbrica del curso.", icon="ℹ️")
 
             if passed:
                 try:
