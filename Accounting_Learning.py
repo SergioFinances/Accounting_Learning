@@ -12,6 +12,7 @@ import random
 import ssl
 import json as _json
 from datetime import datetime, timezone
+import time
 
 import numpy as np
 import pandas as pd
@@ -19,6 +20,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 import json, re
+import pandas as _pd
 
 # ===========================
 # Constantes
@@ -3313,7 +3315,6 @@ def page_level3(username):
             dev_comp_u, dev_venta_u
         )
 
-
         import json as _json
         html_demo_template = """
         <style>
@@ -5705,58 +5706,586 @@ def page_level4(username):
 
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 4")
-        st.caption("Necesitas acertar **2 de 3** para terminar el curso.")
+        st.caption("Debes acertar **5 de 5** para aprobar y avanzar.")
 
-        with st.form("n4_eval_form"):
-            q1 = st.radio("1) Ventas netas se calculan como:",
-                          ["Ventas brutas + Devoluciones", "Ventas brutas − Devoluciones/Descuentos", "Ventas brutas"], index=None, key="n4_eval_q1")
-            q2 = st.radio("2) Utilidad bruta =",
-                          ["Ventas netas − COGS", "Ventas netas − Gastos operativos", "Ventas brutas − COGS"], index=None, key="n4_eval_q2")
-            q3 = st.radio("3) Utilidad operativa =",
-                          ["Utilidad bruta − Gastos operativos", "Ventas netas − COGS − Gastos financieros", "COGS − Gastos operativos"], index=None, key="n4_eval_q3")
-            ask_ai = st.checkbox("💬 Pedir feedback de IA (opcional)", key="n4_eval_ai", value=False)
-            submitted = st.form_submit_button("🧪 Validar evaluación N4")
+        # ---------- Namespacing (CLAVES ÚNICAS) ----------
+        KP = "n4_final_"
+        K = lambda name: f"{KP}{name}"
 
-        if submitted:
-            st.toast("✅ Respuesta recibida, validando...", icon="✅")
-            correct = {
-                "n4_eval_q1": "Ventas brutas − Devoluciones/Descuentos",
-                "n4_eval_q2": "Ventas netas − COGS",
-                "n4_eval_q3": "Utilidad bruta − Gastos operativos"
+        # =====================================================
+        # Escenario base (SOLO Promedio Ponderado)
+        # =====================================================
+        def exam_scenario_q5():
+            """
+            Este escenario define TODAS las cifras necesarias para:
+            - Construir el KARDEX PP de referencia
+            - Calcular el Estado de Resultados esperado
+            Nota: En la interfaz, SOLO se muestran las variables clave solicitadas.
+            """
+            return {
+                "inv0_u":   90,     # Día 1: inventario inicial (u)
+                "inv0_pu":  10.0,   # Día 1: costo unitario
+                "comp1_u":  50,     # Día 2: compra (u)
+                "comp1_pu": 12.0,   # Día 2: $/u compra
+                "venta_u":  100,    # Día 3: cantidad vendida (u)
+                "p_venta":  20.0,   # Día 3: precio de venta ($/u) — visible
+                "dev_comp": 6,      # Día 4: devolución en compra (u)
+                "dev_venta":8,      # Día 5: devolución en venta (u)
+                "gastos_operativos": [("Publicidad",120.0), ("Servicios",80.0), ("Administrativos",150.0)],
+                "otros_ing": 40.0,  # visible
+                "otros_egr": 20.0,  # visible
+                "tasa": 0.30,       # visible: 30%
+                "metodo": "Promedio Ponderado"
             }
-            answers = {"n4_eval_q1": q1, "n4_eval_q2": q2, "n4_eval_q3": q3}
-            score = sum(1 for k,v in answers.items() if v == correct[k])
-            passed = score >= 2
 
-            record_attempt(username, level=4, score=score, passed=passed)
+        # =====================================================
+        # Helpers: KARDEX & PyG en Promedio Ponderado
+        # =====================================================
+        def _sum_layers(layers):
+            q = sum(q for q, _ in layers)
+            v = sum(q * p for q, p in layers)
+            pu = (v / q) if q > 0 else 0.0
+            return q, pu, v
 
-            fb = None
-            if ask_ai:
-                with st.spinner("Generando feedback con IA..."):
-                    fb = ia_feedback(
-                        f"Nivel 4 evaluación. Respuestas estudiante: {answers}. Correctas: {correct}. "
-                        f"Aciertos: {score}/3. Feedback amable y breve."
+        def _kardex_rows_pp(sc: dict):
+            """
+            Construye el KARDEX D1–D5 (SOLO PP) para mostrarlo como referencia.
+            """
+            inv0_u, inv0_pu = sc["inv0_u"], sc["inv0_pu"]
+            c1_u, c1_pu     = sc["comp1_u"], sc["comp1_pu"]
+            v_u             = sc["venta_u"]
+            dcomp_u         = sc["dev_comp"]
+            dvent_u         = sc["dev_venta"]
+
+            rows = []
+
+            # D1 saldo inicial
+            layers = [[float(inv0_u), float(inv0_pu)]]
+            s_q, s_p, s_v = _sum_layers(layers)
+            rows.append({
+                "Fecha":"Día 1","Descripción":"Saldo inicial",
+                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+            })
+
+            # D2 compra (promediada)
+            ent_tot = c1_u * c1_pu
+            q2 = s_q + c1_u
+            v2 = s_v + ent_tot
+            p2 = (v2 / q2) if q2 > 0 else 0.0
+            layers = [[q2, p2]]
+            s_q, s_p, s_v = _sum_layers(layers)
+            rows.append({
+                "Fecha":"Día 2","Descripción":"Compra",
+                "Entrada_cant": int(c1_u), "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
+                "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+            })
+
+            # D3 venta (al promedio vigente)
+            sale_q  = min(v_u, s_q)
+            sale_pu = layers[0][1] if layers else 0.0
+            sale_tot= sale_q * sale_pu
+            q3 = s_q - sale_q
+            v3 = s_v - sale_tot
+            p3 = (v3 / q3) if q3 > 0 else 0.0
+            layers = [[q3, p3]] if q3 > 0 else []
+            s_q, s_p, s_v = _sum_layers(layers)
+            rows.append({
+                "Fecha":"Día 3","Descripción":"Venta",
+                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                "Salida_cant": int(sale_q), "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
+                "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+            })
+
+            # D4 devolución compra (sale al promedio vigente)
+            take_q  = min(dcomp_u, s_q)
+            take_pu = s_p
+            take_val= take_q * take_pu
+            q4 = s_q - take_q
+            v4 = s_v - take_val
+            p4 = (v4 / q4) if q4 > 0 else 0.0
+            layers = [[q4, p4]] if q4 > 0 else []
+            s_q, s_p, s_v = _sum_layers(layers)
+            rows.append({
+                "Fecha":"Día 4","Descripción":"Devolución de compra",
+                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                "Salida_cant": int(take_q), "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
+                "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+            })
+
+            # D5 devolución venta (reingresa al promedio vigente)
+            in_q  = dvent_u
+            in_pu = s_p
+            in_val= in_q * in_pu
+            q5 = s_q + in_q
+            v5 = s_v + in_val
+            p5 = (v5 / q5) if q5 > 0 else 0.0
+            layers = [[q5, p5]]
+            s_q, s_p, s_v = _sum_layers(layers)
+            rows.append({
+                "Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
+                "Entrada_cant": int(in_q), "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
+                "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+            })
+
+            return rows
+
+        def _pyg_expected_from_scenario_pp(sc: dict):
+            """
+            Calcula el Estado de Resultados esperado (SOLO PP) a partir del escenario.
+            Devuelve un dict con el orden EXACTO de los renglones que mostrará el editor.
+            """
+            inv0_u, inv0_pu = sc["inv0_u"], sc["inv0_pu"]
+            c1_u, c1_pu     = sc["comp1_u"], sc["comp1_pu"]
+            v_u, p_venta    = sc["venta_u"], sc["p_venta"]
+            dcomp_u         = sc["dev_comp"]
+            dvent_u         = sc["dev_venta"]
+            go_vals         = [v for _, v in sc["gastos_operativos"]]
+            otros_ing       = float(sc["otros_ing"])
+            otros_egr       = float(sc["otros_egr"])
+            tasa            = float(sc["tasa"])
+
+            # D1
+            layers = [[float(inv0_u), float(inv0_pu)]]
+            s_q, s_p, s_v = _sum_layers(layers)
+
+            # D2
+            ent_tot = c1_u * c1_pu
+            q2 = s_q + c1_u
+            v2 = s_v + ent_tot
+            p2 = (v2 / q2) if q2 > 0 else 0.0
+            layers = [[q2, p2]]
+            s_q, s_p, s_v = _sum_layers(layers)
+
+            # D3 venta
+            sale_q  = min(v_u, s_q)
+            sale_pu = layers[0][1] if layers else 0.0
+            sale_tot= sale_q * sale_pu
+            q3 = s_q - sale_q
+            v3 = s_v - sale_tot
+            p3 = (v3 / q3) if q3 > 0 else 0.0
+            layers = [[q3, p3]] if q3 > 0 else []
+            s_q, s_p, s_v = _sum_layers(layers)
+            cmv_bruto = sale_tot
+
+            # D4 devolución compra (reduce pool al promedio vigente)
+            take_q  = min(dcomp_u, s_q)
+            take_pu = s_p
+            take_val= take_q * take_pu
+            q4 = s_q - take_q
+            v4 = s_v - take_val
+            p4 = (v4 / q4) if q4 > 0 else 0.0
+            layers = [[q4, p4]] if q4 > 0 else []
+            s_q, s_p, s_v = _sum_layers(layers)
+            dev_compras_valor = take_val
+
+            # D5 devolución venta (reingresa al promedio vigente)
+            in_q  = dvent_u
+            in_pu = s_p
+            in_val= in_q * in_pu
+            q5 = s_q + in_q
+            v5 = s_v + in_val
+            p5 = (v5 / q5) if q5 > 0 else 0.0
+            layers = [[q5, p5]]
+            s_q, s_p, s_v = _sum_layers(layers)
+            costo_dev_venta = in_val
+
+            # PyG
+            ventas_brutas       = v_u * p_venta
+            dev_ventas_brutas   = dvent_u * p_venta
+            ventas_netas        = ventas_brutas - dev_ventas_brutas
+
+            compras_brutas      = c1_u * c1_pu
+            compras_netas       = compras_brutas - dev_compras_valor
+
+            cmv_neto            = cmv_bruto - costo_dev_venta
+            utilidad_bruta      = ventas_netas - cmv_neto
+
+            gastos_op           = sum(go_vals)
+            resultado_operativo = utilidad_bruta - gastos_op
+
+            utilidad_ai         = resultado_operativo + otros_ing - otros_egr
+            impuesto            = max(utilidad_ai, 0.0) * tasa
+            utilidad_neta       = utilidad_ai - impuesto
+
+            # Orden EXACTO que verá el editor
+            return {
+                "Ventas brutas": ventas_brutas,
+                "(-) Devoluciones en ventas": dev_ventas_brutas,
+                "Ventas netas": ventas_netas,
+                "Compras brutas": compras_brutas,
+                "(-) Devoluciones en compras": dev_compras_valor,
+                "Compras netas": compras_netas,
+                "CMV bruto": cmv_bruto,
+                "(-) Costo de unidades devueltas (venta)": costo_dev_venta,
+                "CMV neto": cmv_neto,
+                "Utilidad bruta": utilidad_bruta,
+                "Gastos operativos": gastos_op,
+                "Resultado operativo": resultado_operativo,
+                "Otros ingresos": otros_ing,
+                "Otros egresos": otros_egr,
+                "Utilidad antes de impuesto": utilidad_ai,
+                "Impuesto": impuesto,
+                "Utilidad neta": utilidad_neta
+            }
+
+        # =====================================================
+        # IA Helpers (opcionales y seguros)
+        # =====================================================
+        def _on_topic_fallback_open() -> str:
+            return (
+                "En sistema perpetuo, el **CMV** se determina desde el **KARDEX** según el método (PP/PEPS/UEPS), "
+                "incluyendo devoluciones: las **de compras** reducen compras netas/pool de costo; las **de ventas** reingresan "
+                "unidades y reducen el **CMV neto**. Registrar de forma incoherente distorsiona **Utilidad Bruta**, "
+                "**Resultado Operativo** y **Utilidad Neta**, afectando comparabilidad y decisiones."
+            )
+
+        def _sanitize_on_topic(text: str) -> str:
+            if not text:
+                return _on_topic_fallback_open()
+            banned = [
+                "debe", "haber", "asiento", "apertura", "cierre", "diario",
+                "iva repercutido", "iva soportado", "iva", "cuentas t",
+                "resultado del ejercicio", "balance de comprobación",
+                "pasivo", "patrimonio", "ecuación contable", "activo = pasivo + patrimonio"
+            ]
+            low = text.lower()
+            if any(b in low for b in banned):
+                return _on_topic_fallback_open()
+            return text
+
+        def safe_ia_feedback(prompt: str, default: str = "", tries: int = 3, base_sleep: float = 0.8) -> str:
+            st.session_state.pop(K("ai_rate_limited"), None)
+            for t in range(tries):
+                try:
+                    resp = ia_feedback(prompt)  # noqa: F821 (si no existe, cae al except)
+                    if resp is None:
+                        return default
+                    if isinstance(resp, dict):
+                        return str(resp.get("text", default))
+                    return str(resp)
+                except Exception as e:
+                    msg = str(e)
+                    if "429" in msg or "rate-limit" in msg.lower() or "rate limit" in msg.lower():
+                        st.session_state[K("ai_rate_limited")] = True
+                        return default
+                    time.sleep(min(base_sleep * (2 ** t), 4.0))
+                    continue
+            return default
+
+        # =====================================================
+        # FORM — 2 MCQ + 2 abiertas + 1 ejercicio (tipo práctica)
+        # =====================================================
+        with st.form(K("eval_form")):
+            st.markdown("### Preguntas de selección múltiple")
+
+            q1 = st.radio(
+                "1) En sistema perpetuo, ¿cómo se obtiene el Costo de la Mercancía Vendida (CMV) para el Estado de Resultados?",
+                [
+                    "a) Con la fórmula periódica: saldo inicial + compras – saldo final.",
+                    "b) Directamente del KARDEX según el método (PP/PEPS/UEPS), incluyendo devoluciones.",
+                    "c) Sumando todas las compras netas del período.",
+                    "d) Con el promedio de precios de venta y compra.",
+                ],
+                index=None,
+                key=K("q1")
+            )
+
+            q2 = st.radio(
+                "2) ¿Cuál es el efecto de una devolución en ventas sobre el CMV y las ventas netas?",
+                [
+                    "a) Aumenta el CMV neto y aumenta las ventas netas.",
+                    "b) Disminuye el CMV neto y disminuye las ventas netas.",
+                    "c) No afecta el CMV y aumenta las ventas netas.",
+                    "d) Aumenta el CMV neto y disminuye las ventas netas.",
+                ],
+                index=None,
+                key=K("q2")
+            )
+
+            st.markdown("### Preguntas abiertas")
+            open1 = st.text_area(
+                "3) Explica la relación entre el KARDEX y el Estado de Resultados en sistema perpetuo, "
+                "indicando específicamente cómo influye el método de inventario en el cálculo del CMV.",
+                height=140,
+                key=K("open1")
+            )
+            ask_ai_open1 = st.checkbox("💬 Pedir feedback para la pregunta 3 (opcional)", key=K("ai_open1"), value=False)
+
+            open2 = st.text_area(
+                "4) Bajo el método Promedio Ponderado, describe paso a paso cómo impactan en el Estado de Resultados: "
+                "(i) una devolución en compras y (ii) una devolución en ventas.",
+                height=140,
+                key=K("open2")
+            )
+            ask_ai_open2 = st.checkbox("💬 Pedir feedback para la pregunta 4 (opcional)", key=K("ai_open2"), value=False)
+
+            # ---------- Q5: Estructura tipo PRÁCTICA ----------
+            st.markdown("### Ejercicio tipo práctica — Estado de Resultados (Promedio Ponderado)")
+            _sc = exam_scenario_q5()
+            total_gastos = sum(v for _, v in _sc["gastos_operativos"])
+
+            # (1) Escenario — Solo variables clave visibles
+            st.markdown("#### **Escenario — Empresa “Mercantil XYZ S.A.S.”**")
+
+            # Formateo con separador de miles y 2 decimales
+            valores_escenario = {
+                "Cantidad vendida": f"{_sc['venta_u']} unidades",
+                "Precio de venta": f"${_sc['p_venta']:,.2f}",
+                "Gastos operacionales totales": f"${total_gastos:,.2f}",
+                "Otros ingresos": f"${_sc['otros_ing']:,.2f}",
+                "Otros egresos": f"${_sc['otros_egr']:,.2f}",
+                "Tasa de impuesto": f"{int(_sc['tasa']*100)} %",
+                "Método": _sc["metodo"],
+            }
+
+            # Mostrar como viñetas (markdown)
+            st.markdown(
+                "\n".join([f"- **{k}:** {v}" for k, v in valores_escenario.items()])
+            )
+
+            # (2) KARDEX de referencia (solo PP)
+            st.markdown("#### 🧮 KARDEX de referencia (Promedio Ponderado)")
+            df_kdx_pp = _pd.DataFrame(_kardex_rows_pp(_sc))
+            st.dataframe(df_kdx_pp, use_container_width=True)
+
+            # (3) ✍️ Completa tu Estado de Resultados
+            order_rows = [
+                "Ventas brutas",
+                "(-) Devoluciones en ventas",
+                "Ventas netas",
+                "Compras brutas",
+                "(-) Devoluciones en compras",
+                "Compras netas",
+                "CMV bruto",
+                "(-) Costo de unidades devueltas (venta)",
+                "CMV neto",
+                "Utilidad bruta",
+                "Gastos operativos",
+                "Resultado operativo",
+                "Otros ingresos",
+                "Otros egresos",
+                "Utilidad antes de impuesto",
+                "Impuesto",
+                "Utilidad neta"
+            ]
+            df_er_blank = _pd.DataFrame({"Rubro": order_rows, "Valor": [""]*len(order_rows)})
+
+            st.markdown("#### ✍️ Completa el **Estado de Resultados**")
+            st.caption("Diligencia los valores numéricos. El validador verificará rubro por rubro con tolerancia ±0.5.")
+            edited_er = st.data_editor(
+                df_er_blank,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Rubro": st.column_config.TextColumn(disabled=True),
+                    "Valor": st.column_config.NumberColumn(step=0.01, help="Valor monetario (usa números)"),
+                },
+                key=K("er_editor"),
+                num_rows="fixed",
+                disabled=False
+            )
+
+            # Feedback IA específico del ejercicio (opcional)
+            ask_ai_q5 = st.checkbox("💬 Retroalimentación de IA para el ejercicio (opcional)", key=K("ai_q5"), value=False)
+
+            submitted = st.form_submit_button("🧪 Enviar evaluación")
+
+        # =====================================================
+        # Corrección y resultado
+        # =====================================================
+        if submitted:
+            # --- MCQ ---
+            correct_mcq = {
+                K("q1"): "b) Directamente del KARDEX según el método (PP/PEPS/UEPS), incluyendo devoluciones.",
+                K("q2"): "b) Disminuye el CMV neto y disminuye las ventas netas.",
+            }
+            q1_ok = (st.session_state.get(K("q1")) == correct_mcq[K("q1")])
+            q2_ok = (st.session_state.get(K("q2")) == correct_mcq[K("q2")])
+
+            # --- Abiertas ---
+            def grade_open_generic(text: str, focus: str):
+                prompt = (
+                    "Evalúa la respuesta del estudiante (máx. 4 líneas de feedback). "
+                    "Primera línea EXACTA debe ser 'SCORE: 1' si el texto está en tema y cubre al menos dos puntos relevantes; "
+                    "si no, 'SCORE: 0'. Prohibido desviarse a asientos/IVA/ecuación contable.\n"
+                    f"TEMA: {focus}\n"
+                    f"RESPUESTA:\n{text}"
+                )
+                raw = safe_ia_feedback(prompt, default="")
+                sraw = str(raw or "")
+                first = sraw.strip().splitlines()[0].strip() if sraw.strip() else ""
+                score1 = 1 if first.upper().endswith("1") else 0
+                fb = "\n".join(sraw.strip().splitlines()[1:]).strip()
+
+                rate_limited = bool(st.session_state.get(K("ai_rate_limited"), False))
+                if not fb or rate_limited:
+                    fb = _on_topic_fallback_open()
+
+                banned_student = [
+                    "activo = pasivo + patrimonio", "ecuación contable", "asiento", "iva", "debe", "haber",
+                    "balance de comprobación", "pasivo", "patrimonio"
+                ]
+                if any(b in (text or "").lower() for b in banned_student):
+                    score1 = 0
+                    fb = _on_topic_fallback_open()
+
+                return score1, fb
+
+            open1_text = st.session_state.get(K("open1"), "") or ""
+            open2_text = st.session_state.get(K("open2"), "") or ""
+
+            q3_score1, q3_fb = grade_open_generic(
+                open1_text,
+                "Relación KARDEX ↔ Estado de Resultados en sistema perpetuo; impacto del método de inventario en el CMV."
+            )
+            q4_score1, q4_fb = grade_open_generic(
+                open2_text,
+                "Efecto en el ER de devoluciones en compras y en ventas bajo Promedio Ponderado."
+            )
+
+            if not st.session_state.get(K("ai_open1"), False):
+                q3_fb = ""
+            else:
+                q3_fb = _sanitize_on_topic(q3_fb)
+
+            if not st.session_state.get(K("ai_open2"), False):
+                q4_fb = ""
+            else:
+                q4_fb = _sanitize_on_topic(q4_fb)
+
+            # --- Q5: Validación del Estado de Resultados (rubro por rubro) ---
+            expected_pyg = _pyg_expected_from_scenario_pp(exam_scenario_q5())
+
+            tol = 0.5
+            def _to_float_or_none(x):
+                try:
+                    if x in (None, ""): return None
+                    return float(x)
+                except:
+                    return None
+
+            def _near(a, b, tol=tol):
+                if a is None or b is None:
+                    return False
+                try:
+                    return abs(float(a) - float(b)) <= tol
+                except:
+                    return False
+
+            order_rows = list(expected_pyg.keys())
+            er_checks = []
+            er_correct_rows = 0
+
+            try:
+                edited_er_df = st.session_state[K("er_editor")]
+            except Exception:
+                edited_er_df = None
+
+            if edited_er_df is None or not isinstance(edited_er_df, _pd.DataFrame):
+                q5_ok = False
+            else:
+                for i, rubro in enumerate(order_rows):
+                    usr_val = _to_float_or_none(edited_er_df.iloc[i]["Valor"])
+                    exp_val = float(expected_pyg[rubro])
+                    ok = _near(usr_val, exp_val)
+                    er_checks.append((rubro, usr_val, exp_val, ok))
+                    if ok:
+                        er_correct_rows += 1
+                q5_ok = (er_correct_rows == len(order_rows))
+
+            # --- Feedback IA específico Q5 (opcional) ---
+            q5_fb = ""
+            if st.session_state.get(K("ai_q5"), False):
+                intento_lines = []
+                for rubro, usr_val, exp_val, ok in er_checks:
+                    uv = "—" if usr_val is None else f"{usr_val:.2f}"
+                    intento_lines.append(f"{rubro}: {uv}")
+                intento_txt = "\n".join(intento_lines)
+                exp_txt = "\n".join([f"{k}: {v:.2f}" for k, v in expected_pyg.items()])
+
+                prompt_q5 = (
+                    "Evalúa el Estado de Resultados diligenciado por el estudiante. "
+                    "Centra el feedback en: coherencia con KARDEX PP (CMV y devoluciones), "
+                    "ventas netas, compras netas, y derivación de utilidades e impuesto. "
+                    "Primera línea EXACTA: 'SCORE: 1' si ≥80% de rubros están correctos y no hay errores conceptuales graves; "
+                    "si no, 'SCORE: 0'. Luego 3–5 líneas con correcciones puntuales.\n\n"
+                    f"INTENTO (valores del estudiante):\n{intento_txt}\n\n"
+                    f"ESPERADO (PP):\n{exp_txt}"
+                )
+                q5_fb_raw = safe_ia_feedback(prompt_q5, default="")
+                q5_fb = _sanitize_on_topic(q5_fb_raw)
+
+            # --- Resultado global ---
+            total_hits = int(q1_ok) + int(q2_ok) + int(q3_score1) + int(q4_score1) + int(q5_ok)
+            passed = (total_hits == 5)
+
+            # Registro (si tienes estas funciones y 'username')
+            try:
+                record_attempt(username, level=4, score=total_hits, passed=passed)  # noqa: F821
+            except Exception:
+                pass
+
+            st.markdown("### Resultado")
+            cA, cB = st.columns(2)
+            with cA: st.metric("Aciertos", f"{total_hits}/5")
+            with cB: st.metric("Estado", "APROBADO ✅" if passed else "NO APROBADO ❌")
+
+            # Detalle estilo PRÁCTICA
+            with st.expander("Detalle de corrección"):
+                st.write(f"**Q1 (MCQ):** {'✅' if q1_ok else '❌'}")
+                st.write(f"**Q2 (MCQ):** {'✅' if q2_ok else '❌'}")
+                st.write(f"**Q3 (abierta):** {'✅' if q3_score1==1 else '❌'}")
+                if q3_fb:
+                    st.write("**Feedback Q3 (IA):**")
+                    st.write(q3_fb)
+                st.write(f"**Q4 (abierta):** {'✅' if q4_score1==1 else '❌'}")
+                if q4_fb:
+                    st.write("**Feedback Q4 (IA):**")
+                    st.write(q4_fb)
+
+                st.write(f"**Q5 (Estado de Resultados PP):** {'✅' if q5_ok else '❌'}")
+                st.metric("Rubros correctos en Q5", f"{er_correct_rows}/{len(order_rows)}")
+                for rubro, usr_val, exp_val, ok in er_checks:
+                    uv = "—" if usr_val is None else f"{usr_val:.2f}"
+                    st.write(("✅ " if ok else "❌ ") + f"**{rubro}** — tu valor: {uv} | esperado: {exp_val:.2f}")
+
+                if q5_fb:
+                    st.write("**Feedback Q5 (IA):**")
+                    st.write(q5_fb)
+
+                if not q5_ok:
+                    st.caption(
+                        "Pistas: (1) Ventas netas = Ventas brutas − Dev. ventas; "
+                        "(2) Compras netas = Compras brutas − Dev. compras; "
+                        "(3) CMV neto = CMV bruto − costo de unidades devueltas (venta); "
+                        "(4) Utilidad bruta = Ventas netas − CMV neto; "
+                        "(5) Resultado operativo, UAI, Impuesto y UN en ese orden."
                     )
 
+            # Celebración / avance (si tienes estas funciones)
             if passed:
-                set_level_passed(st.session_state["progress_col"], username, "level4", score)
-                set_completed_survey(st.session_state["progress_col"], username, True)
-                st.session_state["sidebar_next_select"] = "Encuesta de satisfacción"
-                start_celebration(
-                    message_md=(
-                        "<b>¡Curso completado!</b> 🎓🌟<br><br>"
-                        "Has recorrido desde el COGS básico hasta el EERR. "
-                        "Por favor responde la <b>Encuesta de satisfacción</b> para ayudarnos a mejorar."
-                    ),
-                    next_label="Encuesta de satisfacción",
-                    next_key_value="Encuesta de satisfacción"
-                )
-
+                try:
+                    set_level_passed(st.session_state.get('progress_col'), username, "level4", total_hits)  # noqa: F821
+                except Exception:
+                    pass
+                st.success("🎉 ¡Aprobaste la Evaluación del Nivel 4! Avanzas al siguiente módulo.")
+                try:
+                    start_celebration(  # noqa: F821
+                        message_md=(
+                            "<b>¡Nivel 4 dominado!</b> 📑💼<br><br>"
+                            "Construiste y validaste el Estado de Resultados en sistema perpetuo con devoluciones."
+                        ),
+                        next_label="Volver al menú",
+                        next_key_value="🏠 Inicio"
+                    )
+                except Exception:
+                    pass
             else:
-                st.error(f"No aprobado. Aciertos {score}/3. Refuerza conceptos y vuelve a intentar.")
-                if fb:
-                    with st.expander("💬 Feedback de la IA"):
-                        st.write(fb)
+                st.error("No aprobado. Debes acertar 5/5. Repasa la integración KARDEX ↔ ER y el tratamiento de devoluciones.")
 
 # ===========================
 # Página: Encuesta de satisfacción
