@@ -45,25 +45,60 @@ load_dotenv()
 # IA (DeepSeek vía OpenRouter)
 # ===========================
 from openai import OpenAI
+from openai import BadRequestError  # <-- agrega esto
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
 )
-DEEPSEEK_MODEL = "deepseek/deepseek-chat-v3.1:free"
 
-def ia_call(messages: list, temperature: float = 0.2) -> str:
-    if not OPENROUTER_API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY ausente o inválida.")
+PRIMARY_MODEL  = "deepseek/deepseek-chat-v3.1:free"
+FALLBACK_MODEL = "openai/gpt-oss-20b:free"
+
+def _chat_with_model(model_name: str, messages: list, temperature: float = 0.2):
     completion = client.chat.completions.create(
-        model=DEEPSEEK_MODEL,  # definido arriba (recomendado sin :free)
+        model=model_name,
         messages=messages,
         temperature=temperature,
         extra_body={}
     )
-    text = (completion.choices[0].message.content or "").strip()
-    return text
+    return (completion.choices[0].message.content or "").strip()
+
+def ia_call(messages: list, temperature: float = 0.2) -> str:
+    """
+    Llama primero al modelo primario (DeepSeek).
+    Si está saturado o hay error de proveedor/red, intenta con el modelo de fallback.
+    Si ambos fallan, lanza RuntimeError para que los niveles usen el fallback pedagógico local.
+    """
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("IA_NO_API_KEY")
+
+    # 1) Intento con modelo primario
+    try:
+        return _chat_with_model(PRIMARY_MODEL, messages, temperature)
+
+    except BadRequestError as e:
+        msg = str(e)
+        # Errores típicos del proveedor donde vale la pena probar fallback
+        if "Model is at capacity" in msg or "Provider returned error" in msg:
+            # seguimos a fallback
+            pass
+        else:
+            # Errores de prompt/malformed request → relanzamos
+            raise
+
+    except Exception:
+        # Otros errores (timeout, red, etc.) → intentamos fallback
+        pass
+
+    # 2) Fallback con modelo alternativo
+    try:
+        return _chat_with_model(FALLBACK_MODEL, messages, temperature)
+    except Exception as e2:
+        # Ambos modelos fallaron
+        raise RuntimeError(f"IA_BOTH_FAILED: {e2}")
+
 
 def _parse_first_json(s: str) -> dict:
     """
@@ -141,31 +176,29 @@ def _parse_first_json(s: str) -> dict:
 
 def ia_feedback(prompt_user: str) -> str:
     """
-    Usa OpenRouter con el modelo DeepSeek para dar feedback educativo breve.
-    Si no hay API key o hay fallo de red/modelo, devuelve mensaje local.
+    Usa OpenRouter con fallback de modelos para dar feedback educativo breve.
+    Si no hay API key o fallan ambos modelos, devuelve mensaje local.
     """
     if not OPENROUTER_API_KEY:
         return "Feedback IA no disponible. Tus resultados se validaron localmente."
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Eres un tutor de contabilidad empático y claro. "
+                "Explica en máximo 6 líneas el acierto/error del estudiante, "
+                "resalta la fórmula clave o el concepto y ofrece 1 truco memotécnico."
+            )
+        },
+        {"role": "user", "content": prompt_user}
+    ]
+
     try:
-        completion = client.chat.completions.create(
-            model=DEEPSEEK_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Eres un tutor de contabilidad empático y claro. "
-                        "Explica en máximo 6 líneas el acierto/error del estudiante, "
-                        "resalta la fórmula clave o el concepto y ofrece 1 truco memotécnico."
-                    )
-                },
-                {"role": "user", "content": prompt_user}
-            ],
-            temperature=0.3,
-            extra_body={}
-        )
-        return completion.choices[0].message.content.strip()
-    except Exception as e:
-        return f"No pude generar feedback con IA ahora. ({e})"
+        return ia_call(messages, temperature=0.3)
+    except Exception:
+        return "No pude generar feedback con IA ahora. Tus resultados se validaron localmente."
+
 
 def eval_ia_explicacion(pregunta: str, criterios: str, respuesta_estudiante: str) -> tuple[bool, str, str]:
     """
