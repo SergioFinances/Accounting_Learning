@@ -1665,8 +1665,8 @@ def page_level2(username):
             s_q, s_pu, s_v = _sum_layers(layers)
             rows.append({
                 "fecha":"Día 1", "desc":"Saldo inicial",
-                "ent_q":"","ent_pu":"","ent_tot":"",
-                "sal_q":"","sal_pu":"","sal_tot":"",
+                "ent_q":None,"ent_pu":None,"ent_tot":None,
+                "sal_q":None,"sal_pu":None,"sal_tot":None,
                 "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
             })
             script.append({
@@ -1693,7 +1693,7 @@ def page_level2(username):
                 rows.append({
                     "fecha":"Día 2", "desc":"Compra",
                     "ent_q":int(comp_u), "ent_pu":round(comp_pu,2), "ent_tot":round(ent_tot,2),
-                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sal_q":None,"sal_pu":None,"sal_tot":None,
                     "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
                 })
                 script.append({
@@ -1715,8 +1715,8 @@ def page_level2(username):
                 # Fila 1: “Saldo (día 1)” (copia del saldo previo; mantiene costo por capa)
                 rows.append({
                     "fecha":"Día 2", "desc":"Saldo (día 1)",
-                    "ent_q":"","ent_pu":"","ent_tot":"",
-                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "ent_q":None,"ent_pu":None,"ent_tot":None,
+                    "sal_q":None,"sal_pu":None,"sal_tot":None,
                     "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
                 })
                 script.append({
@@ -1735,7 +1735,7 @@ def page_level2(username):
                 rows.append({
                     "fecha":"Día 2", "desc":"Compra",
                     "ent_q":int(comp_u), "ent_pu":round(comp_pu,2), "ent_tot":round(ent_tot,2),
-                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sal_q":None,"sal_pu":None,"sal_tot":None,
                     "sdo_q":int(comp_u), "sdo_pu":round(comp_pu,2), "sdo_tot":round(ent_tot,2)  # SOLO la capa comprada
                 })
                 script.append({
@@ -1768,7 +1768,7 @@ def page_level2(username):
 
                     rows.append({
                         "fecha":"Día 3", "desc":"Venta",
-                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "ent_q":None,"ent_pu":None,"ent_tot":None,
                         "sal_q":int(sal_q), "sal_pu":round(sal_pu,2), "sal_tot":round(sal_tot,2),
                         "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
                     })
@@ -1800,7 +1800,7 @@ def page_level2(username):
 
                         rows.append({
                             "fecha":"Día 3", "desc": f"Venta tramo {i} ({metodo_tag})",
-                            "ent_q":"","ent_pu":"","ent_tot":"",
+                            "ent_q":None,"ent_pu":None,"ent_tot":None,
                             "sal_q":int(q_take), "sal_pu":round(pu_take,2), "sal_tot":round(tot_take,2),
                             "sdo_q":int(rq), "sdo_pu":round(rpu,2), "sdo_tot":round(rv,2)
                         })
@@ -1824,8 +1824,8 @@ def page_level2(username):
                 # Sin venta o sin saldo
                 rows.append({
                     "fecha":"Día 3", "desc":"Venta",
-                    "ent_q":"","ent_pu":"","ent_tot":"",
-                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "ent_q":None,"ent_pu":None,"ent_tot":None,
+                    "sal_q":None,"sal_pu":None,"sal_tot":None,
                     "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
                 })
                 script.append({
@@ -2171,8 +2171,8 @@ def page_level2(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 1", "Descripción":"Saldo inicial",
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
                 "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
             })
 
@@ -2188,7 +2188,7 @@ def page_level2(username):
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Compra 1",
                     "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu,2), "Entrada_total": round(ent_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 })
             else:
@@ -2196,8 +2196,8 @@ def page_level2(username):
                 # Fila 2A: Saldo (día 1)
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Saldo (día 1)",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                    "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 })
                 # Fila 2B: Compra 1 (saldo muestra SOLO la capa comprada)
@@ -2206,7 +2206,7 @@ def page_level2(username):
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Compra 1",
                     "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu,2), "Entrada_total": round(ent_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": comp1_u, "Saldo_pu": round(comp1_pu,2), "Saldo_total": round(ent_tot,2)
                 })
                 # s_q/s_p/s_v se mantienen como el agregado total, pero para filas mostramos lo pedido.
@@ -2224,15 +2224,15 @@ def page_level2(username):
                     s_q, s_p, s_v = _sum_layers(layers)
                     rows.append({
                         "Fecha":"Día 3", "Descripción":"Venta",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                         "Salida_cant": sale_q, "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
                         "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                     })
                 else:
                     rows.append({
                         "Fecha":"Día 3", "Descripción":"Venta",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                        "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                         "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                     })
             else:
@@ -2247,7 +2247,7 @@ def page_level2(username):
                     rq, rpu, rv = _sum_layers(running_layers)
                     rows.append({
                         "Fecha":"Día 3", "Descripción": f"Venta tramo {i} ({metodo_tag})",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                         "Salida_cant": q_take, "Salida_pu": round(pu_take,2), "Salida_total": round(tot_take,2),
                         "Saldo_cant": rq, "Saldo_pu": round(rpu,2), "Saldo_total": round(rv,2)
                     })
@@ -2265,7 +2265,7 @@ def page_level2(username):
                 rows.append({
                     "Fecha":"Día 4", "Descripción":"Compra 2",
                     "Entrada_cant": comp2_u, "Entrada_pu": round(comp2_pu,2), "Entrada_total": round(ent2_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 })
             else:
@@ -2275,7 +2275,7 @@ def page_level2(username):
                 rows.append({
                     "Fecha":"Día 4", "Descripción":"Compra 2",
                     "Entrada_cant": comp2_u, "Entrada_pu": round(comp2_pu,2), "Entrada_total": round(ent2_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": comp2_u, "Saldo_pu": round(comp2_pu,2), "Saldo_total": round(ent2_tot,2)
                 })
 
@@ -2467,15 +2467,15 @@ def page_level2(username):
         s_q, s_pu, s_v = _sum_layers(layers)
         rows = [{
             "fecha":"Día 1","desc":"Saldo inicial",
-            "ent_q":"","ent_pu":"","ent_tot":"",
-            "sal_q":"","sal_pu":"","sal_tot":"",
+            "ent_q":None,"ent_pu":None,"ent_tot":None,
+            "sal_q":None,"sal_pu":None,"sal_tot":None,
             "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
         }]
         # Día 2 — saldo día 1 + compra a su costo
         rows.append({
             "fecha":"Día 2","desc":"Saldo (día 1)",
-            "ent_q":"","ent_pu":"","ent_tot":"",
-            "sal_q":"","sal_pu":"","sal_tot":"",
+            "ent_q":None,"ent_pu":None,"ent_tot":None,
+            "sal_q":None,"sal_pu":None,"sal_tot":None,
             "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
         })
         ent_tot = peps_comp1_u * peps_comp1_pu
@@ -2483,7 +2483,7 @@ def page_level2(username):
         rows.append({
             "fecha":"Día 2","desc":"Compra 1",
             "ent_q":int(peps_comp1_u),"ent_pu":round(peps_comp1_pu,2),"ent_tot":round(ent_tot,2),
-            "sal_q":"","sal_pu":"","sal_tot":"",
+            "sal_q":None,"sal_pu":None,"sal_tot":None,
             "sdo_q":int(peps_comp1_u),"sdo_pu":round(peps_comp1_pu,2),"sdo_tot":round(ent_tot,2)
         })
         # Día 3 — venta en tramos
@@ -2498,7 +2498,7 @@ def page_level2(username):
             rq, rpu, rv = _sum_layers_copy(running_layers)
             rows.append({
                 "fecha":"Día 3","desc": f"Venta tramo {i} (PEPS)",
-                "ent_q":"","ent_pu":"","ent_tot":"",
+                "ent_q":None,"ent_pu":None,"ent_tot":None,
                 "sal_q":int(q_take),"sal_pu":round(pu_take,2),"sal_tot":round(tot_take,2),
                 "sdo_q":int(rq),"sdo_pu":round(rpu,2),"sdo_tot":round(rv,2)
             })
@@ -2509,7 +2509,7 @@ def page_level2(username):
         rows.append({
             "fecha":"Día 4","desc":"Compra 2",
             "ent_q":int(peps_comp2_u),"ent_pu":round(peps_comp2_pu,2),"ent_tot":round(ent2_tot,2),
-            "sal_q":"","sal_pu":"","sal_tot":"",
+            "sal_q":None,"sal_pu":None,"sal_tot":None,
             "sdo_q":int(peps_comp2_u),"sdo_pu":round(peps_comp2_pu,2),"sdo_tot":round(ent2_tot,2)
         })
         qF, puF, vF = _sum_layers(layers)
@@ -2776,21 +2776,21 @@ def page_level2(username):
 
             pp_template = pd.DataFrame([
                 {"Fecha":"Día 1","Descripción":"Saldo inicial",
-                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
-                "Salida_cant":"","Salida_pu":"","Salida_total":"",
-                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
+                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
+                "Saldo_cant":None,"Saldo_pu":None,"Saldo_total":None},
                 {"Fecha":"Día 2","Descripción":"Compra 1",
-                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
-                "Salida_cant":"","Salida_pu":"","Salida_total":"",
-                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
+                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
+                "Saldo_cant":None,"Saldo_pu":None,"Saldo_total":None},
                 {"Fecha":"Día 3","Descripción":"Venta",
-                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
-                "Salida_cant":"","Salida_pu":"","Salida_total":"",
-                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
+                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
+                "Saldo_cant":None,"Saldo_pu":None,"Saldo_total":None},
                 {"Fecha":"Día 4","Descripción":"Compra 2",
-                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
-                "Salida_cant":"","Salida_pu":"","Salida_total":"",
-                "Saldo_cant":"","Saldo_pu":"","Saldo_total":""},
+                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
+                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
+                "Saldo_cant":None,"Saldo_pu":None,"Saldo_total":None},
             ])
             pp_edit = st.data_editor(
                 pp_template.astype("string"),
@@ -3140,8 +3140,8 @@ def page_level3(username):
             s_q, s_pu, s_v = _sum_layers(layers)
             rows.append({
                 "fecha":"Día 1","desc":"Saldo inicial",
-                "ent_q":"","ent_pu":"","ent_tot":"",
-                "sal_q":"","sal_pu":"","sal_tot":"",
+                "ent_q":None,"ent_pu":None,"ent_tot":None,
+                "sal_q":None,"sal_pu":None,"sal_tot":None,
                 "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
             })
 
@@ -3156,14 +3156,14 @@ def page_level3(username):
                 rows.append({
                     "fecha":"Día 2","desc":"Compra",
                     "ent_q":int(comp_u),"ent_pu":round(comp_pu,2),"ent_tot":round(ent_tot,2),
-                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sal_q":None,"sal_pu":None,"sal_tot":None,
                     "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
                 })
             else:
                 rows.append({
                     "fecha":"Día 2","desc":"Saldo (día 1)",
-                    "ent_q":"","ent_pu":"","ent_tot":"",
-                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "ent_q":None,"ent_pu":None,"ent_tot":None,
+                    "sal_q":None,"sal_pu":None,"sal_tot":None,
                     "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
                 })
                 ent_tot = comp_u * comp_pu
@@ -3171,7 +3171,7 @@ def page_level3(username):
                 rows.append({
                     "fecha":"Día 2","desc":"Compra",
                     "ent_q":int(comp_u),"ent_pu":round(comp_pu,2),"ent_tot":round(ent_tot,2),
-                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "sal_q":None,"sal_pu":None,"sal_tot":None,
                     "sdo_q":int(comp_u),"sdo_pu":round(comp_pu,2),"sdo_tot":round(ent_tot,2)
                 })
                 s_q, s_pu, s_v = _sum_layers(layers)
@@ -3189,7 +3189,7 @@ def page_level3(username):
                     s_q, s_pu, s_v = _sum_layers(layers)
                     rows.append({
                         "fecha":"Día 3","desc":"Venta",
-                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "ent_q":None,"ent_pu":None,"ent_tot":None,
                         "sal_q":int(sal_q),"sal_pu":round(sal_pu,2),"sal_tot":round(sal_tot,2),
                         "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
                     })
@@ -3202,7 +3202,7 @@ def page_level3(username):
                         rq, rpu, rv = _sum_layers(running_layers)
                         rows.append({
                             "fecha":"Día 3","desc":f"Venta tramo {i} ({'PEPS' if fifo else 'UEPS'})",
-                            "ent_q":"","ent_pu":"","ent_tot":"",
+                            "ent_q":None,"ent_pu":None,"ent_tot":None,
                             "sal_q":int(q_take),"sal_pu":round(pu_take,2),"sal_tot":round(tot_take,2),
                             "sdo_q":int(rq),"sdo_pu":round(rpu,2),"sdo_tot":round(rv,2)
                         })
@@ -3211,8 +3211,8 @@ def page_level3(username):
             else:
                 rows.append({
                     "fecha":"Día 3","desc":"Venta",
-                    "ent_q":"","ent_pu":"","ent_tot":"",
-                    "sal_q":"","sal_pu":"","sal_tot":"",
+                    "ent_q":None,"ent_pu":None,"ent_tot":None,
+                    "sal_q":None,"sal_pu":None,"sal_tot":None,
                     "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
                 })
 
@@ -3235,7 +3235,7 @@ def page_level3(username):
 
                     rows.append({
                         "fecha":"Día 4","desc":"Devolución de compra",
-                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "ent_q":None,"ent_pu":None,"ent_tot":None,
                         "sal_q":int(take_q),"sal_pu":round(take_pu,2),"sal_tot":round(take_val,2),
                         "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
                     })
@@ -3263,7 +3263,7 @@ def page_level3(username):
 
                     rows.append({
                         "fecha":"Día 4","desc":"Devolución de compra",
-                        "ent_q":"","ent_pu":"","ent_tot":"",
+                        "ent_q":None,"ent_pu":None,"ent_tot":None,
                         "sal_q":int(take_q),"sal_pu":round(take_pu,2),"sal_tot":round(take_val,2),
                         "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
                     })
@@ -3295,7 +3295,7 @@ def page_level3(username):
                     rows.append({
                         "fecha":"Día 5","desc":"Devolución de venta (reingreso)",
                         "ent_q":int(in_q),"ent_pu":round(in_pu,2),"ent_tot":round(in_val,2),
-                        "sal_q":"","sal_pu":"","sal_tot":"",
+                        "sal_q":None,"sal_pu":None,"sal_tot":None,
                         "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
                     })
                     script.append({
@@ -3324,7 +3324,7 @@ def page_level3(username):
                     rows.append({
                         "fecha":"Día 5","desc":"Devolución de venta (reingreso)",
                         "ent_q":int(dev_venta_u),"ent_pu":round(in_pu,2),"ent_tot":round(in_val,2),
-                        "sal_q":"","sal_pu":"","sal_tot":"",
+                        "sal_q":None,"sal_pu":None,"sal_tot":None,
                         "sdo_q":int(s_q),"sdo_pu":round(s_pu,2),"sdo_tot":round(s_v,2)
                     })
                     script.append({
@@ -3421,16 +3421,16 @@ def page_level3(username):
             const isNarr = (i >= narrStart);
 
             const ent_q   = isNarr ? "" : fmt(r.ent_q);
-            const ent_pu  = isNarr ? "" : (r.ent_pu!==""? (isNaN(r.ent_pu)? fmt(r.ent_pu) : pesos(r.ent_pu)):"");
-            const ent_tot = isNarr ? "" : (r.ent_tot!==""? pesos(r.ent_tot):"");
+            const ent_pu  = isNarr ? "" : (r.ent_pu!==""? (isNaN(r.ent_pu)? fmt(r.ent_pu) : pesos(r.ent_pu)):None);
+            const ent_tot = isNarr ? "" : (r.ent_tot!==""? pesos(r.ent_tot):None);
 
             const sal_q   = isNarr ? "" : fmt(r.sal_q);
-            const sal_pu  = isNarr ? "" : (r.sal_pu!==""? (isNaN(r.sal_pu)? fmt(r.sal_pu) : pesos(r.sal_pu)):"");
-            const sal_tot = isNarr ? "" : (r.sal_tot!==""? pesos(r.sal_tot):"");
+            const sal_pu  = isNarr ? "" : (r.sal_pu!==""? (isNaN(r.sal_pu)? fmt(r.sal_pu) : pesos(r.sal_pu)):None);
+            const sal_tot = isNarr ? "" : (r.sal_tot!==""? pesos(r.sal_tot):None);
 
             const sdo_q   = isNarr ? "" : fmt(r.sdo_q);
-            const sdo_pu  = isNarr ? "" : (r.sdo_pu!==""? (isNaN(r.sdo_pu)? fmt(r.sdo_pu) : pesos(r.sdo_pu)):"");
-            const sdo_tot = isNarr ? "" : (r.sdo_tot!==""? pesos(r.sdo_tot):"");
+            const sdo_pu  = isNarr ? "" : (r.sdo_pu!==""? (isNaN(r.sdo_pu)? fmt(r.sdo_pu) : pesos(r.sdo_pu)):None);
+            const sdo_tot = isNarr ? "" : (r.sdo_tot!==""? pesos(r.sdo_tot):None);
 
             tr.innerHTML = `
                 <td>${r.fecha}</td><td>${r.desc}</td>
@@ -3686,8 +3686,8 @@ def page_level3(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 1", "Descripción":"Saldo inicial",
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
                 "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
             })
 
@@ -3702,15 +3702,15 @@ def page_level3(username):
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Compra 1",
                     "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu,2), "Entrada_total": round(ent_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 })
             else:
                 # PEPS/UEPS: saldo día 1 + compra 1 como capa
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Saldo (día 1)",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                    "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 })
                 ent_tot = comp1_u * comp1_pu
@@ -3718,7 +3718,7 @@ def page_level3(username):
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Compra 1",
                     "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu,2), "Entrada_total": round(ent_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": comp1_u, "Saldo_pu": round(comp1_pu,2), "Saldo_total": round(ent_tot,2)
                 })
                 s_q, s_p, s_v = _sum_layers(layers)
@@ -3736,15 +3736,15 @@ def page_level3(username):
                     s_q, s_p, s_v = _sum_layers(layers)
                     rows.append({
                         "Fecha":"Día 3", "Descripción":"Venta",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                         "Salida_cant": sale_q, "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
                         "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                     })
                 else:
                     rows.append({
                         "Fecha":"Día 3", "Descripción":"Venta",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                        "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                         "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                     })
             else:
@@ -3757,7 +3757,7 @@ def page_level3(username):
                     rq, rpu, rv = _sum_layers(running_layers)
                     rows.append({
                         "Fecha":"Día 3", "Descripción": f"Venta tramo {i} ({metodo_tag})",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                         "Salida_cant": q_take, "Salida_pu": round(pu_take,2), "Salida_total": round(tot_take,2),
                         "Saldo_cant": rq, "Saldo_pu": round(rpu,2), "Saldo_total": round(rv,2)
                     })
@@ -3776,7 +3776,7 @@ def page_level3(username):
                 s_q, s_p, s_v = _sum_layers(layers)
                 rows.append({
                     "Fecha":"Día 4", "Descripción":"Devolución de compra",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                     "Salida_cant": take_q, "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 })
@@ -3790,7 +3790,7 @@ def page_level3(username):
                 s_q, s_p, s_v = _sum_layers(layers)
                 rows.append({
                     "Fecha":"Día 4", "Descripción":"Devolución de compra",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                     "Salida_cant": take_q, "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 })
@@ -3808,7 +3808,7 @@ def page_level3(username):
                 rows.append({
                     "Fecha":"Día 5", "Descripción":"Devolución de venta (reingreso)",
                     "Entrada_cant": in_q, "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
                 })
             else:
@@ -3824,7 +3824,7 @@ def page_level3(username):
                 rows.append({
                     "Fecha":"Día 5", "Descripción":"Devolución de venta (reingreso)",
                     "Entrada_cant": dev_venta_u, "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": s_q2, "Saldo_pu": round(s_p2,2), "Saldo_total": round(s_v2,2)
                 })
 
@@ -3838,9 +3838,9 @@ def page_level3(username):
         def _blank_like(r):
             return {
                 "Fecha": r["Fecha"], "Descripción": r["Descripción"],
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
-                "Saldo_cant":"",   "Saldo_pu":"",   "Saldo_total":""
+                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
+                "Saldo_cant":None,   "Saldo_pu":None,   "Saldo_total":None
             }
 
         plant_rows = [_blank_like(r) for r in expected_rows]
@@ -4068,8 +4068,8 @@ def page_level3(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 1","Descripción":"Saldo inicial",
-                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
-                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
+                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
                 "Saldo_cant":s_q,"Saldo_pu":round(s_p,2),"Saldo_total":round(s_v,2)
             })
 
@@ -4083,7 +4083,7 @@ def page_level3(username):
             rows.append({
                 "Fecha":"Día 2","Descripción":"Compra 1",
                 "Entrada_cant":comp1_u,"Entrada_pu":round(comp1_pu,2),"Entrada_total":round(ent_tot,2),
-                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
                 "Saldo_cant":s_q,"Saldo_pu":round(s_p,2),"Saldo_total":round(s_v,2)
             })
 
@@ -4098,7 +4098,7 @@ def page_level3(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 3","Descripción":"Venta",
-                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
                 "Salida_cant":sale_q,"Salida_pu":round(sale_pu,2),"Salida_total":round(sale_tot,2),
                 "Saldo_cant":s_q,"Saldo_pu":round(s_p,2),"Saldo_total":round(s_v,2)
             })
@@ -4114,7 +4114,7 @@ def page_level3(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 4","Descripción":"Devolución de compra",
-                "Entrada_cant":"","Entrada_pu":"","Entrada_total":"",
+                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
                 "Salida_cant":take_q,"Salida_pu":round(take_pu,2),"Salida_total":round(take_val,2),
                 "Saldo_cant":q4,"Saldo_pu":round(p4,2),"Saldo_total":round(v4,2)
             })
@@ -4129,7 +4129,7 @@ def page_level3(username):
             rows.append({
                 "Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
                 "Entrada_cant":in_q,"Entrada_pu":round(in_pu,2),"Entrada_total":round(in_val,2),
-                "Salida_cant":"","Salida_pu":"","Salida_total":"",
+                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
                 "Saldo_cant":q5,"Saldo_pu":round(p5,2),"Saldo_total":round(v5,2)
             })
             return rows
@@ -4140,9 +4140,9 @@ def page_level3(username):
             def _blank_like(r):
                 return {
                     "Fecha": r["Fecha"], "Descripción": r["Descripción"],
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
-                    "Saldo_cant":"",   "Saldo_pu":"",   "Saldo_total":""
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                    "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
+                    "Saldo_cant":None,   "Saldo_pu":None,   "Saldo_total":None
                 }
             return _pd.DataFrame([_blank_like(r) for r in expected_rows])
 
@@ -4707,8 +4707,8 @@ def page_level4(username):
             s_q, s_pu, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 1", "Descripción":"Saldo inicial",
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
                 "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
             })
 
@@ -4723,14 +4723,14 @@ def page_level4(username):
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Compra",
                     "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
             else:
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Saldo (día 1)",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                    "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
                 ent_tot = c1_u * c1_pu
@@ -4738,7 +4738,7 @@ def page_level4(username):
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Compra",
                     "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": c1_u, "Saldo_pu": round(c1_pu,2), "Saldo_total": round(ent_tot,2)
                 })
                 s_q, s_pu, s_v = _sum_layers(layers)
@@ -4756,7 +4756,7 @@ def page_level4(username):
                     s_q, s_pu, s_v = _sum_layers(layers)
                     rows.append({
                         "Fecha":"Día 3", "Descripción":"Venta",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                         "Salida_cant": sale_q, "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
                         "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                     })
@@ -4771,7 +4771,7 @@ def page_level4(username):
                         rq, rpu, rv = _sum_layers(running_layers)
                         rows.append({
                             "Fecha":"Día 3", "Descripción": f"Venta tramo {i} ({'PEPS' if fifo else 'UEPS'})",
-                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                            "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                             "Salida_cant": int(q_take), "Salida_pu": round(pu_take,2), "Salida_total": round(tot_take,2),
                             "Saldo_cant": int(rq), "Saldo_pu": round(rpu,2), "Saldo_total": round(rv,2)
                         })
@@ -4781,8 +4781,8 @@ def page_level4(username):
                 cmv_bruto = 0.0
                 rows.append({
                     "Fecha":"Día 3", "Descripción":"Venta",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
                 sale_details = []
@@ -4799,7 +4799,7 @@ def page_level4(username):
                 s_q, s_pu, s_v = _sum_layers(layers)
                 rows.append({
                     "Fecha":"Día 4", "Descripción":"Devolución de compra (a proveedor)",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                     "Salida_cant": int(take_q), "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
@@ -4822,8 +4822,8 @@ def page_level4(username):
                 s_q, s_pu, s_v = _sum_layers(layers)
                 rows.append({
                     "Fecha":"Día 4", "Descripción":"Devolución de compra (a proveedor)",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant": esc["dev_comp"], "Salida_pu":"", "Salida_total": round(dev_comp_valor,2),
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                    "Salida_cant": esc["dev_comp"], "Salida_pu":None, "Salida_total": round(dev_comp_valor,2),
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
 
@@ -4841,7 +4841,7 @@ def page_level4(username):
                     rows.append({
                         "Fecha":"Día 5", "Descripción":"Devolución de venta (reingreso)",
                         "Entrada_cant": in_q, "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
-                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                        "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                         "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                     })
                     costo_dev_venta = in_val
@@ -4871,16 +4871,16 @@ def page_level4(username):
                     s_q, s_pu, s_v = _sum_layers(layers)
                     rows.append({
                         "Fecha":"Día 5", "Descripción":"Devolución de venta (reingreso)",
-                        "Entrada_cant": esc["dev_vent"], "Entrada_pu":"", "Entrada_total": round(costo_dev_venta,2),
-                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                        "Entrada_cant": esc["dev_vent"], "Entrada_pu":None, "Entrada_total": round(costo_dev_venta,2),
+                        "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                         "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                     })
             else:
                 costo_dev_venta = 0.0
                 rows.append({
                     "Fecha":"Día 5", "Descripción":"Devolución de venta (reingreso)",
-                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                    "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
 
@@ -5428,8 +5428,8 @@ def page_level4(username):
             layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({"Fecha":"Día 1","Descripción":"Saldo inicial",
-                        "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                        "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                         "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             if method_name == "Promedio Ponderado":
@@ -5441,18 +5441,18 @@ def page_level4(username):
                 s_q, s_p, s_v = _sum_layers(layers)
                 rows.append({"Fecha":"Día 2","Descripción":"Compra",
                             "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
-                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                             "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
             else:
                 rows.append({"Fecha":"Día 2","Descripción":"Saldo (día 1)",
-                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                            "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                             "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
                 ent_tot = c1_u * c1_pu
                 layers.append([float(c1_u), float(c1_pu)])
                 rows.append({"Fecha":"Día 2","Descripción":"Compra",
                             "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
-                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                             "Saldo_cant": c1_u, "Saldo_pu": round(c1_pu,2), "Saldo_total": round(ent_tot,2)})
                 s_q, s_p, s_v = _sum_layers(layers)
 
@@ -5467,7 +5467,7 @@ def page_level4(username):
                     layers = [[q2, p2]] if q2 > 0 else []
                     s_q, s_p, s_v = _sum_layers(layers)
                     rows.append({"Fecha":"Día 3","Descripción":"Venta",
-                                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                                 "Salida_cant": sale_q, "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
                                 "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
                 else:
@@ -5479,15 +5479,15 @@ def page_level4(username):
                         _, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
                         rq, rpu, rv = _sum_layers(running_layers)
                         rows.append({"Fecha":"Día 3","Descripción": f"Venta tramo {i} ({tag})",
-                                    "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                                     "Salida_cant": q_take, "Salida_pu": round(pu_take,2), "Salida_total": round(tot_take,2),
                                     "Saldo_cant": rq, "Saldo_pu": round(rpu,2), "Saldo_total": round(rv,2)})
                     layers = layers_after
                     s_q, s_p, s_v = _sum_layers(layers)
             else:
                 rows.append({"Fecha":"Día 3","Descripción":"Venta",
-                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                            "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                             "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             # D4 devolución compra
@@ -5501,7 +5501,7 @@ def page_level4(username):
                 layers = [[q4, p4]] if q4 > 0 else []
                 s_q, s_p, s_v = _sum_layers(layers)
                 rows.append({"Fecha":"Día 4","Descripción":"Devolución de compra",
-                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                            "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                             "Salida_cant": int(take_q), "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
                             "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
             else:
@@ -5523,8 +5523,8 @@ def page_level4(username):
                 layers = new_rev[::-1]
                 s_q, s_p, s_v = _sum_layers(layers)
                 rows.append({"Fecha":"Día 4","Descripción":"Devolución de compra",
-                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                            "Salida_cant": int(take_q_total), "Salida_pu":"", "Salida_total": round(dev_val,2),
+                            "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                            "Salida_cant": int(take_q_total), "Salida_pu":None, "Salida_total": round(dev_val,2),
                             "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             # D5 devolución venta
@@ -5536,12 +5536,12 @@ def page_level4(username):
                 s_q, s_p, s_v = _sum_layers(layers)
                 rows.append({"Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
                             "Entrada_cant": int(dvent), "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
-                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                             "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
             else:
                 rows.append({"Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
-                            "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                            "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                            "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                            "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                             "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             return rows
@@ -5776,8 +5776,8 @@ def page_level4(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 1","Descripción":"Saldo inicial",
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
+                "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
                 "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
             })
 
@@ -5791,7 +5791,7 @@ def page_level4(username):
             rows.append({
                 "Fecha":"Día 2","Descripción":"Compra",
                 "Entrada_cant": int(c1_u), "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
-                "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                 "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
             })
 
@@ -5806,7 +5806,7 @@ def page_level4(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 3","Descripción":"Venta",
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                 "Salida_cant": int(sale_q), "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
                 "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
             })
@@ -5822,7 +5822,7 @@ def page_level4(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
                 "Fecha":"Día 4","Descripción":"Devolución de compra",
-                "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
+                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
                 "Salida_cant": int(take_q), "Salida_pu": round(take_pu,2), "Salida_total": round(take_val,2),
                 "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
             })
@@ -5839,7 +5839,7 @@ def page_level4(username):
             rows.append({
                 "Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
                 "Entrada_cant": int(in_q), "Entrada_pu": round(in_pu,2), "Entrada_total": round(in_val,2),
-                "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
+                "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                 "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
             })
 
@@ -6498,15 +6498,46 @@ def admin_page():
 # Pantalla Login
 # ===========================
 def login_screen():
-    st.header("Iniciar Sesión")
-    with st.form("login_form"):
-        st.text_input("Usuario", key="login_raw_user")
-        st.text_input("Contraseña", type="password", key="login_password")
-        st.form_submit_button("Ingresar", on_click=do_login)
-    if st.session_state.get("login_error"):
-        st.error(st.session_state["login_error"])
-    st.markdown("---")
-    st.caption("Si es tu primera vez, inicia con tu usuario y contraseña asignados.")
+    # Dos columnas: izquierda (login) / derecha (imagen)
+    col1, col2 = st.columns([1, 1])
+
+    # -------- Columna izquierda: formulario de login --------
+    with col1:
+        st.header("Iniciar Sesión")
+        with st.form("login_form"):
+            st.text_input("Usuario", key="login_raw_user")
+            st.text_input("Contraseña", type="password", key="login_password")
+            st.form_submit_button("Ingresar", on_click=do_login)
+
+        if st.session_state.get("login_error"):
+            st.error(st.session_state["login_error"])
+
+        st.markdown("---")
+        st.caption("Ingresa para comenzar la experiencia gamificada de inventarios. 🎮📊")
+
+    # -------- Columna derecha: imagen de la herramienta --------
+    with col2:
+        st.markdown("## ")
+
+        st.markdown(
+            """
+            <div style="display: flex; justify-content: center;">
+                <img src="https://i.ibb.co/9mh1LX4B/Logotipo-Herramienta.png" 
+                    width="600">
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            """
+            <div style="text-align: center;">
+                <h3>Herramienta Contable – Inventarios Gamificados</h3>
+                <p>Aprende inventarios con escenarios, niveles y retroalimentación interactiva.</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 # ===========================
 # Router principal
