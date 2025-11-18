@@ -4399,13 +4399,16 @@ def page_level4(username):
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplo guiado", "🎮 Práctica (IA)", "🏁 Evaluación final + Encuesta"])
 
+    # =====================================================
+    # TAB 1 — TEORÍA
+    # =====================================================
     with tabs[0]:
         st.subheader("Teoría · Estado de Resultados (sistema perpetuo con devoluciones)")
 
         intro = """
     En una empresa comercial que utiliza **sistema perpetuo**, el **Estado de Resultados** resume el desempeño del periodo. 
     El **CMV** no se calcula con la fórmula periódica; **se determina directamente del KARDEX** según el método de inventario (**Promedio Ponderado, PEPS o UEPS**), 
-    incluyendo el tratamiento de **devoluciones en compras** (ajustan compras netas/pool de costo) y **devoluciones en ventas** (reingreso que **disminuye el CMV neto**).
+    incluyendo el tratamiento de **devoluciones en compras** (ajustan el pool de costo) y **devoluciones en ventas** (reingreso que **disminuye el costo de la mercadería vendida** presentado en el Estado de Resultados).
         """
         st.markdown(intro)
 
@@ -4430,8 +4433,7 @@ def page_level4(username):
             "Selecciona un rubro para ver su fórmula y explicación",
             [
                 "Ventas netas",
-                "Compras netas",
-                "CMV (perpetuo desde KARDEX)",
+                "CMV",
                 "Utilidad bruta",
                 "Gastos operativos",
                 "Resultado operativo",
@@ -4451,35 +4453,29 @@ def page_level4(username):
             st.latex(r"\text{Ventas Netas}=\text{Ventas Brutas}-\text{Devoluciones/Descuentos sobre Ventas}")
             st.caption(
                 "Las devoluciones/descuentos sobre ventas **reducen** las ventas brutas para obtener las ventas netas. "
-                "En el sistema perpetuo, estas partidas también impactan las cuentas de ingresos y presentación del periodo."
+                "En el sistema perpetuo, estas partidas también impactan las cuentas de ingresos y la presentación del periodo."
             )
 
-        elif rubro == "Compras netas":
-            st.markdown("**Compras netas**")
-            st.latex(r"\text{Compras Netas}=\text{Compras Brutas}-\text{Devoluciones en Compras}")
-            st.caption(
-                "Las devoluciones en compras **disminuyen** el total de compras del periodo. En sistema perpetuo, afectan el **pool de costo disponible** "
-                "y pueden gatillar ajustes en el KARDEX (según el método) cuando la devolución implica salida de unidades al proveedor."
-            )
-
-        elif rubro == "CMV (perpetuo desde KARDEX)":
-            st.markdown("**CMV (sistema perpetuo)**")
+        elif rubro == "CMV":
+            st.markdown("**Costo de la Mercadería Vendida (CMV) en sistema perpetuo**")
             st.markdown(
                 """
-    En **perpetuo**, el **CMV** se **acumula transacción por transacción** directamente desde el **KARDEX**, **según el método**:
+    En **perpetuo**, el **CMV** que se presenta en el Estado de Resultados es el **costo neto** de la mercancía vendida,
+    construido directamente desde el **KARDEX**, **según el método**:
 
     - **Promedio Ponderado (PP):** cada venta usa el **promedio vigente** del momento.  
-    - **Devolución en compras:** **salida** al proveedor al **promedio vigente** (reduce el pool de costo).  
-    - **Devolución en ventas:** **reingreso** de unidades al **promedio vigente** (disminuye el **CMV neto**).
+      - La **devolución en compras** sale al proveedor al promedio vigente (reduce el pool de costo).  
+      - La **devolución en ventas** reingresa al promedio vigente y **disminuye el CMV presentado**.
 
     - **PEPS (FIFO):** la venta consume **capas más antiguas** primero.  
-    - **Devolución en compras:** salida al proveedor **a costo de la capa** afectada si corresponde.  
-    - **Devolución en ventas:** reingreso al **costo de las capas que salieron** (antiguas).
+      - La devolución en compras se registra contra la capa correspondiente.  
+      - La devolución en ventas reingresa con el costo de las capas antiguas que habían salido.
 
     - **UEPS (LIFO):** la venta consume **capas más recientes** primero.  
-    - **Devolución en compras:** salida al proveedor según **capa reciente** si procede.  
-    - **Devolución en ventas:** reingreso al **costo de las capas recientes que salieron**.
+      - La devolución en compras afecta las capas recientes.  
+      - La devolución en ventas reingresa con el costo de las capas recientes que habían salido.
 
+    En la práctica, el **CMV del Estado de Resultados** es el **costo definido para las ventas menos el costo de las unidades devueltas por clientes**.
     """
             )
 
@@ -4487,7 +4483,7 @@ def page_level4(username):
             st.markdown("**Utilidad bruta**")
             st.latex(r"\text{Utilidad Bruta}=\text{Ventas Netas}-\text{CMV}")
             st.caption(
-                "El CMV proviene del KARDEX (perpetuo), ya incorporando ajustes por devoluciones y el método de valoración aplicado."
+                "El CMV proviene del KARDEX (perpetuo), incorporando devoluciones y el método de valoración aplicado. En el ER solo se muestra un único rubro de CMV."
             )
 
         elif rubro == "Gastos operativos":
@@ -4535,11 +4531,11 @@ def page_level4(username):
 
         st.markdown("### 🔁 Devoluciones y su impacto")
         st.markdown(
-            "- **Devoluciones en compras:** **reducen las compras netas**, disminuyendo el **pool** de costo disponible y, por tanto, pueden reducir el **CMV**.  \n"
-            "- **Devoluciones en ventas:** reingresan unidades al inventario y **disminuyen el CMV neto** del periodo (parte del costo reconocido como vendido regresa al inventario)."
+            "- **Devoluciones en compras:** **reducen el pool de costo disponible** y, por tanto, pueden disminuir el **CMV** futuro.  \n"
+            "- **Devoluciones en ventas:** reingresan unidades al inventario y **disminuyen el costo de la mercadería vendida** reconocido en el periodo."
         )
         st.latex(r"""
-        \text{CMV Neto} \approx \text{CMV Bruto} - \text{Costo de las unidades devueltas en ventas}
+        \text{CMV} \approx \text{CMV bruto} - \text{Costo de las unidades devueltas en ventas}
         """)
 
         st.markdown("**Valoración del reingreso por devoluciones en ventas:**")
@@ -4561,12 +4557,15 @@ def page_level4(username):
         with st.expander("🔊 Escuchar explicación"):
             full_text = "\n\n".join([
                 "Resumen: En sistema perpetuo, el CMV se obtiene del KARDEX y no con la fórmula periódica.",
-                "Las devoluciones en compras reducen el pool de costo y las compras netas; las devoluciones en ventas disminuyen el CMV neto.",
+                "Las devoluciones en compras reducen el pool de costo y las devoluciones en ventas disminuyen el costo de la mercadería vendida.",
                 "Los métodos PP, PEPS y UEPS determinan el costo aplicado en cada movimiento.",
                 "La estructura del estado de resultados incluye ventas netas, CMV, utilidad bruta, gastos operativos, resultado operativo, otros ingresos y egresos, UAI, impuesto y utilidad neta."
             ])
             speak_block(full_text, key_prefix="teo-n4", lang_hint="es")
 
+    # =====================================================
+    # TAB 2 — EJEMPLO GUIADO
+    # =====================================================
     with tabs[1]:
         st.subheader("Ejemplo guiado: KARDEX + Estado de Resultados")
 
@@ -5021,13 +5020,7 @@ def page_level4(username):
             <tr><td>(-) Devoluciones en ventas</td><td id="pyg_dv" class="muted"></td></tr>
             <tr><td><b>Ventas netas</b></td><td id="pyg_vn" class="muted"></td></tr>
 
-            <tr><td>Compras brutas</td><td id="pyg_cb" class="muted"></td></tr>
-            <tr><td>(-) Devoluciones en compras</td><td id="pyg_dc" class="muted"></td></tr>
-            <tr><td><b>Compras netas</b></td><td id="pyg_cn" class="muted"></td></tr>
-
-            <tr><td>CMV bruto</td><td id="pyg_cmvb" class="muted"></td></tr>
-            <tr><td>(-) Costo de unidades devueltas (venta)</td><td id="pyg_cdev" class="muted"></td></tr>
-            <tr><td><b>CMV neto</b></td><td id="pyg_cmvn" class="muted"></td></tr>
+            <tr><td><b>CMV</b></td><td id="pyg_cmvn" class="muted"></td></tr>
 
             <tr><td><b>Utilidad bruta</b></td><td id="pyg_ub" class="muted"></td></tr>
             <tr><td>Gastos operativos</td><td id="pyg_go" class="muted"></td></tr>
@@ -5099,7 +5092,7 @@ def page_level4(username):
         }
 
         function clearPYG(){
-            ["vb","dv","vn","cb","dc","cn","cmvb","cdev","cmvn","ub","go","ro","oi","oe","uai","imp","un"].forEach(id=>{
+            ["vb","dv","vn","cmvn","ub","go","ro","oi","oe","uai","imp","un"].forEach(id=>{
             const el = document.getElementById("pyg_"+id);
             el.textContent = ""; el.classList.add("muted");
             });
@@ -5159,11 +5152,6 @@ def page_level4(username):
             const vb = pesos(pyg.ventas_brutas);
             const dv = pesos(pyg.dev_ventas_brutas);
             const vn = pesos(pyg.ventas_netas);
-            const cb = pesos(pyg.compras_brutas);
-            const dc = pesos(pyg.dev_compras_valor);
-            const cn = pesos(pyg.compras_netas);
-            const cmvb = pesos(pyg.cmv_bruto);
-            const cdev = pesos(pyg.costo_dev_venta);
             const cmvn = pesos(pyg.cmv_neto);
             const ub = pesos(pyg.utilidad_bruta);
             const go = pesos(pyg.gastos_op);
@@ -5182,18 +5170,12 @@ def page_level4(username):
             return [
             ["vb", pyg.ventas_brutas, `Iniciamos con las ventas brutas. Tomamos ${u} unidades vendidas y las multiplicamos por el precio de venta ${pu}. El resultado es ${vb}.`],
             ["dv", pyg.dev_ventas_brutas, `A continuación, restamos las devoluciones en ventas. Volvieron ${dvu} unidades, valorizadas al mismo precio de venta ${pu}. Esto equivale a ${dv}.`],
-            ["vn", pyg.ventas_netas, `Ventas netas resultan de ventas brutas menos devoluciones en ventas. Obtenemos ${vn}.`],
+            ["vn", pyg.ventas_netas, `Las ventas netas resultan de ventas brutas menos devoluciones en ventas. Obtenemos ${vn}.`],
 
-            ["cb", pyg.compras_brutas, `Sumamos las compras brutas registradas en el período, según el inventario. El valor es ${cb}.`],
-            ["dc", pyg.dev_compras_valor, `Restamos las devoluciones en compras. El valor devuelto al proveedor asciende a ${dc}.`],
-            ["cn", pyg.compras_netas, `Calculamos compras netas como compras brutas menos devoluciones en compras. El total es ${cn}.`],
+            ["cmvn", pyg.cmv_neto, `Ahora calculamos el costo de la mercadería vendida. Este CMV se obtiene desde el KARDEX según el método de inventario y ya descuenta el costo de las unidades devueltas por los clientes. Su valor es ${cmvn}.`],
 
-            ["cmvb", pyg.cmv_bruto, `Determinamos el costo de mercancía vendida bruto a partir del KARDEX, de acuerdo con el método elegido. Su valor es ${cmvb}.`],
-            ["cdev", pyg.costo_dev_venta, `Restamos el costo de las unidades devueltas por clientes, que asciende a ${cdev}.`],
-            ["cmvn", pyg.cmv_neto, `Así obtenemos el costo de mercancía vendida neto, por ${cmvn}.`],
-
-            ["ub", pyg.utilidad_bruta, `La utilidad bruta es ventas netas menos el costo neto. Esto nos da ${ub}.`],
-            ["go", pyg.gastos_op, `Ahora restamos los gastos operativos parametrizados. En total suman ${go}.`],
+            ["ub", pyg.utilidad_bruta, `La utilidad bruta es ventas netas menos el costo de la mercadería vendida. Esto nos da ${ub}.`],
+            ["go", pyg.gastos_op, `Luego restamos los gastos operativos parametrizados. En total suman ${go}.`],
             ["ro", pyg.resultado_operativo, `El resultado operativo es la utilidad bruta menos los gastos operativos. Obtenemos ${ro}.`],
 
             ["oi", pyg.otros_ingresos, `Sumamos otros ingresos por ${oi}.`],
@@ -5273,6 +5255,9 @@ def page_level4(username):
         # Render principal
         components.html(html, height=860, scrolling=True)
 
+    # =====================================================
+    # TAB 3 — PRÁCTICA IA
+    # =====================================================
     with tabs[2]:
         st.subheader("Práctica IA: Estado de Resultados (Nivel 4)")
         st.caption("Genera un escenario, observa el KARDEX de referencia y completa el Estado de Resultados. Valida y recibe retroalimentación.")
@@ -5444,7 +5429,7 @@ def page_level4(username):
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({"Fecha":"Día 1","Descripción":"Saldo inicial",
                         "Entrada_cant":"", "Entrada_pu":"", "Entrada_total":"",
-                        "Salida_cant":"",  "Salida_pu":"",  "Salida_total":"",
+                        "Salida_cant":"", "Salida_pu":"", "Salida_total":"",
                         "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)})
 
             if method_name == "Promedio Ponderado":
@@ -5608,12 +5593,7 @@ def page_level4(username):
                 "Ventas brutas": ventas_brutas,
                 "(-) Devoluciones en ventas": dev_ventas_brutas,
                 "Ventas netas": ventas_netas,
-                "Compras brutas": compras_brutas,
-                "(-) Devoluciones en compras": dev_compras_valor,
-                "Compras netas": compras_netas,
-                "CMV bruto": cmvb,
-                "(-) Costo de unidades devueltas (venta)": cdev,
-                "CMV neto": cmv_neto,
+                "CMV": cmv_neto,
                 "Utilidad bruta": utilidad_bruta,
                 "Gastos operativos": gastos_op,
                 "Resultado operativo": resultado_operativo,
@@ -5649,12 +5629,7 @@ def page_level4(username):
             "Ventas brutas",
             "(-) Devoluciones en ventas",
             "Ventas netas",
-            "Compras brutas",
-            "(-) Devoluciones en compras",
-            "Compras netas",
-            "CMV bruto",
-            "(-) Costo de unidades devueltas (venta)",
-            "CMV neto",
+            "CMV",
             "Utilidad bruta",
             "Gastos operativos",
             "Resultado operativo",
@@ -5712,7 +5687,7 @@ def page_level4(username):
             if correct_rows == len(order_rows):
                 st.success("¡Excelente! Tu Estado de Resultados es consistente con el escenario y el método.")
             else:
-                st.warning("Hay diferencias. Revisa la secuencia y los vínculos con el KARDEX (Ventas/Compras/CMV/Impuesto).")
+                st.warning("Hay diferencias. Revisa la secuencia y los vínculos con el KARDEX (ventas, CMV, devoluciones e impuesto).")
 
             if ask_ai:
                 try:
@@ -5727,16 +5702,20 @@ def page_level4(username):
                         "Valores del estudiante:\n" + intento_txt + "\n\n"
                         "Valores esperados:\n" + esperado_txt + "\n\n"
                         "Indica: (1) errores por renglón, (2) explicación paso a paso, "
-                        "(3) tips para no confundir CMV bruto/neto, compras netas y cálculo del impuesto."
+                        "(3) tips para no confundir ventas netas, CMV, utilidad bruta y cálculo del impuesto."
                     )
                     with st.spinner("Generando retroalimentación de IA…"):
                         fb_text = ia_feedback(prompt_fb)  # si no existe, caerá al except
                     with st.expander("💬 Retroalimentación de la IA (Estado de Resultados)"):
+
                         st.write(fb_text)
                 except Exception as e:
                     st.info("La retroalimentación de IA no está disponible en este entorno.")
                     st.caption(f"Detalle técnico: {e}")
 
+    # =====================================================
+    # TAB 4 — EVALUACIÓN FINAL
+    # =====================================================
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 4")
         st.caption("Debes acertar **5 de 5** para aprobar y avanzar.")
@@ -5949,12 +5928,7 @@ def page_level4(username):
                 "Ventas brutas": ventas_brutas,
                 "(-) Devoluciones en ventas": dev_ventas_brutas,
                 "Ventas netas": ventas_netas,
-                "Compras brutas": compras_brutas,
-                "(-) Devoluciones en compras": dev_compras_valor,
-                "Compras netas": compras_netas,
-                "CMV bruto": cmv_bruto,
-                "(-) Costo de unidades devueltas (venta)": costo_dev_venta,
-                "CMV neto": cmv_neto,
+                "CMV": cmv_neto,
                 "Utilidad bruta": utilidad_bruta,
                 "Gastos operativos": gastos_op,
                 "Resultado operativo": resultado_operativo,
@@ -5971,8 +5945,8 @@ def page_level4(username):
         def _on_topic_fallback_open() -> str:
             return (
                 "En sistema perpetuo, el **CMV** se determina desde el **KARDEX** según el método (PP/PEPS/UEPS), "
-                "incluyendo devoluciones: las **de compras** reducen compras netas/pool de costo; las **de ventas** reingresan "
-                "unidades y reducen el **CMV neto**. Registrar de forma incoherente distorsiona **Utilidad Bruta**, "
+                "incluyendo devoluciones: las **de compras** reducen el pool de costo; las **de ventas** reingresan "
+                "unidades y reducen el **CMV** presentado. Registrar de forma incoherente distorsiona **Utilidad Bruta**, "
                 "**Resultado Operativo** y **Utilidad Neta**, afectando comparabilidad y decisiones."
             )
 
@@ -6030,10 +6004,10 @@ def page_level4(username):
             q2 = st.radio(
                 "2) ¿Cuál es el efecto de una devolución en ventas sobre el CMV y las ventas netas?",
                 [
-                    "a) Aumenta el CMV neto y aumenta las ventas netas.",
-                    "b) Disminuye el CMV neto y disminuye las ventas netas.",
+                    "a) Aumenta el CMV y aumenta las ventas netas.",
+                    "b) Disminuye el CMV y disminuye las ventas netas.",
                     "c) No afecta el CMV y aumenta las ventas netas.",
-                    "d) Aumenta el CMV neto y disminuye las ventas netas.",
+                    "d) Aumenta el CMV y disminuye las ventas netas.",
                 ],
                 index=None,
                 key=K("q2")
@@ -6090,12 +6064,7 @@ def page_level4(username):
                 "Ventas brutas",
                 "(-) Devoluciones en ventas",
                 "Ventas netas",
-                "Compras brutas",
-                "(-) Devoluciones en compras",
-                "Compras netas",
-                "CMV bruto",
-                "(-) Costo de unidades devueltas (venta)",
-                "CMV neto",
+                "CMV",
                 "Utilidad bruta",
                 "Gastos operativos",
                 "Resultado operativo",
@@ -6134,7 +6103,7 @@ def page_level4(username):
             # --- MCQ ---
             correct_mcq = {
                 K("q1"): "b) Directamente del KARDEX según el método (PP/PEPS/UEPS), incluyendo devoluciones.",
-                K("q2"): "b) Disminuye el CMV neto y disminuye las ventas netas.",
+                K("q2"): "b) Disminuye el CMV y disminuye las ventas netas.",
             }
             q1_ok = (st.session_state.get(K("q1")) == correct_mcq[K("q1")])
             q2_ok = (st.session_state.get(K("q2")) == correct_mcq[K("q2")])
@@ -6177,7 +6146,7 @@ def page_level4(username):
             )
             q4_score1, q4_fb = grade_open_generic(
                 open2_text,
-                "Efecto en el ER de devoluciones en compras y en ventas bajo Promedio Ponderado."
+                "Efecto en el Estado de Resultados de devoluciones en compras y en ventas bajo Promedio Ponderado."
             )
 
             if not st.session_state.get(K("ai_open1"), False):
@@ -6243,7 +6212,7 @@ def page_level4(username):
                 prompt_q5 = (
                     "Evalúa el Estado de Resultados diligenciado por el estudiante. "
                     "Centra el feedback en: coherencia con KARDEX PP (CMV y devoluciones), "
-                    "ventas netas, compras netas, y derivación de utilidades e impuesto. "
+                    "ventas netas, CMV, y derivación de utilidades e impuesto. "
                     "Primera línea EXACTA: 'SCORE: 1' si ≥80% de rubros están correctos y no hay errores conceptuales graves; "
                     "si no, 'SCORE: 0'. Luego 3–5 líneas con correcciones puntuales.\n\n"
                     f"INTENTO (valores del estudiante):\n{intento_txt}\n\n"
@@ -6293,10 +6262,9 @@ def page_level4(username):
                 if not q5_ok:
                     st.caption(
                         "Pistas: (1) Ventas netas = Ventas brutas − Dev. ventas; "
-                        "(2) Compras netas = Compras brutas − Dev. compras; "
-                        "(3) CMV neto = CMV bruto − costo de unidades devueltas (venta); "
-                        "(4) Utilidad bruta = Ventas netas − CMV neto; "
-                        "(5) Resultado operativo, UAI, Impuesto y UN en ese orden."
+                        "(2) El CMV que se presenta en el ER ya descuenta el costo de las unidades devueltas; "
+                        "(3) Utilidad bruta = Ventas netas − CMV; "
+                        "(4) Resultado operativo, UAI, Impuesto y UN en ese orden."
                     )
 
             # Celebración / avance (si tienes estas funciones)
@@ -6318,7 +6286,8 @@ def page_level4(username):
                 except Exception:
                     pass
             else:
-                st.error("No aprobado. Debes acertar 5/5. Repasa la integración KARDEX ↔ ER y el tratamiento de devoluciones.")
+                st.error("No aprobado. Debes acertar 5/5. Repasa la integración KARDEX ↔ ER, el tratamiento de devoluciones y el CMV único del Estado de Resultados.")
+
 
 # ===========================
 # Página: Encuesta de satisfacción
