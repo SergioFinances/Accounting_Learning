@@ -3637,9 +3637,6 @@ def page_level3(username):
     # =========================================
     # TAB 1 · EJEMPLO GUIADO (KARDEX DINÁMICO)
     # =========================================
-    # =========================================
-    # TAB 1 · EJEMPLO GUIADO (KARDEX DINÁMICO)
-    # =========================================
     with tabs[1]:
         st.subheader("KARDEX dinámico con devoluciones (PP · PEPS · UEPS)")
         st.caption("Días 1–3 prellenados. La demostración narrada se enfoca en el Día 4 (devolución de compra) y Día 5 (devolución de venta).")
@@ -3717,7 +3714,7 @@ def page_level3(username):
             min_value=0, value=10, step=5, key="n3_kx_dev_comp_u"
         )
         if metodo == "Promedio Ponderado":
-            st.caption("En Promedio Ponderado, la devolución se valora con el **costo promedio vigente del saldo**.")
+            st.caption("En Promedio Ponderado, la devolución se registra al **mismo costo unitario al que se compró** la mercancía.")
 
         st.markdown("↪️ **Día 5.** Devolución de venta (del cliente):")
         dev_venta_u = st.number_input("Unidades devueltas por el cliente", min_value=0, value=8, step=2, key="n3_kx_dev_venta_u")
@@ -3743,7 +3740,10 @@ def page_level3(username):
             """
             rows = []
             script = []
-            sale_unit_cost = None  # CMV por unidad de la venta del Día 3
+
+            # CMV de la venta y último costo unitario usado en la venta
+            sale_unit_cost = None          # promedio del costo de la venta
+            last_sale_unit_pu = None       # último costo unitario con el que se vendió
 
             # =====================
             # DÍA 1 · SALDO INICIAL
@@ -3823,7 +3823,8 @@ def page_level3(username):
                 if method_name == "Promedio Ponderado":
                     sal_q = min(venta_u, s_q)
                     sal_pu = layers[0][1] if layers else 0.0
-                    sale_unit_cost = sal_pu  # CMV por unidad de esa venta
+                    sale_unit_cost = sal_pu                 # costo promedio de la venta
+                    last_sale_unit_pu = sal_pu              # también es el último costo vendido
                     sal_tot = sal_q * sal_pu
 
                     new_q = s_q - sal_q
@@ -3847,6 +3848,12 @@ def page_level3(username):
                     total_sold_qty = sum(q for q, _, _ in sale_details)
                     total_sold_cost = sum(t for _, _, t in sale_details)
                     sale_unit_cost = (total_sold_cost / total_sold_qty) if total_sold_qty > 0 else None
+
+                    # Último costo unitario que salió en la venta (último tramo)
+                    if sale_details:
+                        last_sale_unit_pu = sale_details[-1][1]
+                    else:
+                        last_sale_unit_pu = None
 
                     # Para mostrar las filas por tramo (como en el Nivel 2)
                     running_layers = [l[:] for l in layers]
@@ -3892,7 +3899,8 @@ def page_level3(username):
                     prev_q, prev_pu, prev_v = s_q, s_pu, s_v
 
                     take_q = min(dev_comp_u, s_q)
-                    take_pu = s_pu
+                    # 🔴 Ajuste: devolvemos al precio al que se compró, NO al promedio del saldo
+                    take_pu = comp_pu
                     take_val = take_q * take_pu
 
                     new_q = max(s_q - take_q, 0)
@@ -3913,14 +3921,14 @@ def page_level3(username):
                         "text": (
                             f"En el Día 4 registramos una **devolución de compra**: devolvemos "
                             f"{int(take_q)} unidades al proveedor.\n\n"
-                            f"Como el saldo estaba valorado a un costo promedio de {_fmt_money(prev_pu)} pesos "
-                            f"por unidad, el costo que sale del inventario es {int(take_q)} por "
-                            f"{_fmt_money(prev_pu)} pesos, es decir {_fmt_money(take_val)} pesos.\n"
-                            f"Restamos esas unidades y ese valor al saldo anterior "
-                            f"({int(prev_q)} unidades por {_fmt_money(prev_pu)} pesos, total "
-                            f"{_fmt_money(prev_v)} pesos) y obtenemos un nuevo saldo de "
-                            f"{int(s_q)} unidades por {_fmt_money(s_pu)} pesos, total "
-                            f"{_fmt_money(s_v)} pesos."
+                            f"Estas unidades se devuelven al **mismo costo unitario con el que fueron compradas**, "
+                            f"es decir {_fmt_money(take_pu)} pesos por unidad.\n"
+                            f"El valor que sale del inventario es {int(take_q)} por {_fmt_money(take_pu)}, "
+                            f"equivalente a {_fmt_money(take_val)} pesos.\n\n"
+                            f"A partir del saldo anterior ({int(prev_q)} unidades por "
+                            f"{_fmt_money(prev_pu)}, total {_fmt_money(prev_v)}) restamos esas unidades "
+                            f"y ese valor, y obtenemos un nuevo saldo de {int(s_q)} unidades, con un nuevo "
+                            f"costo promedio de {_fmt_money(s_pu)} pesos, total {_fmt_money(s_v)}."
                         ),
                         "actions": [
                             {"row": len(rows) - 1, "cell": "sal_q", "money": False, "val": int(take_q)},
@@ -3985,12 +3993,20 @@ def page_level3(username):
             # DÍA 5 · DEVOLUCIÓN DE VENTA (REINGRESO)
             # =====================
             if dev_venta_u > 0:
+                # 🔴 Ajuste clave: usar el **último costo unitario con el que se vendió**
+                # (last_sale_unit_pu); si por alguna razón no está, usamos fallback.
+                base_pu_for_return = (
+                    last_sale_unit_pu
+                    if last_sale_unit_pu is not None
+                    else (sale_unit_cost if sale_unit_cost is not None else (s_pu if s_q > 0 else 0.0))
+                )
+
                 # ------- PROMEDIO PONDERADO -------
                 if method_name == "Promedio Ponderado":
                     prev_q, prev_pu, prev_v = s_q, s_pu, s_v
 
                     in_q = dev_venta_u
-                    in_pu = sale_unit_cost if sale_unit_cost is not None else s_pu
+                    in_pu = base_pu_for_return
                     in_val = in_q * in_pu
 
                     new_q = s_q + in_q
@@ -4010,11 +4026,12 @@ def page_level3(username):
                         "title": "Día 5 · Devolución de venta (PP)",
                         "text": (
                             f"En el Día 5 el cliente devuelve {int(in_q)} unidades. "
-                            f"Como esa venta se había valorado al costo promedio de la fecha, "
-                            f"reingresamos las unidades al mismo costo de {_fmt_money(in_pu)} pesos por unidad.\n\n"
-                            f"El valor que vuelve al inventario es {int(in_q)} por {_fmt_money(in_pu)} pesos, es decir "
-                            f"{_fmt_money(in_val)} pesos. Esto reduce el **CMV neto** del periodo y aumenta nuevamente el saldo "
-                            f"de inventario a {int(s_q)} unidades con un nuevo costo promedio de {_fmt_money(s_pu)} pesos, "
+                            f"Las reingresamos al **último costo unitario con el que se registró la venta**, "
+                            f"que en este caso es {_fmt_money(in_pu)} pesos por unidad.\n\n"
+                            f"Así, el valor que vuelve al inventario es {int(in_q)} por {_fmt_money(in_pu)}, "
+                            f"es decir {_fmt_money(in_val)} pesos. "
+                            f"Esto reduce el **CMV neto** del periodo y aumenta nuevamente el saldo de inventario "
+                            f"a {int(s_q)} unidades con un nuevo costo promedio de {_fmt_money(s_pu)} pesos, "
                             f"total {_fmt_money(s_v)} pesos."
                         ),
                         "actions": [
@@ -4032,8 +4049,7 @@ def page_level3(username):
                     metodo_tag = "PEPS" if fifo else "UEPS"
 
                     in_q = dev_venta_u
-                    base_pu = sale_unit_cost if sale_unit_cost is not None else (s_pu if s_q > 0 else 0.0)
-                    in_pu = base_pu
+                    in_pu = base_pu_for_return
                     in_val = in_q * in_pu
 
                     # Reingresamos como una capa adicional al costo de la venta
@@ -4054,10 +4070,12 @@ def page_level3(username):
                     script.append({
                         "title": f"Día 5 · Devolución de venta ({metodo_tag})",
                         "text": (
-                            f"El cliente devuelve {int(in_q)} unidades. En {metodo_tag} las reingresamos al mismo costo "
-                            f"con el que habían salido en la venta: {_fmt_money(in_pu)} pesos por unidad.\n\n"
+                            f"El cliente devuelve {int(in_q)} unidades. En {metodo_tag} las reingresamos "
+                            f"al **último costo unitario con el que se habían vendido esas unidades**, "
+                            f"que es {_fmt_money(in_pu)} pesos por unidad.\n\n"
                             f"Formamos una nueva capa en el inventario por {_fmt_money(in_val)} pesos. "
-                            f"Esto revierte parte del CMV reconocido y actualiza el saldo total de inventario."
+                            f"Esto revierte parte del CMV reconocido y actualiza el saldo total de inventario, "
+                            f"manteniendo la coherencia con el flujo de capas del método."
                         ),
                         "actions": [
                             {"row": len(rows) - 1, "cell": "ent_q", "money": False, "val": int(in_q)},
