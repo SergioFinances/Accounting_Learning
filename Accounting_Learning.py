@@ -1525,15 +1525,18 @@ def page_level2(username):
             saldo_qty = sum(q for q, _ in saldo_layers)
             saldo_val = sum(q * p for q, p in saldo_layers)
             saldo_pu = (saldo_val / saldo_qty) if saldo_qty > 0 else 0.0
+            entrada_inicial_total = inv0_u * inv0_pu
 
+            # AHORA EL SALDO INICIAL SE MUESTRA COMO ENTRADA Y COMO SALDO
             rows.append([
                 "Día 1", "Saldo inicial",
-                "", "", "",
+                int(inv0_u) if inv0_u > 0 else "", round(inv0_pu, 2) if inv0_u > 0 else "", round(entrada_inicial_total, 2) if inv0_u > 0 else "",
                 "", "", "",
                 int(saldo_qty), round(saldo_pu, 2), round(saldo_val, 2)
             ])
 
-            explain_lines = [f"- **Saldo inicial**: {int(inv0_u)} u @ {_fmt_money(inv0_pu)} → Saldo: {int(saldo_qty)} u, {_fmt_money(saldo_val)}."]
+            explain_lines = [f"- **Saldo inicial**: registramos {int(inv0_u)} u @ {_fmt_money(inv0_pu)} como una entrada inicial al Kardex; "
+                             f"el saldo muestra esas mismas {int(saldo_qty)} u, por {_fmt_money(saldo_val)}."]
 
             # --- Fila 2: Compra ---
             entrada_total = comp_u * comp_pu
@@ -1550,9 +1553,11 @@ def page_level2(username):
                     int(saldo_qty), round(saldo_pu, 2), round(saldo_val, 2)
                 ])
                 explain_lines.append(
-                    f"- **Compra**: +{int(comp_u)} u @ {_fmt_money(comp_pu)}. Nuevo promedio: {_fmt_money(saldo_pu)} con {int(saldo_qty)} u en saldo."
+                    f"- **Compra**: +{int(comp_u)} u @ {_fmt_money(comp_pu)}. A partir del saldo inicial ya registrado, "
+                    f"recalculamos el costo promedio: ahora el saldo es de {int(saldo_qty)} u a {_fmt_money(saldo_pu)}."
                 )
             else:
+                # PEPS / UEPS: solo fila de Compra (sin “Saldo (día 1)”)
                 saldo_layers.append([float(comp_u), float(comp_pu)])
                 saldo_qty = sum(q for q, _ in saldo_layers)
                 saldo_val = sum(q * p for q, p in saldo_layers)
@@ -1561,10 +1566,14 @@ def page_level2(username):
                     "Día 2", "Compra",
                     int(comp_u), round(comp_pu, 2), round(entrada_total, 2),
                     "", "", "",
-                    int(saldo_qty), round(saldo_pu, 2), round(saldo_val, 2)
+                    int(comp_u), round(comp_pu, 2), round(entrada_total, 2)
                 ])
                 capas_txt = " · ".join([f"{int(q)}u@{_fmt_money(p)}" for q, p in saldo_layers])
-                explain_lines.append(f"- **Compra**: +{int(comp_u)} u @ {_fmt_money(comp_pu)}. Capas ahora: {capas_txt}.")
+                explain_lines.append(
+                    f"- **Compra**: +{int(comp_u)} u @ {_fmt_money(comp_pu)}. "
+                    f"La fila del Día 2 muestra la nueva capa; el inventario total se observa combinando el saldo inicial del Día 1 y esta fila. "
+                    f"Capas: {capas_txt}."
+                )
 
             # --- Fila 3: Venta ---
             venta_total = 0.0
@@ -1672,7 +1681,6 @@ def page_level2(username):
                 key="n2_kx_venta_u"
             )
 
-
         # =========================
         # 🎬 DEMOSTRACIÓN NARRADA (PEPS/UEPS con filas por capas)
         # =========================
@@ -1717,22 +1725,30 @@ def page_level2(username):
             rows = []   # cada fila: dict con keys: fecha, desc, ent_q, ent_pu, ent_tot, sal_q, sal_pu, sal_tot, sdo_q, sdo_pu, sdo_tot
             script = [] # cada paso: {"title","text","actions":[{"row":i,"cell":"rX","money":bool,"val":v}, ...]}
 
-            # Día 1: Saldo inicial (1 fila)
+            # Día 1: Saldo inicial (1 fila) — AHORA COMO ENTRADA
             layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
             s_q, s_pu, s_v = _sum_layers(layers)
+            ent_tot_inicial = inv0_u * inv0_pu
+
             rows.append({
-                "fecha":"Día 1", "desc":"Saldo inicial",
-                "ent_q":None,"ent_pu":None,"ent_tot":None,
-                "sal_q":None,"sal_pu":None,"sal_tot":None,
-                "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                "fecha": "Día 1", "desc": "Saldo inicial",
+                "ent_q": int(inv0_u) if inv0_u > 0 else None,
+                "ent_pu": round(inv0_pu, 2) if inv0_u > 0 else None,
+                "ent_tot": round(ent_tot_inicial, 2) if inv0_u > 0 else None,
+                "sal_q": None, "sal_pu": None, "sal_tot": None,
+                "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2)
             })
             script.append({
-                "title":"Paso 1 · Saldo inicial",
-                "text":"Registramos cantidad y costo unitario del inventario existente. Calculamos el saldo: cantidad × precio.",
-                "actions":[
-                    {"row":0,"cell":"sdo_q","money":False,"val":int(s_q)},
-                    {"row":0,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
-                    {"row":0,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                "title": "Paso 1 · Saldo inicial como entrada",
+                "text": "Registramos el saldo inicial como una entrada al Kardex: cantidad por costo unitario nos da el valor inicial. "
+                        "Esa misma fila refleja el saldo con el que arranca el periodo.",
+                "actions": [
+                    {"row": 0, "cell": "ent_q", "money": False, "val": int(inv0_u) if inv0_u > 0 else 0},
+                    {"row": 0, "cell": "ent_pu", "money": True, "val": round(inv0_pu, 2)},
+                    {"row": 0, "cell": "ent_tot", "money": True, "val": round(ent_tot_inicial, 2)},
+                    {"row": 0, "cell": "sdo_q", "money": False, "val": int(s_q)},
+                    {"row": 0, "cell": "sdo_pu", "money": True, "val": round(s_pu, 2)},
+                    {"row": 0, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
                 ]
             })
 
@@ -1748,66 +1764,56 @@ def page_level2(username):
                 s_q, s_pu, s_v = _sum_layers(layers)
 
                 rows.append({
-                    "fecha":"Día 2", "desc":"Compra",
-                    "ent_q":int(comp_u), "ent_pu":round(comp_pu,2), "ent_tot":round(ent_tot,2),
-                    "sal_q":None,"sal_pu":None,"sal_tot":None,
-                    "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                    "fecha": "Día 2", "desc": "Compra",
+                    "ent_q": int(comp_u), "ent_pu": round(comp_pu, 2), "ent_tot": round(ent_tot, 2),
+                    "sal_q": None, "sal_pu": None, "sal_tot": None,
+                    "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2)
                 })
                 script.append({
-                    "title":"Paso 2 · Compra y nuevo promedio",
-                    "text":"Registramos la compra y recalculamos el costo promedio: (valor saldo anterior + valor entrada) / (unidades anteriores + unidades de entrada).",
-                    "actions":[
-                        {"row":1,"cell":"ent_q","money":False,"val":int(comp_u)},
-                        {"row":1,"cell":"ent_pu","money":True, "val":round(comp_pu,2)},
-                        {"row":1,"cell":"ent_tot","money":True,"val":round(ent_tot,2)},
-                        {"row":1,"cell":"sdo_q","money":False,"val":int(s_q)},
-                        {"row":1,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
-                        {"row":1,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                    "title": "Paso 2 · Compra y nuevo promedio",
+                    "text": "Registramos la compra como una nueva entrada. A partir del saldo inicial ya registrado, "
+                            "recalculamos el costo promedio: sumamos el valor del saldo inicial y el de la compra, "
+                            "y dividimos entre el total de unidades.",
+                    "actions": [
+                        {"row": 1, "cell": "ent_q", "money": False, "val": int(comp_u)},
+                        {"row": 1, "cell": "ent_pu", "money": True, "val": round(comp_pu, 2)},
+                        {"row": 1, "cell": "ent_tot", "money": True, "val": round(ent_tot, 2)},
+                        {"row": 1, "cell": "sdo_q", "money": False, "val": int(s_q)},
+                        {"row": 1, "cell": "sdo_pu", "money": True, "val": round(s_pu, 2)},
+                        {"row": 1, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
                     ]
                 })
                 start_sale_row_index = 2
 
             else:
-                # --------- PEPS / UEPS: dos filas en Día 2 ---------
-                # Fila 1: “Saldo (día 1)” (copia del saldo previo; mantiene costo por capa)
-                rows.append({
-                    "fecha":"Día 2", "desc":"Saldo (día 1)",
-                    "ent_q":None,"ent_pu":None,"ent_tot":None,
-                    "sal_q":None,"sal_pu":None,"sal_tot":None,
-                    "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
-                })
-                script.append({
-                    "title":"Paso 2A · Saldo que viene del día 1",
-                    "text":"Antes de registrar la compra, mostramos el saldo existente y su costo por capa.",
-                    "actions":[
-                        {"row":1,"cell":"sdo_q","money":False,"val":int(s_q)},
-                        {"row":1,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
-                        {"row":1,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
-                    ]
-                })
+                # --------- PEPS / UEPS: solo una fila de Compra (sin “Saldo (día 1)” separado) ---------
+                ent_tot = comp_u * comp_pu
+                layers.append([float(comp_u), float(comp_pu)])
+                # Actualizamos saldos globales para uso interno
+                s_q, s_pu, s_v = _sum_layers(layers)
 
-                # Fila 2: “Compra” — entrada EXACTA 60 u @ 12; en Saldo SOLO la capa comprada
-                ent_tot = comp_u * comp_pu                      # p.ej., 60 * 12 = 720
-                layers.append([float(comp_u), float(comp_pu)])  # agrega la nueva capa a 12 (capas se mantienen separadas)
                 rows.append({
-                    "fecha":"Día 2", "desc":"Compra",
-                    "ent_q":int(comp_u), "ent_pu":round(comp_pu,2), "ent_tot":round(ent_tot,2),
-                    "sal_q":None,"sal_pu":None,"sal_tot":None,
-                    "sdo_q":int(comp_u), "sdo_pu":round(comp_pu,2), "sdo_tot":round(ent_tot,2)  # SOLO la capa comprada
+                    "fecha": "Día 2", "desc": "Compra",
+                    "ent_q": int(comp_u), "ent_pu": round(comp_pu, 2), "ent_tot": round(ent_tot, 2),
+                    "sal_q": None, "sal_pu": None, "sal_tot": None,
+                    # En la fila mostramos solo la capa de la compra, como en el ejemplo
+                    "sdo_q": int(comp_u), "sdo_pu": round(comp_pu, 2), "sdo_tot": round(ent_tot, 2)
                 })
                 script.append({
-                    "title":"Paso 2B · Registro de la compra",
-                    "text":"Registramos la entrada con su costo unitario (sin promediar). En la columna Saldo de esta fila mostramos únicamente la nueva capa comprada.",
-                    "actions":[
-                        {"row":2,"cell":"ent_q","money":False,"val":int(comp_u)},
-                        {"row":2,"cell":"ent_pu","money":True, "val":round(comp_pu,2)},
-                        {"row":2,"cell":"ent_tot","money":True,"val":round(ent_tot,2)},
-                        {"row":2,"cell":"sdo_q","money":False,"val":int(comp_u)},
-                        {"row":2,"cell":"sdo_pu","money":True, "val":round(comp_pu,2)},
-                        {"row":2,"cell":"sdo_tot","money":True,"val":round(ent_tot,2)},
+                    "title": "Paso 2 · Compra como nueva capa",
+                    "text": "Registramos la compra como una nueva capa de inventario. "
+                            "En esta fila, la columna Saldo muestra solo esa entrada. "
+                            "Si quieres ver el inventario total, debes combinar el saldo inicial del Día 1 con esta compra.",
+                    "actions": [
+                        {"row": 1, "cell": "ent_q", "money": False, "val": int(comp_u)},
+                        {"row": 1, "cell": "ent_pu", "money": True, "val": round(comp_pu, 2)},
+                        {"row": 1, "cell": "ent_tot", "money": True, "val": round(ent_tot, 2)},
+                        {"row": 1, "cell": "sdo_q", "money": False, "val": int(comp_u)},
+                        {"row": 1, "cell": "sdo_pu", "money": True, "val": round(comp_pu, 2)},
+                        {"row": 1, "cell": "sdo_tot", "money": True, "val": round(ent_tot, 2)},
                     ]
                 })
-                start_sale_row_index = 3  # porque ya tenemos 3 filas antes de la venta
+                start_sale_row_index = 2  # ahora las ventas comienzan en la tercera fila (índice 2)
 
             # Día 3: Venta
             if venta_u > 0 and s_q > 0:
@@ -1824,25 +1830,25 @@ def page_level2(username):
                     s_q, s_pu, s_v = _sum_layers(layers)
 
                     rows.append({
-                        "fecha":"Día 3", "desc":"Venta",
-                        "ent_q":None,"ent_pu":None,"ent_tot":None,
-                        "sal_q":int(sal_q), "sal_pu":round(sal_pu,2), "sal_tot":round(sal_tot,2),
-                        "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                        "fecha": "Día 3", "desc": "Venta",
+                        "ent_q": None, "ent_pu": None, "ent_tot": None,
+                        "sal_q": int(sal_q), "sal_pu": round(sal_pu, 2), "sal_tot": round(sal_tot, 2),
+                        "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2)
                     })
                     script.append({
-                        "title":"Paso 3 · Venta (Promedio)",
-                        "text":"Calculamos el CMV con el costo promedio vigente y actualizamos el saldo.",
-                        "actions":[
-                            {"row":start_sale_row_index,"cell":"sal_q","money":False,"val":int(sal_q)},
-                            {"row":start_sale_row_index,"cell":"sal_pu","money":True, "val":round(sal_pu,2)},
-                            {"row":start_sale_row_index,"cell":"sal_tot","money":True,"val":round(sal_tot,2)},
-                            {"row":start_sale_row_index,"cell":"sdo_q","money":False,"val":int(s_q)},
-                            {"row":start_sale_row_index,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
-                            {"row":start_sale_row_index,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                        "title": "Paso 3 · Venta (Promedio)",
+                        "text": "Calculamos el costo de la venta usando el costo promedio vigente y actualizamos el saldo.",
+                        "actions": [
+                            {"row": start_sale_row_index, "cell": "sal_q", "money": False, "val": int(sal_q)},
+                            {"row": start_sale_row_index, "cell": "sal_pu", "money": True, "val": round(sal_pu, 2)},
+                            {"row": start_sale_row_index, "cell": "sal_tot", "money": True, "val": round(sal_tot, 2)},
+                            {"row": start_sale_row_index, "cell": "sdo_q", "money": False, "val": int(s_q)},
+                            {"row": start_sale_row_index, "cell": "sdo_pu", "money": True, "val": round(s_pu, 2)},
+                            {"row": start_sale_row_index, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
                         ]
                     })
                 else:
-                    # PEPS/UEPS: divisar venta por capas (tramos)
+                    # PEPS/UEPS: dividir venta por capas (tramos)
                     fifo = (method_name == "PEPS (FIFO)")
                     sale_details, layers_after = _consume_layers_detail(layers, venta_u, fifo=fifo)
 
@@ -1856,21 +1862,22 @@ def page_level2(username):
                         rq, rpu, rv = _sum_layers(running_layers)
 
                         rows.append({
-                            "fecha":"Día 3", "desc": f"Venta tramo {i} ({metodo_tag})",
-                            "ent_q":None,"ent_pu":None,"ent_tot":None,
-                            "sal_q":int(q_take), "sal_pu":round(pu_take,2), "sal_tot":round(tot_take,2),
-                            "sdo_q":int(rq), "sdo_pu":round(rpu,2), "sdo_tot":round(rv,2)
+                            "fecha": "Día 3", "desc": f"Venta tramo {i} ({metodo_tag})",
+                            "ent_q": None, "ent_pu": None, "ent_tot": None,
+                            "sal_q": int(q_take), "sal_pu": round(pu_take, 2), "sal_tot": round(tot_take, 2),
+                            "sdo_q": int(rq), "sdo_pu": round(rpu, 2), "sdo_tot": round(rv, 2)
                         })
                         script.append({
                             "title": f"Paso 3 · Venta (tramo {i})",
-                            "text":"Consumimos unidades de la capa correspondiente: en PEPS salen primero las más antiguas; en UEPS, las últimas en entrar. Actualizamos el saldo tras el tramo.",
-                            "actions":[
-                                {"row":acc_row,"cell":"sal_q","money":False,"val":int(q_take)},
-                                {"row":acc_row,"cell":"sal_pu","money":True, "val":round(pu_take,2)},
-                                {"row":acc_row,"cell":"sal_tot","money":True,"val":round(tot_take,2)},
-                                {"row":acc_row,"cell":"sdo_q","money":False,"val":int(rq)},
-                                {"row":acc_row,"cell":"sdo_pu","money":True, "val":round(rpu,2)},
-                                {"row":acc_row,"cell":"sdo_tot","money":True,"val":round(rv,2)},
+                            "text": "Consumimos unidades de la capa correspondiente: en PEPS salen primero las más antiguas; "
+                                    "en UEPS, las últimas en entrar. Después de cada tramo actualizamos el saldo.",
+                            "actions": [
+                                {"row": acc_row, "cell": "sal_q", "money": False, "val": int(q_take)},
+                                {"row": acc_row, "cell": "sal_pu", "money": True, "val": round(pu_take, 2)},
+                                {"row": acc_row, "cell": "sal_tot", "money": True, "val": round(tot_take, 2)},
+                                {"row": acc_row, "cell": "sdo_q", "money": False, "val": int(rq)},
+                                {"row": acc_row, "cell": "sdo_pu", "money": True, "val": round(rpu, 2)},
+                                {"row": acc_row, "cell": "sdo_tot", "money": True, "val": round(rv, 2)},
                             ]
                         })
                         acc_row += 1
@@ -1880,23 +1887,22 @@ def page_level2(username):
             else:
                 # Sin venta o sin saldo
                 rows.append({
-                    "fecha":"Día 3", "desc":"Venta",
-                    "ent_q":None,"ent_pu":None,"ent_tot":None,
-                    "sal_q":None,"sal_pu":None,"sal_tot":None,
-                    "sdo_q":int(s_q), "sdo_pu":round(s_pu,2), "sdo_tot":round(s_v,2)
+                    "fecha": "Día 3", "desc": "Venta",
+                    "ent_q": None, "ent_pu": None, "ent_tot": None,
+                    "sal_q": None, "sal_pu": None, "sal_tot": None,
+                    "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2)
                 })
                 script.append({
-                    "title":"Paso 3 · Venta",
-                    "text":"No hay venta o no hay saldo para consumir; el inventario permanece igual.",
-                    "actions":[
-                        {"row":start_sale_row_index,"cell":"sdo_q","money":False,"val":int(s_q)},
-                        {"row":start_sale_row_index,"cell":"sdo_pu","money":True, "val":round(s_pu,2)},
-                        {"row":start_sale_row_index,"cell":"sdo_tot","money":True,"val":round(s_v,2)},
+                    "title": "Paso 3 · Venta",
+                    "text": "No hay venta o no hay saldo para consumir; el inventario permanece igual.",
+                    "actions": [
+                        {"row": start_sale_row_index, "cell": "sdo_q", "money": False, "val": int(s_q)},
+                        {"row": start_sale_row_index, "cell": "sdo_pu", "money": True, "val": round(s_pu, 2)},
+                        {"row": start_sale_row_index, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
                     ]
                 })
 
             return rows, script
-
 
         demo_rows, demo_script = compute_rows_and_script(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
 
@@ -2065,6 +2071,7 @@ def page_level2(username):
         )
 
         components.html(html_demo, height=250, scrolling=True)
+
 
     with tabs[2]:
         st.subheader("Práctica IA: diligencia tu propio KARDEX")
