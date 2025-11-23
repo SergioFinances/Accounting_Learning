@@ -2149,18 +2149,24 @@ def page_level2(username):
 
             let t = text;
 
-            // 1) Casos tipo: $100, $ 100, US$100, US$ 100 → "100 pesos"
-            t = t.replace(/\bUS?\$ ?(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
-            t = t.replace(/\$ ?(\d+(?:[\.,]\d+)*)/g, "$1 pesos");
+            // 1) Casos tipo: US$100, US$ 100, $100, $ 100, COP 100 → "100 pesos"
+            t = t.replace(/\bUS?\$\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
+            t = t.replace(/\$\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/g, "$1 pesos");
+            t = t.replace(/\bCOP\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
+            // 100 $, 100 US$, 100 COP → "100 pesos"
+            t = t.replace(/(\d+(?:[\.,]\d+)*)\s*(US?\$|COP|\$)\b/gi, "$1 pesos");
 
-            // 2) Casos tipo: COP 100 → "100 pesos"
-            t = t.replace(/\bCOP ?(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
-
-            // 3) Si por transformaciones previas quedó "pesos 100" → "100 pesos"
+            // 2) Si quedó "pesos 100" → "100 pesos"
             t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
 
-            // 4) Evitar "pesos pesos"
-            t = t.replace(/pesos\s+pesos/gi, "pesos");
+            // 3) Si quedó "100 pesos pesos" → "100 pesos"
+            t = t.replace(/(\d+(?:[\.,]\d+)*)\s+pesos\s+pesos/gi, "$1 pesos");
+
+            // 4) Si quedó "pesos 100 pesos" → "100 pesos"
+            t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)\s+pesos/gi, "$1 pesos");
+
+            // 5) Limpiar espacios dobles
+            t = t.replace(/\s{2,}/g, " ");
 
             return t;
         }
