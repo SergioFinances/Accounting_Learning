@@ -2120,11 +2120,30 @@ def page_level2(username):
         const btnReset = document.getElementById("resetDemo");
 
         const pesos = (v)=> {
-            try { return new Intl.NumberFormat('es-CO',{style:'currency', currency:'COP', maximumFractionDigits:2}).format(v); }
-            catch(e){ return "$"+(Math.round(v*100)/100).toLocaleString('es-CO'); }
+            try {
+                return new Intl.NumberFormat('es-CO', {
+                    style: 'currency',
+                    currency: 'COP',
+                    maximumFractionDigits: 2
+                }).format(v);
+            } catch(e){
+                return "$" + (Math.round(v*100)/100).toLocaleString('es-CO');
+            }
         };
-        const fmt = (x)=> (x===null || x===undefined || x==="") ? "" : (typeof x==="number" ? (Number.isInteger(x)? x.toString(): (Math.round(x*100)/100).toString().replace(".",",")) : x);
 
+        const fmt = (x)=> (
+            x===null || x===undefined || x===""
+                ? ""
+                : (typeof x==="number"
+                    ? (Number.isInteger(x)
+                        ? x.toString()
+                        : (Math.round(x*100)/100).toString().replace(".",",")
+                    )
+                    : x
+                )
+        );
+
+        // 🔹 NUEVO: limpiar el texto para la voz
         function cleanForSpeak(text) {
             // Reemplaza el símbolo $ por la palabra "pesos" solo para la narración
             if (!text) return "";
@@ -2133,19 +2152,24 @@ def page_level2(username):
 
         function speak(text){
             return new Promise((resolve)=>{
-            if (narrMuted) return resolve();
-            try{
-                if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-                const u = new SpeechSynthesisUtterance(text);
-                const voices = window.speechSynthesis.getVoices();
-                const pick = voices.find(v=>/es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
-                if (pick) u.voice = pick;
-                u.rate = rate; u.pitch = 1.0;
-                u.onend = ()=> resolve();
-                window.speechSynthesis.speak(u);
-            }catch(e){ resolve(); }
+                if (narrMuted) return resolve();
+                try{
+                    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+                    // 🟢 Usamos la versión limpia, sin "$"
+                    const u = new SpeechSynthesisUtterance(cleanForSpeak(text));
+                    const voices = window.speechSynthesis.getVoices();
+                    const pick = voices.find(v=>/es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
+                    if (pick) u.voice = pick;
+                    u.rate = rate;
+                    u.pitch = 1.0;
+                    u.onend = ()=> resolve();
+                    window.speechSynthesis.speak(u);
+                } catch(e){
+                    resolve();
+                }
             });
         }
+        
         const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
 
         function buildTable(){
