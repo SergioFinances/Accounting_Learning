@@ -5831,38 +5831,6 @@ def page_level4(username):
             st.caption("Resultado final del periodo después de impuestos.")
 
         st.markdown("---")
-        st.markdown("### 📦 CMV según el método de inventario")
-        st.markdown(
-            "- **Promedio Ponderado (PP):** el costo unitario se actualiza al **promedio vigente** tras cada compra/devolución.  \n"
-            "- **PEPS (FIFO):** las ventas consumen primero las **capas más antiguas**.  \n"
-            "- **UEPS (LIFO):** las ventas consumen primero las **capas más recientes**."
-        )
-
-        st.markdown("### 🔁 Devoluciones y su impacto")
-        st.markdown(
-            "- **Devoluciones en compras:** **reducen el pool de costo disponible** y, por tanto, pueden disminuir el **CMV** futuro.  \n"
-            "- **Devoluciones en ventas:** reingresan unidades al inventario y **disminuyen el costo de la mercadería vendida** reconocido en el periodo."
-        )
-        st.latex(r"""
-        \text{CMV} \approx \text{CMV bruto} - \text{Costo de las unidades devueltas en ventas}
-        """)
-
-        st.markdown("**Valoración del reingreso por devoluciones en ventas:**")
-        st.markdown(
-            "- **PP:** reingreso al **promedio vigente**.  \n"
-            "- **PEPS:** reingreso con **costos de capas antiguas** (las primeras que salieron).  \n"
-            "- **UEPS:** reingreso con **costos de capas recientes** (las últimas que salieron)."
-        )
-
-        st.markdown("---")
-        st.markdown("### 💡 Idea clave")
-        st.markdown(
-            "La consistencia entre **método de inventario** y el registro de **devoluciones** asegura un **CMV** correcto. "
-            "Esto impacta directamente la **Utilidad Bruta**, el **Resultado Operativo** y, tras considerar **otros ingresos/egresos** y **el impuesto**, la **Utilidad Neta**. "
-            "Un registro incoherente distorsiona la comparabilidad y las decisiones."
-        )
-
-        st.markdown("---")
         with st.expander("🔊 Escuchar explicación"):
             full_text = "\n\n".join([
                 "Resumen: En sistema perpetuo, el CMV se obtiene del KARDEX y no con la fórmula periódica.",
