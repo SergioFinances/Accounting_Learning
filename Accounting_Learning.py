@@ -349,6 +349,7 @@ def speak_block(texto: str, key_prefix: str, lang_hint="es"):
         <input id="{key_prefix}-pitch" type="range" min="0.7" max="1.3" step="0.05" value="1.0" />
 
         <button id="{key_prefix}-play">🔊 Escuchar</button>
+        <button id="{key_prefix}-pause">⏸️ Pausar</button>
         <button id="{key_prefix}-stop">⏹️ Detener</button>
       </div>
       <small>Tip: prueba voces como <em>Google español</em> o <em>Microsoft Sabina</em>. Algunas respetan mejor velocidad y tono.</small>
@@ -361,6 +362,7 @@ def speak_block(texto: str, key_prefix: str, lang_hint="es"):
         const rate = document.getElementById("{key_prefix}-rate");
         const pitch = document.getElementById("{key_prefix}-pitch");
         const btnPlay = document.getElementById("{key_prefix}-play");
+        const btnPause = document.getElementById("{key_prefix}-pause");
         const btnStop = document.getElementById("{key_prefix}-stop");
 
         function populateVoices() {{
@@ -404,13 +406,34 @@ def speak_block(texto: str, key_prefix: str, lang_hint="es"):
             u.rate = parseFloat(rate.value);
             u.pitch = parseFloat(pitch.value);
             speechSynthesis.speak(u);
+            btnPause.textContent = "⏸️ Pausar";
           }} catch (e) {{}}
         }};
-        btnStop.onclick = () => speechSynthesis.cancel();
+
+        btnPause.onclick = () => {{
+          try {{
+            if (!speechSynthesis.speaking && !speechSynthesis.paused) return;
+            if (speechSynthesis.paused) {{
+              speechSynthesis.resume();
+              btnPause.textContent = "⏸️ Pausar";
+            }} else {{
+              speechSynthesis.pause();
+              btnPause.textContent = "▶️ Reanudar";
+            }}
+          }} catch (e) {{}}
+        }};
+
+        btnStop.onclick = () => {{
+          try {{
+            speechSynthesis.cancel();
+            btnPause.textContent = "⏸️ Pausar";
+          }} catch (e) {{}}
+        }};
       }})();
     </script>
     """
-    components.html(html, height=140)
+    components.html(html, height=160)
+
 
 # ===========================
 # Config encuesta
