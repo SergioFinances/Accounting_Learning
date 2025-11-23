@@ -5320,15 +5320,21 @@ def page_level3(username):
             return default
 
         def q5_scenario():
-            # ← Cambia aquí los números del ejercicio Q5 y en NINGÚN otro sitio
+            """
+            Escenario de Q5 ajustado para que:
+            - Todos los costos unitarios sean enteros.
+            - El promedio después de cada operación también sea entero.
+            - Devolución en compras se valore al costo de la compra.
+            - Devolución en ventas se valore al costo de la venta (PP).
+            """
             return {
-                    "inv0_u":   100,   # Día 1: unidades iniciales
-                    "inv0_pu":  12.0,  # Día 1: precio unitario inicial
-                    "comp1_u":  60,    # Día 2: compra unidades
-                    "comp1_pu": 13.5,  # Día 2: compra precio unitario
-                    "venta_u":  120,   # Día 3: venta unidades
-                    "dev_comp": 10,    # Día 4: devolución en compras (unidades que salen)
-                    "dev_venta":5,     # Día 5: devolución en ventas (unidades que reingresan)
+                "inv0_u":   80,    # Día 1: unidades iniciales
+                "inv0_pu":  12.0,  # Día 1: precio unitario inicial
+                "comp1_u":  40,    # Día 2: compra unidades
+                "comp1_pu": 15.0,  # Día 2: compra precio unitario
+                "venta_u":  100,   # Día 3: venta unidades
+                "dev_comp": 10,    # Día 4: devolución en compras (unidades que salen)
+                "dev_venta":10,    # Día 5: devolución en ventas (unidades que reingresan)
             }
 
         def _scenario_signature(sc: dict) -> str:
@@ -5343,13 +5349,13 @@ def page_level3(username):
         @st.cache_data(show_spinner=False)
         def build_expected_rows_q5_pp(sc: dict, sig: str):
             """
-            Construye las filas esperadas del KARDEX para Q5 (solo Promedio Ponderado),
-            con la siguiente lógica específica para el ejercicio:
-
-            - Día 4 (Devolución de compra): las unidades devueltas al proveedor salen al
-            **costo unitario de la compra original** (comp1_pu), no al promedio vigente.
-            - Día 5 (Devolución de venta): las unidades devueltas por el cliente reingresan
-            al inventario al **costo unitario con el que salieron en la venta** (sale_pu del Día 3).
+            Construye las filas esperadas del Kardex de Q5 (Promedio Ponderado) con la lógica:
+            - Día 1: saldo inicial.
+            - Día 2: compra → se recalcula el promedio.
+            - Día 3: venta → CMV al promedio vigente.
+            - Día 4: devolución en compras → salida al costo de la compra (comp1_pu).
+            - Día 5: devolución en ventas → reingreso al costo de la venta (promedio usado en D3).
+            Todo está parametrizado para evitar costos unitarios con decimales.
             """
             inv0_u_ex  = sc["inv0_u"]
             inv0_pu_ex = sc["inv0_pu"]
@@ -5360,79 +5366,77 @@ def page_level3(username):
             dev_venta_u= sc["dev_venta"]
 
             rows = []
-            sale_unit_cost = None  # para usar en la devolución de venta (Día 5)
+            sale_unit_cost = None  # costo unitario de la venta (para la devolución de ventas)
 
-            # Día 1
+            # Día 1: Saldo inicial
             layers = [[float(inv0_u_ex), float(inv0_pu_ex)]]
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
-                "Fecha":"Día 1","Descripción":"Saldo inicial",
-                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
-                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
-                "Saldo_cant":s_q,"Saldo_pu":round(s_p,2),"Saldo_total":round(s_v,2)
+                "Fecha": "Día 1", "Descripción": "Saldo inicial",
+                "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
             })
 
-            # Día 2: Compra 1 (promediada)
+            # Día 2: Compra 1 (promedio ponderado)
             ent_tot = comp1_u * comp1_pu
             q_new = s_q + comp1_u
             v_new = s_v + ent_tot
-            p_new = (v_new/q_new) if q_new>0 else 0.0
+            p_new = (v_new / q_new) if q_new > 0 else 0.0
             layers = [[q_new, p_new]]
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
-                "Fecha":"Día 2","Descripción":"Compra 1",
-                "Entrada_cant":comp1_u,"Entrada_pu":round(comp1_pu,2),"Entrada_total":round(ent_tot,2),
-                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
-                "Saldo_cant":s_q,"Saldo_pu":round(s_p,2),"Saldo_total":round(s_v,2)
+                "Fecha": "Día 2", "Descripción": "Compra 1",
+                "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu, 2), "Entrada_total": round(ent_tot, 2),
+                "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
             })
 
-            # Día 3: Venta (usa promedio vigente) — guardamos ese costo para la devolución de venta
+            # Día 3: Venta (usa promedio vigente)
             sale_q  = min(venta_ex_u, s_q)
             sale_pu = layers[0][1] if layers else 0.0
-            sale_unit_cost = sale_pu  # se usará en D5
+            sale_unit_cost = sale_pu  # lo usaremos para la devolución en ventas
             sale_tot = sale_q * sale_pu
             q2 = s_q - sale_q
             v2 = s_v - sale_tot
-            p2 = (v2/q2) if q2>0 else 0.0
-            layers = [[q2, p2]] if q2>0 else []
+            p2 = (v2 / q2) if q2 > 0 else 0.0
+            layers = [[q2, p2]] if q2 > 0 else []
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
-                "Fecha":"Día 3","Descripción":"Venta",
-                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
-                "Salida_cant":sale_q,"Salida_pu":round(sale_pu,2),"Salida_total":round(sale_tot,2),
-                "Saldo_cant":s_q,"Saldo_pu":round(s_p,2),"Saldo_total":round(s_v,2)
+                "Fecha": "Día 3", "Descripción": "Venta",
+                "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                "Salida_cant": sale_q, "Salida_pu": round(sale_pu, 2), "Salida_total": round(sale_tot, 2),
+                "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
             })
 
-            # Día 4: Devolución de compra
-            # 👉 Se devuelve al costo unitario de la compra original (comp1_pu)
+            # Día 4: Devolución de compra (salida al costo de la compra comp1_pu)
             take_q  = min(dev_comp_u, s_q)
             take_pu = comp1_pu
             take_val = take_q * take_pu
-            q4 = max(s_q - take_q, 0)
-            v4 = max(s_v - take_val, 0.0)
-            p4 = (v4/q4) if q4>0 else 0.0
-            layers = [[q4, p4]] if q4>0 else []
+            q4 = s_q - take_q
+            v4 = s_v - take_val
+            p4 = (v4 / q4) if q4 > 0 else 0.0
+            layers = [[q4, p4]] if q4 > 0 else []
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
-                "Fecha":"Día 4","Descripción":"Devolución de compra",
-                "Entrada_cant":None,"Entrada_pu":None,"Entrada_total":None,
-                "Salida_cant":take_q,"Salida_pu":round(take_pu,2),"Salida_total":round(take_val,2),
-                "Saldo_cant":q4,"Saldo_pu":round(p4,2),"Saldo_total":round(v4,2)
+                "Fecha": "Día 4", "Descripción": "Devolución de compra",
+                "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                "Salida_cant": take_q, "Salida_pu": round(take_pu, 2), "Salida_total": round(take_val, 2),
+                "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
             })
 
-            # Día 5: Devolución de venta (reingreso)
-            # 👉 Se reingresa al costo unitario con el que salieron las unidades (sale_unit_cost)
+            # Día 5: Devolución de venta (reingreso al costo de la venta)
             in_q  = dev_venta_u
             in_pu = sale_unit_cost if sale_unit_cost is not None else s_p
             in_val = in_q * in_pu
             q5 = s_q + in_q
             v5 = s_v + in_val
-            p5 = (v5/q5) if q5>0 else 0.0
+            p5 = (v5 / q5) if q5 > 0 else 0.0
             rows.append({
-                "Fecha":"Día 5","Descripción":"Devolución de venta (reingreso)",
-                "Entrada_cant":in_q,"Entrada_pu":round(in_pu,2),"Entrada_total":round(in_val,2),
-                "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
-                "Saldo_cant":q5,"Saldo_pu":round(p5,2),"Saldo_total":round(v5,2)
+                "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
+                "Entrada_cant": in_q, "Entrada_pu": round(in_pu, 2), "Entrada_total": round(in_val, 2),
+                "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                "Saldo_cant": q5, "Saldo_pu": round(p5, 2), "Saldo_total": round(v5, 2)
             })
             return rows
 
@@ -5442,9 +5446,9 @@ def page_level3(username):
             def _blank_like(r):
                 return {
                     "Fecha": r["Fecha"], "Descripción": r["Descripción"],
-                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
-                    "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
-                    "Saldo_cant":None,   "Saldo_pu":None,   "Saldo_total":None
+                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                    "Salida_cant": None,  "Salida_pu": None,  "Salida_total": None,
+                    "Saldo_cant": None,   "Saldo_pu": None,   "Saldo_total": None
                 }
             return _pd.DataFrame([_blank_like(r) for r in expected_rows])
 
@@ -5669,7 +5673,7 @@ def page_level3(username):
                     st.write(q4_fb)
                 st.write(f"**Q5 (KARDEX PP):** {'✅' if q5_ok else '❌'}")
                 if not q5_ok:
-                    st.caption("Pistas: revisa el costo promedio vigente antes de cada devolución y cómo impacta el saldo.")
+                    st.caption("Pistas: revisa el costo promedio vigente, el costo de la compra devuelta y el costo de la venta devuelta.")
 
             if passed:
                 try:
