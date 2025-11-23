@@ -3739,7 +3739,7 @@ def page_level3(username):
         )
         st.caption(
             "La devolución se valora al **mismo costo unitario de la compra original**. "
-            "En PP ajusta el promedio; en PEPS/UEPS reduce las capas según el método."
+            "En PP ajusta el promedio; en PEPS/UEPS se retiran unidades de la capa de esa compra."
         )
 
         st.markdown("↪️ **Día 5.** Devolución de venta (del cliente):")
@@ -4072,11 +4072,14 @@ def page_level3(username):
                         }
                     )
                 else:
+                    # PEPS / UEPS: la devolución en compras sale SIEMPRE de la última compra (LIFO),
+                    # pero el método solo cambia la narrativa.
                     fifo = method_name == "PEPS (FIFO)"
                     metodo_tag = "PEPS" if fifo else "UEPS"
 
+                    # Consumimos desde las últimas capas (LIFO) para simular la devolución de la compra
                     sale_details, layers_after = _consume_layers_detail(
-                        layers, dev_comp_u, fifo=fifo
+                        layers, dev_comp_u, fifo=False  # siempre desde la compra más reciente
                     )
                     layers = layers_after
                     s_q, s_pu, s_v = _sum_layers(layers)
@@ -4084,6 +4087,15 @@ def page_level3(username):
                     take_q = sum(q for q, _, _ in sale_details)
                     take_val = sum(t for _, _, t in sale_details)
                     take_pu = (take_val / take_q) if take_q > 0 else 0.0
+
+                    # Para mostrar el SALDO en la fila:
+                    # buscamos la(s) capa(s) que quedaron con ese mismo costo de compra
+                    eps = 1e-6
+                    saldo_q = 0.0
+                    for q, p in layers:
+                        if abs(p - take_pu) < eps:
+                            saldo_q += q
+                    saldo_tot = saldo_q * take_pu
 
                     rows.append(
                         {
@@ -4095,9 +4107,9 @@ def page_level3(username):
                             "sal_q": int(take_q),
                             "sal_pu": round(take_pu, 2),
                             "sal_tot": round(take_val, 2),
-                            "sdo_q": int(s_q),
-                            "sdo_pu": round(s_pu, 2),
-                            "sdo_tot": round(s_v, 2),
+                            "sdo_q": int(saldo_q),
+                            "sdo_pu": round(take_pu, 2),
+                            "sdo_tot": round(saldo_tot, 2),
                         }
                     )
 
@@ -4105,9 +4117,11 @@ def page_level3(username):
                         {
                             "title": f"Día 4 · Devolución de compra ({metodo_tag})",
                             "text": (
-                                f"Registramos una **devolución de compra** en {metodo_tag}, retirando "
-                                f"{int(take_q)} unidades siguiendo la lógica de capas del método. "
-                                f"El costo devuelto proviene de las capas consumidas en esa devolución."
+                                f"Registramos una **devolución de compra**: retiramos "
+                                f"{int(take_q)} unidades de la capa de la compra que estamos devolviendo, "
+                                f"al costo en que fueron compradas ({_fmt_money(take_pu)} por unidad).\n\n"
+                                f"En el SALDO del Día 4 ves cuántas unidades quedan en esa misma capa y con el mismo costo; "
+                                f"no promediamos, respetamos siempre el valor de la capa."
                             ),
                             "actions": [
                                 {
@@ -4132,19 +4146,19 @@ def page_level3(username):
                                     "row": len(rows) - 1,
                                     "cell": "sdo_q",
                                     "money": False,
-                                    "val": int(s_q),
+                                    "val": int(saldo_q),
                                 },
                                 {
                                     "row": len(rows) - 1,
                                     "cell": "sdo_pu",
                                     "money": True,
-                                    "val": round(s_pu, 2),
+                                    "val": round(take_pu, 2),
                                 },
                                 {
                                     "row": len(rows) - 1,
                                     "cell": "sdo_tot",
                                     "money": True,
-                                    "val": round(s_v, 2),
+                                    "val": round(saldo_tot, 2),
                                 },
                             ],
                         }
@@ -4598,6 +4612,7 @@ def page_level3(username):
         )
 
         components.html(html_demo, height=360, scrolling=True)
+
 
     # =========================================
     # TAB 2 · PRÁCTICA IA (KARDEX DÍAS 1–5)
