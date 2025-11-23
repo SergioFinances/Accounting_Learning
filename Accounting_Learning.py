@@ -5342,6 +5342,15 @@ def page_level3(username):
 
         @st.cache_data(show_spinner=False)
         def build_expected_rows_q5_pp(sc: dict, sig: str):
+            """
+            Construye las filas esperadas del KARDEX para Q5 (solo Promedio Ponderado),
+            con la siguiente lógica específica para el ejercicio:
+
+            - Día 4 (Devolución de compra): las unidades devueltas al proveedor salen al
+            **costo unitario de la compra original** (comp1_pu), no al promedio vigente.
+            - Día 5 (Devolución de venta): las unidades devueltas por el cliente reingresan
+            al inventario al **costo unitario con el que salieron en la venta** (sale_pu del Día 3).
+            """
             inv0_u_ex  = sc["inv0_u"]
             inv0_pu_ex = sc["inv0_pu"]
             comp1_u    = sc["comp1_u"]
@@ -5351,6 +5360,8 @@ def page_level3(username):
             dev_venta_u= sc["dev_venta"]
 
             rows = []
+            sale_unit_cost = None  # para usar en la devolución de venta (Día 5)
+
             # Día 1
             layers = [[float(inv0_u_ex), float(inv0_pu_ex)]]
             s_q, s_p, s_v = _sum_layers(layers)
@@ -5375,9 +5386,10 @@ def page_level3(username):
                 "Saldo_cant":s_q,"Saldo_pu":round(s_p,2),"Saldo_total":round(s_v,2)
             })
 
-            # Día 3: Venta (usa promedio vigente)
+            # Día 3: Venta (usa promedio vigente) — guardamos ese costo para la devolución de venta
             sale_q  = min(venta_ex_u, s_q)
             sale_pu = layers[0][1] if layers else 0.0
+            sale_unit_cost = sale_pu  # se usará en D5
             sale_tot = sale_q * sale_pu
             q2 = s_q - sale_q
             v2 = s_v - sale_tot
@@ -5391,9 +5403,10 @@ def page_level3(username):
                 "Saldo_cant":s_q,"Saldo_pu":round(s_p,2),"Saldo_total":round(s_v,2)
             })
 
-            # Día 4: Devolución de compra (salida a costo promedio vigente)
+            # Día 4: Devolución de compra
+            # 👉 Se devuelve al costo unitario de la compra original (comp1_pu)
             take_q  = min(dev_comp_u, s_q)
-            take_pu = s_p
+            take_pu = comp1_pu
             take_val = take_q * take_pu
             q4 = max(s_q - take_q, 0)
             v4 = max(s_v - take_val, 0.0)
@@ -5407,9 +5420,10 @@ def page_level3(username):
                 "Saldo_cant":q4,"Saldo_pu":round(p4,2),"Saldo_total":round(v4,2)
             })
 
-            # Día 5: Devolución de venta (reingreso a costo promedio vigente)
+            # Día 5: Devolución de venta (reingreso)
+            # 👉 Se reingresa al costo unitario con el que salieron las unidades (sale_unit_cost)
             in_q  = dev_venta_u
-            in_pu = s_p
+            in_pu = sale_unit_cost if sale_unit_cost is not None else s_p
             in_val = in_q * in_pu
             q5 = s_q + in_q
             v5 = s_v + in_val
