@@ -3669,7 +3669,6 @@ def page_level3(username):
             dev_comp_u, dev_venta_u
         )
 
-        import json as _json
         html_demo_template = """
         <style>
         .kx {border-collapse:collapse;width:100%;font-size:14px;margin-bottom:6px}
@@ -3687,6 +3686,7 @@ def page_level3(username):
 
         <div class="controls">
         <button id="playDemo" class="btn">▶️ Reproducir demo</button>
+        <button id="pauseDemo" class="btn">⏸️ Pausar</button>
         <button id="resetDemo" class="btn">↺ Reiniciar</button>
         <span class="badge">%%METODO%%</span>
         </div>
@@ -3712,59 +3712,67 @@ def page_level3(username):
 
         <script>
         (function(){
-        const rows   = %%ROWS%%;
-        const script = %%SCRIPT%%;
-        const metodo = "%%METODO%%";
+        const rows     = %%ROWS%%;
+        const script   = %%SCRIPT%%;
+        const metodo   = "%%METODO%%";
         const narrStart = %%NARRSTART%%;
         const narrMuted = %%MUTED%%;
-        const rate = %%RATE%%;
+        const rate     = %%RATE%%;
 
-        const tbody = document.getElementById("kbody");
-        const narrDiv = document.getElementById("narr");
-        const btnPlay = document.getElementById("playDemo");
+        const tbody    = document.getElementById("kbody");
+        const narrDiv  = document.getElementById("narr");
+        const btnPlay  = document.getElementById("playDemo");
+        const btnPause = document.getElementById("pauseDemo");
         const btnReset = document.getElementById("resetDemo");
+
+        let isPaused   = false;
+        let isRunning  = false;
+        let currentUtterance = null;
 
         const pesos = (v)=> {
             try { return new Intl.NumberFormat('es-CO',{style:'currency', currency:'COP', maximumFractionDigits:2}).format(v); }
             catch(e){ return "$"+(Math.round(v*100)/100).toLocaleString('es-CO'); }
         };
+
         const fmt = (x)=> (x===null || x===undefined || x==="")
             ? ""
-            : (typeof x==="number" ? (Number.isInteger(x)? x.toString() : (Math.round(x*100)/100).toString().replace(".",",")) : x);
+            : (typeof x==="number"
+                ? (Number.isInteger(x)? x.toString() : (Math.round(x*100)/100).toString().replace(".",","))
+                : x);
 
         function buildTable(){
             tbody.innerHTML = "";
             rows.forEach((r, i)=>{
-            const tr = document.createElement("tr");
-            tr.id = "row"+i;
+                const tr = document.createElement("tr");
+                tr.id = "row"+i;
 
-            const isNarr = (i >= narrStart);
+                const isNarr = (i >= narrStart);
 
-            const ent_q   = isNarr ? "" : fmt(r.ent_q);
-            const ent_pu  = isNarr ? "" : (r.ent_pu!==""? (isNaN(r.ent_pu)? fmt(r.ent_pu) : pesos(r.ent_pu)):None);
-            const ent_tot = isNarr ? "" : (r.ent_tot!==""? pesos(r.ent_tot):None);
+                const ent_q   = isNarr ? "" : fmt(r.ent_q);
+                const ent_pu  = isNarr ? "" : (r.ent_pu!==""? (isNaN(r.ent_pu)? fmt(r.ent_pu) : pesos(r.ent_pu)):None);
+                const ent_tot = isNarr ? "" : (r.ent_tot!==""? pesos(r.ent_tot):None);
 
-            const sal_q   = isNarr ? "" : fmt(r.sal_q);
-            const sal_pu  = isNarr ? "" : (r.sal_pu!==""? (isNaN(r.sal_pu)? fmt(r.sal_pu) : pesos(r.sal_pu)):None);
-            const sal_tot = isNarr ? "" : (r.sal_tot!==""? pesos(r.sal_tot):None);
+                const sal_q   = isNarr ? "" : fmt(r.sal_q);
+                const sal_pu  = isNarr ? "" : (r.sal_pu!==""? (isNaN(r.sal_pu)? fmt(r.sal_pu) : pesos(r.sal_pu)):None);
+                const sal_tot = isNarr ? "" : (r.sal_tot!==""? pesos(r.sal_tot):None);
 
-            const sdo_q   = isNarr ? "" : fmt(r.sdo_q);
-            const sdo_pu  = isNarr ? "" : (r.sdo_pu!==""? (isNaN(r.sdo_pu)? fmt(r.sdo_pu) : pesos(r.sdo_pu)):None);
-            const sdo_tot = isNarr ? "" : (r.sdo_tot!==""? pesos(r.sdo_tot):None);
+                const sdo_q   = isNarr ? "" : fmt(r.sdo_q);
+                const sdo_pu  = isNarr ? "" : (r.sdo_pu!==""? (isNaN(r.sdo_pu)? fmt(r.sdo_pu) : pesos(r.sdo_pu)):None);
+                const sdo_tot = isNarr ? "" : (r.sdo_tot!==""? pesos(r.sdo_tot):None);
 
-            tr.innerHTML = `
-                <td>${r.fecha}</td><td>${r.desc}</td>
-                <td id="r${i}_ent_q"  class="fill">${ent_q}</td>
-                <td id="r${i}_ent_pu" class="fill">${ent_pu}</td>
-                <td id="r${i}_ent_tot"class="fill">${ent_tot}</td>
-                <td id="r${i}_sal_q"  class="fill">${sal_q}</td>
-                <td id="r${i}_sal_pu" class="fill">${sal_pu}</td>
-                <td id="r${i}_sal_tot"class="fill">${sal_tot}</td>
-                <td id="r${i}_sdo_q"  class="fill">${sdo_q}</td>
-                <td id="r${i}_sdo_pu" class="fill">${sdo_pu}</td>
-                <td id="r${i}_sdo_tot"class="fill">${sdo_tot}</td>
-            `;
-            tbody.appendChild(tr);
+                tr.innerHTML = `
+                    <td>${r.fecha}</td><td>${r.desc}</td>
+                    <td id="r${i}_ent_q"  class="fill">${ent_q}</td>
+                    <td id="r${i}_ent_pu" class="fill">${ent_pu}</td>
+                    <td id="r${i}_ent_tot"class="fill">${ent_tot}</td>
+                    <td id="r${i}_sal_q"  class="fill">${sal_q}</td>
+                    <td id="r${i}_sal_pu" class="fill">${sal_pu}</td>
+                    <td id="r${i}_sal_tot"class="fill">${sal_tot}</td>
+                    <td id="r${i}_sdo_q"  class="fill">${sdo_q}</td>
+                    <td id="r${i}_sdo_pu" class="fill">${sdo_pu}</td>
+                    <td id="r${i}_sdo_tot"class="fill">${sdo_tot}</td>
+                `;
+                tbody.appendChild(tr);
             });
         }
 
@@ -3786,59 +3794,113 @@ def page_level3(username):
 
         const sleep = (ms)=> new Promise(r => setTimeout(r, ms));
 
+        async function waitIfPaused(){
+            while(isPaused){
+                await sleep(150);
+            }
+        }
+
+        // 🔵 Función speak con soporte para pausar
         function speak(text){
             return new Promise((resolve)=>{
-            if (narrMuted) return resolve();
-            try{
-                if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-                const u = new SpeechSynthesisUtterance(text);
-                const voices = window.speechSynthesis.getVoices();
-                const pick = voices.find(v => /es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
-                if (pick) u.voice = pick;
-                u.rate = rate;
-                u.pitch = 1.0;
-                u.onend = () => resolve();
-                window.speechSynthesis.speak(u);
-            } catch(e){
-                resolve();
-            }
+                if (narrMuted) return resolve();
+                try{
+                    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+
+                    const u = new SpeechSynthesisUtterance(text);
+                    currentUtterance = u;
+
+                    const voices = window.speechSynthesis.getVoices();
+                    const pick = voices.find(v => /es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
+                    if (pick) u.voice = pick;
+
+                    u.rate = rate;
+                    u.pitch = 1.0;
+                    u.onend = ()=> { currentUtterance = null; resolve(); };
+                    u.onerror = ()=> { currentUtterance = null; resolve(); };
+
+                    window.speechSynthesis.speak(u);
+                } catch(e){
+                    currentUtterance = null;
+                    resolve();
+                }
             });
-        }
-        if (window.speechSynthesis) {
-            window.speechSynthesis.onvoiceschanged = ()=>{};
         }
 
         async function runScript(){
-            for (const step of script){
-            narrDiv.textContent = step.title;
-            if (step.actions && step.actions.length>0){
-                highlightRow(step.actions[0].row);
+            if (isRunning){
+                if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
             }
-            const dur = Math.max(2200, Math.min(7000, step.text.length * 55 / rate));
-            const chunks = Math.max(3, step.actions.length);
-            const waits = Array.from({length:chunks-1}, (_,k)=> Math.floor(dur*(k+1)/chunks));
 
-            const pVoice = speak(step.text);
+            isRunning = true;
+            isPaused = false;
+            btnPause.textContent = "⏸️ Pausar";
 
-            for (let i=0;i<step.actions.length;i++){
-                const a = step.actions[i];
-                if (i>0){ await sleep(waits[i-1]); }
-                fillCell(a.row, a.cell, a.val, !!a.money);
-            }
-            await pVoice;
-            await sleep(200);
-            }
-            clearHi();
-        }
-
-        buildTable();
-        btnPlay.onclick  = runScript;
-        btnReset.onclick = ()=>{
             buildTable();
             clearHi();
             narrDiv.textContent = "";
-            try{ if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel(); }catch(e){}
+
+            for (const step of script){
+                await waitIfPaused();
+
+                narrDiv.textContent = step.title;
+
+                if (step.actions && step.actions.length>0){
+                    highlightRow(step.actions[0].row);
+                }
+
+                const dur = Math.max(2200, Math.min(7000, step.text.length * 55 / rate));
+                const chunks = Math.max(3, step.actions.length);
+                const waits = Array.from({length:chunks-1}, (_,k)=> Math.floor(dur*(k+1)/chunks));
+
+                const pVoice = speak(step.text);
+
+                for (let i=0;i<step.actions.length;i++){
+                    await waitIfPaused();
+                    const a = step.actions[i];
+                    if (i>0){ await sleep(waits[i-1]); }
+                    fillCell(a.row, a.cell, a.val, !!a.money);
+                }
+
+                await pVoice;
+                await waitIfPaused();
+                await sleep(200);
+            }
+
+            clearHi();
+            isRunning = false;
+        }
+
+        // BOTONES
+        btnPlay.onclick = runScript;
+
+        btnPause.onclick = ()=>{
+            if (!isPaused){
+                isPaused = true;
+                if (window.speechSynthesis && window.speechSynthesis.speaking){
+                    window.speechSynthesis.pause();
+                }
+                btnPause.textContent = "▶️ Reanudar";
+            } else {
+                isPaused = false;
+                if (window.speechSynthesis && window.speechSynthesis.paused){
+                    window.speechSynthesis.resume();
+                }
+                btnPause.textContent = "⏸️ Pausar";
+            }
         };
+
+        btnReset.onclick = ()=>{
+            try{ if (window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
+            isPaused = false;
+            isRunning = false;
+            btnPause.textContent = "⏸️ Pausar";
+            buildTable();
+            clearHi();
+            narrDiv.textContent = "";
+        };
+
+        buildTable();
         })();
         </script>
         """
@@ -3854,6 +3916,7 @@ def page_level3(username):
         )
 
         components.html(html_demo, height=360, scrolling=True)
+
 
     # =========================================
     # TAB 2 · PRÁCTICA IA (KARDEX DÍAS 1–5)
