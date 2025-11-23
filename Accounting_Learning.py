@@ -1499,6 +1499,9 @@ def page_level2(username):
             ])
             speak_block(full_text, key_prefix="teo-n2", lang_hint="es")
 
+    # =========================================
+    # TAB 1 · EJEMPLO GUIADO (KARDEX DINÁMICO)
+    # =========================================
     with tabs[1]:
         st.subheader("KARDEX dinámico por método (PP · PEPS · UEPS)")
 
@@ -1913,8 +1916,8 @@ def page_level2(username):
                     "text": (
                         f"En {metodo_tag} NO promediamos el costo. La compra del Día 2 se registra como una nueva capa: "
                         f"{ent_q_2} unidades a {_fmt_money(ent_pu_2)} pesos, total {_fmt_money(ent_tot_2)} pesos.\n\n"
-                        f"En la columna SALDO de esta fila mostramos solo esa capa comprada..."
-                        f"claramente que más adelante la venta consumirá primero una u otra capa según el método, "
+                        f"En la columna SALDO de esta fila mostramos solo esa capa comprada... "
+                        f"más adelante la venta consumirá primero una u otra capa según el método, "
                         f"en lugar de combinar todo en un único costo promedio."
                     ),
                     "actions": [
@@ -2001,21 +2004,17 @@ def page_level2(username):
                         q_rem = layer_q - q_take
                         layers_for_calc[idx_layer][0] = q_rem
 
-                        # Determinar qué capa se muestra en el SALDO de este tramo
+                        # 🔴 CORRECCIÓN: SALDO POR TRAMO EN PEPS/UEPS
+                        # Si se agota la capa en este tramo → saldo 0 a ese mismo costo.
                         if q_rem > 0:
                             # Quedan unidades en la MISMA capa que acabamos de consumir
                             sdo_q = q_rem
                             sdo_pu = layer_pu
                         else:
-                            # Esa capa se agotó → buscamos la siguiente capa disponible
-                            remaining_layers = [(q, p) for (q, p) in layers_for_calc if q > 0]
-                            if remaining_layers:
-                                if fifo:
-                                    sdo_q, sdo_pu = remaining_layers[0]
-                                else:
-                                    sdo_q, sdo_pu = remaining_layers[-1]
-                            else:
-                                sdo_q, sdo_pu = 0.0, layer_pu
+                            # Capa agotada: en esta fila mostramos saldo 0 a ese costo
+                            sdo_q = 0.0
+                            sdo_pu = layer_pu
+
                         sdo_tot = sdo_q * sdo_pu
 
                         rows.append({
@@ -2044,10 +2043,9 @@ def page_level2(username):
                                 f"{_fmt_money(layer_pu)} pesos. El costo del tramo es {int(q_take)} por "
                                 f"{_fmt_money(layer_pu)} pesos, es decir {_fmt_money(tot_take)} pesos.\n\n"
                                 f"{frase_capa}\n"
-                                f"En la columna SALDO de esta fila mostramos la capa que queda activa después del tramo: "
-                                f"{int(sdo_q)} unidades a {_fmt_money(sdo_pu)} pesos. "
-                                f"Observa que en {metodo_tag} trabajamos por capas, no con un único costo promedio "
-                                f"del inventario."
+                                f"En la columna SALDO de esta fila mostramos **la misma capa** después del tramo. "
+                                f"Si se agotó, verás 0 unidades a ese mismo costo; si quedaron unidades, "
+                                f"verás cuántas siguen en esa capa, siempre sin promediar."
                             ),
                             "actions": [
                                 {"row": acc_row, "cell": "sal_q", "money": False, "val": int(q_take)},
