@@ -2125,6 +2125,12 @@ def page_level2(username):
         };
         const fmt = (x)=> (x===null || x===undefined || x==="") ? "" : (typeof x==="number" ? (Number.isInteger(x)? x.toString(): (Math.round(x*100)/100).toString().replace(".",",")) : x);
 
+        function cleanForSpeak(text) {
+            // Reemplaza el símbolo $ por la palabra "pesos" solo para la narración
+            if (!text) return "";
+            return text.replace(/\$/g, " pesos ");
+        }
+
         function speak(text){
             return new Promise((resolve)=>{
             if (narrMuted) return resolve();
