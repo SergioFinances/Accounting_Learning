@@ -1790,9 +1790,9 @@ def page_level2(username):
                     "title": "Paso 1 · Saldo inicial como entrada",
                     "text": (
                         f"Empezamos registrando el saldo inicial como una ENTRADA: "
-                        f"{ent_q_1} unidades a un costo unitario de {_fmt_money(ent_pu_1)}. "
-                        f"En la columna Total calculamos {ent_q_1} × {_fmt_money(ent_pu_1)} "
-                        f"= {_fmt_money(ent_tot_1)}. Ese mismo valor pasa a la columna Saldo, "
+                        f"{ent_q_1} unidades a un costo unitario de {_fmt_money(ent_pu_1)} pesos. "
+                        f"En la columna Total calculamos {ent_q_1} por {_fmt_money(ent_pu_1)} pesos, "
+                        f"lo que da {_fmt_money(ent_tot_1)} pesos. Ese mismo valor pasa a la columna Saldo, "
                         f"porque al inicio solo existe esta capa de inventario."
                     ),
                     "actions": [
@@ -1847,16 +1847,16 @@ def page_level2(username):
                     "title": "Paso 2 · Compra y nuevo costo promedio",
                     "text": (
                         f"Registramos la compra del Día 2 como ENTRADA: {ent_q_2} unidades a "
-                        f"{_fmt_money(ent_pu_2)}, con un total de {_fmt_money(ent_tot_2)}.\n\n"
+                        f"{_fmt_money(ent_pu_2)} pesos, con un total de {_fmt_money(ent_tot_2)} pesos.\n\n"
                         f"Para actualizar el saldo aplicamos el Promedio Ponderado:\n"
-                        f"Valor anterior del saldo: {_fmt_money(prev_v)} con {int(prev_q)} unidades.\n"
-                        f"Valor de la compra: {_fmt_money(ent_tot_2)} con {ent_q_2} unidades.\n"
+                        f"Valor anterior del saldo: {_fmt_money(prev_v)} pesos con {int(prev_q)} unidades.\n"
+                        f"Valor de la compra: {_fmt_money(ent_tot_2)} pesos con {ent_q_2} unidades.\n"
                         f"Nuevo costo promedio = (valor anterior + valor de la compra) / "
                         f"(unidades anteriores + unidades compradas).\n"
-                        f"Es decir: ({_fmt_money(prev_v)} + {_fmt_money(ent_tot_2)}) / "
-                        f"({int(prev_q)} + {ent_q_2}) = {_fmt_money(s_pu)} por unidad.\n"
+                        f"Es decir: {_fmt_money(prev_v)} pesos más {_fmt_money(ent_tot_2)} pesos, dividido entre "
+                        f"{int(prev_q)} más {ent_q_2} unidades, nos da un costo promedio de {_fmt_money(s_pu)} pesos por unidad.\n"
                         f"Con ese costo promedio mostramos el nuevo SALDO de {int(s_q)} unidades "
-                        f"por {_fmt_money(s_pu)}, para un total de {_fmt_money(s_v)}."
+                        f"por {_fmt_money(s_pu)} pesos, para un total de {_fmt_money(s_v)} pesos."
                     ),
                     "actions": [
                         {"row": 1, "cell": "ent_q", "money": False, "val": ent_q_2},
@@ -1889,10 +1889,10 @@ def page_level2(username):
                     "title": f"Paso 2 · Compra como nueva capa ({metodo_tag})",
                     "text": (
                         f"En {metodo_tag} NO promediamos el costo. La compra del Día 2 se registra como una nueva capa: "
-                        f"{ent_q_2} unidades a {_fmt_money(ent_pu_2)}, total {_fmt_money(ent_tot_2)}.\n\n"
+                        f"{ent_q_2} unidades a {_fmt_money(ent_pu_2)} pesos, total {_fmt_money(ent_tot_2)} pesos.\n\n"
                         f"En la columna SALDO de esta fila mostramos solo esa capa comprada, para que se vea "
                         f"claramente que más adelante la venta consumirá primero una u otra capa según el método, "
-                        f"en lugar de combinar todo en un único promedio."
+                        f"en lugar de combinar todo en un único costo promedio."
                     ),
                     "actions": [
                         {"row": 1, "cell": "ent_q", "money": False, "val": ent_q_2},
@@ -1934,10 +1934,11 @@ def page_level2(username):
                         "text": (
                             f"En el Día 3 registramos la VENTA como una SALIDA de {sal_q} unidades. "
                             f"Como estamos en Promedio Ponderado, usamos el costo promedio vigente: "
-                            f"{_fmt_money(sal_pu)} por unidad.\n\n"
-                            f"El CMV de esta fila es {sal_q} × {_fmt_money(sal_pu)} = {_fmt_money(sal_tot)}.\n"
+                            f"{_fmt_money(sal_pu)} pesos por unidad.\n\n"
+                            f"El CMV de esta fila es {sal_q} por {_fmt_money(sal_pu)} pesos, "
+                            f"lo que da {_fmt_money(sal_tot)} pesos.\n"
                             f"Para actualizar el SALDO restamos esas unidades y ese valor al saldo anterior "
-                            f"({int(prev_q)} unidades por {_fmt_money(prev_pu)}, total {_fmt_money(prev_v)}), "
+                            f"({int(prev_q)} unidades por {_fmt_money(prev_pu)} pesos, total {_fmt_money(prev_v)} pesos), "
                             f"y volvemos a calcular el nuevo costo promedio del inventario que queda."
                         ),
                         "actions": [
@@ -2017,11 +2018,11 @@ def page_level2(username):
                             "title": f"Paso 3 · Venta (tramo {tramo_index}) — {metodo_tag}",
                             "text": (
                                 f"En este tramo sacamos {int(q_take)} unidades de una capa valorada a "
-                                f"{_fmt_money(layer_pu)}. El costo del tramo es {int(q_take)} × "
-                                f"{_fmt_money(layer_pu)} = {_fmt_money(tot_take)}.\n\n"
+                                f"{_fmt_money(layer_pu)} pesos. El costo del tramo es {int(q_take)} por "
+                                f"{_fmt_money(layer_pu)} pesos, es decir {_fmt_money(tot_take)} pesos.\n\n"
                                 f"{frase_capa}\n"
                                 f"En la columna SALDO de esta fila mostramos la capa que queda activa después del tramo: "
-                                f"{int(sdo_q)} unidades a {_fmt_money(sdo_pu)}. "
+                                f"{int(sdo_q)} unidades a {_fmt_money(sdo_pu)} pesos. "
                                 f"Observa que en {metodo_tag} trabajamos por capas, no con un único costo promedio "
                                 f"del inventario."
                             ),
