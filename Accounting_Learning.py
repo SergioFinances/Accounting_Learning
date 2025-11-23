@@ -2540,21 +2540,19 @@ def page_level2(username):
             Saldo_cant,   Saldo_pu,   Saldo_total
 
             Lógica alineada con el EJEMPLO GUIADO:
-            - Día 1: el saldo inicial se registra como ENTRADA y al mismo tiempo se refleja en el SALDO.
-            - Día 2: una sola fila de Compra 1.
-                * Promedio Ponderado: el saldo muestra el inventario total con costo promedio actualizado.
-                * PEPS/UEPS: el saldo muestra SOLO la capa comprada (como en la demostración).
-            - Día 3: Venta según el método.
-                * Promedio Ponderado: una fila con el costo promedio vigente.
-                * PEPS/UEPS: varias filas “Venta tramo i”, donde el SALDO muestra la capa activa tras cada tramo.
-            - Día 4: Compra 2.
+            - Día 1: el saldo inicial se registra como ENTRADA y como SALDO.
+            - Día 2: SOLO una fila de Compra 1 (sin “Saldo (día 1)”).
                 * Promedio Ponderado: saldo con promedio.
-                * PEPS/UEPS: saldo solo de la nueva capa (Compra 2).
+                * PEPS/UEPS: saldo solo de la capa comprada.
+            - Día 3: ventas por método.
+                * PP: una fila.
+                * PEPS/UEPS: tramos sin promedios.
+            - Día 4: Compra 2 (saldo solo de la capa comprada en PEPS/UEPS).
             """
             rows = []
 
             # ------------------------------
-            # Día 1: Saldo inicial (ENTRADA)
+            # Día 1: Saldo inicial
             # ------------------------------
             if inv0_u_ex > 0:
                 ent_q1 = int(inv0_u_ex)
@@ -2562,9 +2560,7 @@ def page_level2(username):
                 ent_tot1 = ent_q1 * ent_pu1
                 layers = [[float(ent_q1), ent_pu1]]
             else:
-                ent_q1 = None
-                ent_pu1 = None
-                ent_tot1 = None
+                ent_q1 = ent_pu1 = ent_tot1 = None
                 layers = []
 
             s_q, s_p, s_v = _sum_layers(layers)
@@ -2572,8 +2568,8 @@ def page_level2(username):
             rows.append({
                 "Fecha": "Día 1", "Descripción": "Saldo inicial",
                 "Entrada_cant": ent_q1,
-                "Entrada_pu": round(ent_pu1, 2) if ent_pu1 is not None else None,
-                "Entrada_total": round(ent_tot1, 2) if ent_tot1 is not None else None,
+                "Entrada_pu": round(ent_pu1, 2) if ent_pu1 else None,
+                "Entrada_total": round(ent_tot1, 2) if ent_tot1 else None,
                 "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
                 "Saldo_cant": s_q,
                 "Saldo_pu": round(s_p, 2),
@@ -2583,14 +2579,15 @@ def page_level2(username):
             # ------------------------------
             # Día 2: Compra 1
             # ------------------------------
+            ent_tot = comp1_u * comp1_pu
+
             if method_name == "Promedio Ponderado":
-                # Compra 1 (promediada sobre el saldo anterior)
-                ent_tot = comp1_u * comp1_pu
                 q_new = s_q + comp1_u
                 v_new = s_v + ent_tot
                 p_new = (v_new / q_new) if q_new > 0 else 0.0
                 layers = [[q_new, p_new]]
                 s_q, s_p, s_v = _sum_layers(layers)
+
                 rows.append({
                     "Fecha": "Día 2", "Descripción": "Compra 1",
                     "Entrada_cant": comp1_u,
@@ -2601,12 +2598,12 @@ def page_level2(username):
                     "Saldo_pu": round(s_p, 2),
                     "Saldo_total": round(s_v, 2)
                 })
+
             else:
-                # PEPS / UEPS: UNA sola fila de Compra 1.
-                # El saldo de esta fila muestra SOLO la capa comprada (como en el ejemplo guiado).
-                ent_tot = comp1_u * comp1_pu
+                # PEPS/UEPS → una sola fila "Compra 1"
                 if comp1_u > 0:
                     layers.append([float(comp1_u), float(comp1_pu)])
+
                 rows.append({
                     "Fecha": "Día 2", "Descripción": "Compra 1",
                     "Entrada_cant": comp1_u,
@@ -2617,8 +2614,6 @@ def page_level2(username):
                     "Saldo_pu": round(comp1_pu, 2),
                     "Saldo_total": round(ent_tot, 2)
                 })
-                # s_q/s_p/s_v se pueden seguir interpretando como total, pero
-                # para las filas mostramos exactamente lo enseñado.
 
             # ------------------------------
             # Día 3: Venta
@@ -2628,11 +2623,13 @@ def page_level2(username):
                     sale_q = min(venta_ex_u, s_q)
                     sale_pu = layers[0][1] if layers else 0.0
                     sale_tot = sale_q * sale_pu
+
                     q2 = s_q - sale_q
                     v2 = s_v - sale_tot
                     p2 = (v2 / q2) if q2 > 0 else 0.0
                     layers = [[q2, p2]] if q2 > 0 else []
                     s_q, s_p, s_v = _sum_layers(layers)
+
                     rows.append({
                         "Fecha": "Día 3", "Descripción": "Venta",
                         "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
@@ -2652,40 +2649,39 @@ def page_level2(username):
                         "Saldo_pu": round(s_p, 2),
                         "Saldo_total": round(s_v, 2)
                     })
+
             else:
-                # PEPS / UEPS: venta por tramos con SALDO por capa activa
+                # PEPS / UEPS (venta por tramos)
                 fifo = (method_name == "PEPS (FIFO)")
                 metodo_tag = "PEPS" if fifo else "UEPS"
 
-                # Copiamos capas para ir consumiendo sin perder el arreglo original
                 layers_for_calc = [[float(q), float(p)] for (q, p) in layers]
                 sale_remaining = float(venta_ex_u)
                 tramo_index = 1
 
                 while sale_remaining > 0 and any(q > 0 for q, _ in layers_for_calc):
-                    # Escoger la capa según FIFO/UEPS
-                    if fifo:
-                        idx_layer = next(i for i, (q, _) in enumerate(layers_for_calc) if q > 0)
-                    else:
-                        idx_layer = max(i for i, (q, _) in enumerate(layers_for_calc) if q > 0)
 
-                    layer_q, layer_pu = layers_for_calc[idx_layer]
+                    # Selección de capa
+                    if fifo:
+                        idx = next(i for i,(q,_) in enumerate(layers_for_calc) if q>0)
+                    else:
+                        idx = max(i for i,(q,_) in enumerate(layers_for_calc) if q>0)
+
+                    layer_q, layer_pu = layers_for_calc[idx]
                     q_take = min(layer_q, sale_remaining)
                     tot_take = q_take * layer_pu
                     sale_remaining -= q_take
 
                     # Actualizar capa consumida
                     q_rem = layer_q - q_take
-                    layers_for_calc[idx_layer][0] = q_rem
+                    layers_for_calc[idx][0] = q_rem
 
-                    # Determinar qué capa se muestra como SALDO en este tramo
+                    # Determinar capa activa para SALDO
                     if q_rem > 0:
-                        # Quedan unidades en la misma capa
                         sdo_q = q_rem
                         sdo_pu = layer_pu
                     else:
-                        # Esa capa se agotó → buscar siguiente capa disponible
-                        remaining_layers = [(q, p) for (q, p) in layers_for_calc if q > 0]
+                        remaining_layers = [(q,p) for (q,p) in layers_for_calc if q>0]
                         if remaining_layers:
                             if fifo:
                                 sdo_q, sdo_pu = remaining_layers[0]
@@ -2693,6 +2689,7 @@ def page_level2(username):
                                 sdo_q, sdo_pu = remaining_layers[-1]
                         else:
                             sdo_q, sdo_pu = 0.0, layer_pu
+
                     sdo_tot = sdo_q * sdo_pu
 
                     rows.append({
@@ -2709,20 +2706,21 @@ def page_level2(username):
 
                     tramo_index += 1
 
-                # Actualizar capas finales tras toda la venta (para el saldo conceptual)
-                layers = [(q, p) for (q, p) in layers_for_calc if q > 0]
+                layers = [(q,p) for (q,p) in layers_for_calc if q>0]
                 s_q, s_p, s_v = _sum_layers(layers)
 
             # ------------------------------
             # Día 4: Compra 2
             # ------------------------------
+            ent2_tot = comp2_u * comp2_pu
+
             if method_name == "Promedio Ponderado":
-                ent2_tot = comp2_u * comp2_pu
                 q3 = s_q + comp2_u
                 v3 = s_v + ent2_tot
                 p3 = (v3 / q3) if q3 > 0 else 0.0
                 layers = [[q3, p3]]
                 s_q, s_p, s_v = _sum_layers(layers)
+
                 rows.append({
                     "Fecha": "Día 4", "Descripción": "Compra 2",
                     "Entrada_cant": comp2_u,
@@ -2733,11 +2731,12 @@ def page_level2(username):
                     "Saldo_pu": round(s_p, 2),
                     "Saldo_total": round(s_v, 2)
                 })
+
             else:
-                # PEPS/UEPS: saldo de la fila muestra SOLO la nueva capa
-                ent2_tot = comp2_u * comp2_pu
+                # PEPS / UEPS: saldo solo de la nueva capa
                 if comp2_u > 0:
                     layers.append([float(comp2_u), float(comp2_pu)])
+
                 rows.append({
                     "Fecha": "Día 4", "Descripción": "Compra 2",
                     "Entrada_cant": comp2_u,
