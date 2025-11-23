@@ -973,22 +973,55 @@ def page_level1(username):
 
         with colR:
             st.caption("Desglose y explicación")
+
+            # ===== LÓGICA DE AJUSTE DEL INVENTARIO FINAL =====
+            # Cálculo del máximo inventario final coherente:
+            # InvF_max = InvI + Compras − Devoluciones en compras
+            invf_max = inv0 + compras - devol
+            invf_calc = invf          # lo que usaremos en el cálculo interno
+            ajustado = False
+
+            # Si el InvF digitado hace que el CMV sea negativo, ajustamos InvF
+            # para que el CMV sea exactamente 0 (equivalente a que no hubo ventas).
+            cogs_bruto = inv0 + compras - devol - invf
+            if cogs_bruto < 0:
+                invf_calc = invf_max
+                ajustado = True
+
+            # Ahora calculamos el CMV usando el inventario final "efectivo"
+            cogs = inv0 + compras - devol - invf_calc
+
             st.markdown(
                 f"""
                 <div style='line-height:1.8; font-size:1.05rem;'>
                     <b>1)</b> Inventario inicial + Compras → {peso(inv0)} + {peso(compras)} = <b>{peso(inv0+compras)}</b><br>
                     <b>2)</b> Menos devoluciones en compras → {peso(inv0+compras)} − {peso(devol)} = <b>{peso(inv0+compras-devol)}</b><br>
-                    <b>3)</b> Menos inventario final → {peso(inv0+compras-devol)} − {peso(invf)} = <b>{peso(inv0+compras-devol-invf)}</b>
+                    <b>3)</b> Menos inventario final → {peso(inv0+compras-devol)} − {peso(invf_calc)} = <b>{peso(cogs)}</b>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
-            cogs = inv0 + compras - devol - invf
+
             st.success(f"**Costo de la mercancía vendida** = {peso(cogs)}")
+
+            # Mensaje explicando el ajuste (solo si hubo que corregir)
+            if ajustado:
+                st.warning(
+                    "⚠️ El inventario final que ingresaste era tan alto que el costo de la mercancía vendida "
+                    "habría resultado **negativo**, lo cual no es coherente en un sistema periódico.\n\n"
+                    f"- Inventario final digitado: {peso(invf)}\n"
+                    f"- Máximo inventario final posible según la fórmula "
+                    f"(InvI + Compras − Devoluciones): {peso(invf_max)}\n\n"
+                    "Para efectos del cálculo, ajustamos internamente el inventario final a ese valor máximo, "
+                    "lo que equivale a suponer que **no hubo ventas** y por eso el costo de la mercancía vendida es 0."
+                )
+
             st.caption(
                 "Interpretación: en la ‘mochila de costos’ entran el inventario inicial y las compras. "
                 "Las devoluciones en compras restan costo disponible. Al final, el inventario que queda en la mochila "
-                "(inventario final) **no** corresponde a ventas. La diferencia es el **costo de la mercancía vendida**."
+                "(inventario final) **no** corresponde a ventas. La diferencia es el **costo de la mercancía vendida**. "
+                "Si el inventario final fuera tan alto que el costo resultara negativo, en la práctica significa que "
+                "no tuvo sentido ese dato y debe ajustarse al máximo posible (sin ventas)."
             )
 
         st.write("**Mini reto**: explica qué ocurriría con el costo de la mercancía vendida si **no hubiera devoluciones en compras** y el **inventario final fuera muy pequeño**.")
