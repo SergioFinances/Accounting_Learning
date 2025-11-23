@@ -1725,7 +1725,7 @@ def page_level2(username):
             rows = []   # cada fila: dict con keys: fecha, desc, ent_q, ent_pu, ent_tot, sal_q, sal_pu, sal_tot, sdo_q, sdo_pu, sdo_tot
             script = [] # cada paso: {"title","text","actions":[{"row":i,"cell":"rX","money":bool,"val":v}, ...]}
 
-            # Día 1: Saldo inicial (1 fila) — AHORA COMO ENTRADA
+            # Día 1: Saldo inicial (1 fila) — COMO ENTRADA
             layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
             s_q, s_pu, s_v = _sum_layers(layers)
             ent_tot_inicial = inv0_u * inv0_pu
@@ -1771,9 +1771,8 @@ def page_level2(username):
                 })
                 script.append({
                     "title": "Paso 2 · Compra y nuevo promedio",
-                    "text": "Registramos la compra como una nueva entrada. A partir del saldo inicial ya registrado, "
-                            "recalculamos el costo promedio: sumamos el valor del saldo inicial y el de la compra, "
-                            "y dividimos entre el total de unidades.",
+                    "text": "Registramos la compra como una entrada. A partir del saldo inicial ya registrado, "
+                            "recalculamos el costo promedio sumando valores y dividiendo entre las unidades totales.",
                     "actions": [
                         {"row": 1, "cell": "ent_q", "money": False, "val": int(comp_u)},
                         {"row": 1, "cell": "ent_pu", "money": True, "val": round(comp_pu, 2)},
@@ -1786,24 +1785,25 @@ def page_level2(username):
                 start_sale_row_index = 2
 
             else:
-                # --------- PEPS / UEPS: solo una fila de Compra (sin “Saldo (día 1)” separado) ---------
+                # --------- PEPS / UEPS: solo una fila de Compra ---------
                 ent_tot = comp_u * comp_pu
                 layers.append([float(comp_u), float(comp_pu)])
-                # Actualizamos saldos globales para uso interno
+                # mantenemos layers completos para la lógica interna (pero NO promediamos para mostrar)
+                # s_q, s_pu, s_v SOLO se usan internamente si se requiere
                 s_q, s_pu, s_v = _sum_layers(layers)
 
                 rows.append({
                     "fecha": "Día 2", "desc": "Compra",
                     "ent_q": int(comp_u), "ent_pu": round(comp_pu, 2), "ent_tot": round(ent_tot, 2),
                     "sal_q": None, "sal_pu": None, "sal_tot": None,
-                    # En la fila mostramos solo la capa de la compra, como en el ejemplo
+                    # En la fila mostramos solo la capa de la compra
                     "sdo_q": int(comp_u), "sdo_pu": round(comp_pu, 2), "sdo_tot": round(ent_tot, 2)
                 })
                 script.append({
                     "title": "Paso 2 · Compra como nueva capa",
                     "text": "Registramos la compra como una nueva capa de inventario. "
-                            "En esta fila, la columna Saldo muestra solo esa entrada. "
-                            "Si quieres ver el inventario total, debes combinar el saldo inicial del Día 1 con esta compra.",
+                            "En esta fila, el saldo muestra únicamente esa entrada. "
+                            "Para ver el inventario total, combinas el saldo inicial del Día 1 con esta compra.",
                     "actions": [
                         {"row": 1, "cell": "ent_q", "money": False, "val": int(comp_u)},
                         {"row": 1, "cell": "ent_pu", "money": True, "val": round(comp_pu, 2)},
@@ -1813,7 +1813,7 @@ def page_level2(username):
                         {"row": 1, "cell": "sdo_tot", "money": True, "val": round(ent_tot, 2)},
                     ]
                 })
-                start_sale_row_index = 2  # ahora las ventas comienzan en la tercera fila (índice 2)
+                start_sale_row_index = 2  # ventas comienzan en la tercera fila
 
             # Día 3: Venta
             if venta_u > 0 and s_q > 0:
@@ -1837,7 +1837,7 @@ def page_level2(username):
                     })
                     script.append({
                         "title": "Paso 3 · Venta (Promedio)",
-                        "text": "Calculamos el costo de la venta usando el costo promedio vigente y actualizamos el saldo.",
+                        "text": "Calculamos el costo de la venta usando el costo promedio vigente y actualizamos el saldo total.",
                         "actions": [
                             {"row": start_sale_row_index, "cell": "sal_q", "money": False, "val": int(sal_q)},
                             {"row": start_sale_row_index, "cell": "sal_pu", "money": True, "val": round(sal_pu, 2)},
@@ -1848,7 +1848,7 @@ def page_level2(username):
                         ]
                     })
                 else:
-                    # PEPS/UEPS: dividir venta por capas (tramos)
+                    # PEPS/UEPS: dividir venta por capas (tramos) SIN PROMEDIOS
                     fifo = (method_name == "PEPS (FIFO)")
                     sale_details, layers_after = _consume_layers_detail(layers, venta_u, fifo=fifo)
 
@@ -1857,32 +1857,46 @@ def page_level2(username):
                     metodo_tag = "PEPS" if fifo else "UEPS"
 
                     for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
-                        # Actualiza running_layers consumiendo este tramo para mostrar saldo tras CADA tramo
+                        # Actualiza running_layers consumiendo este tramo
                         _tmp_details, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
-                        rq, rpu, rv = _sum_layers(running_layers)
+
+                        # --- NUEVO: saldo mostrado = capa relevante, NO promedio ---
+                        if running_layers:
+                            if fifo:
+                                # PEPS: mostramos la primera capa que queda (más antigua)
+                                layer_q, layer_p = running_layers[0]
+                            else:
+                                # UEPS: mostramos la última capa que queda (más reciente)
+                                layer_q, layer_p = running_layers[-1]
+                            layer_q = float(layer_q)
+                            layer_p = float(layer_p)
+                            layer_val = layer_q * layer_p
+                        else:
+                            layer_q, layer_p, layer_val = 0.0, 0.0, 0.0
 
                         rows.append({
                             "fecha": "Día 3", "desc": f"Venta tramo {i} ({metodo_tag})",
                             "ent_q": None, "ent_pu": None, "ent_tot": None,
                             "sal_q": int(q_take), "sal_pu": round(pu_take, 2), "sal_tot": round(tot_take, 2),
-                            "sdo_q": int(rq), "sdo_pu": round(rpu, 2), "sdo_tot": round(rv, 2)
+                            "sdo_q": int(layer_q), "sdo_pu": round(layer_p, 2), "sdo_tot": round(layer_val, 2)
                         })
                         script.append({
                             "title": f"Paso 3 · Venta (tramo {i})",
                             "text": "Consumimos unidades de la capa correspondiente: en PEPS salen primero las más antiguas; "
-                                    "en UEPS, las últimas en entrar. Después de cada tramo actualizamos el saldo.",
+                                    "en UEPS, las últimas en entrar. El saldo que mostramos corresponde a la capa que queda activa según el método, "
+                                    "sin calcular ningún promedio.",
                             "actions": [
                                 {"row": acc_row, "cell": "sal_q", "money": False, "val": int(q_take)},
                                 {"row": acc_row, "cell": "sal_pu", "money": True, "val": round(pu_take, 2)},
                                 {"row": acc_row, "cell": "sal_tot", "money": True, "val": round(tot_take, 2)},
-                                {"row": acc_row, "cell": "sdo_q", "money": False, "val": int(rq)},
-                                {"row": acc_row, "cell": "sdo_pu", "money": True, "val": round(rpu, 2)},
-                                {"row": acc_row, "cell": "sdo_tot", "money": True, "val": round(rv, 2)},
+                                {"row": acc_row, "cell": "sdo_q", "money": False, "val": int(layer_q)},
+                                {"row": acc_row, "cell": "sdo_pu", "money": True, "val": round(layer_p, 2)},
+                                {"row": acc_row, "cell": "sdo_tot", "money": True, "val": round(layer_val, 2)},
                             ]
                         })
                         acc_row += 1
 
-                    # Actualiza layers finales tras toda la venta
+                    # Actualiza layers finales tras toda la venta (para futuras operaciones si las hubiera)
                     layers = layers_after
             else:
                 # Sin venta o sin saldo
@@ -1903,6 +1917,7 @@ def page_level2(username):
                 })
 
             return rows, script
+
 
         demo_rows, demo_script = compute_rows_and_script(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
 
