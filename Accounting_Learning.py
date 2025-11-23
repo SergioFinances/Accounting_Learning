@@ -2539,131 +2539,213 @@ def page_level2(username):
             Salida_cant,  Salida_pu,  Salida_total,
             Saldo_cant,   Saldo_pu,   Saldo_total
 
-            Lógica:
-            - Día 1: saldo inicial SIEMPRE como entrada + saldo.
-            - Día 2: una única fila de compra.
-              * En Promedio Ponderado, el saldo se muestra promediado.
-              * En PEPS/UEPS, el saldo de la fila muestra SOLO la capa comprada.
-            - Día 3: venta.
-              * En Promedio Ponderado: 1 fila.
-              * En PEPS/UEPS: una fila por tramo.
-            - Día 4: segunda compra.
-              * En Promedio Ponderado: saldo promediado.
-              * En PEPS/UEPS: saldo de la fila muestra SOLO la capa comprada.
+            Lógica alineada con el EJEMPLO GUIADO:
+            - Día 1: el saldo inicial se registra como ENTRADA y como SALDO.
+            - Día 2: SOLO una fila de Compra 1 (sin “Saldo (día 1)”).
+                * Promedio Ponderado: saldo con promedio.
+                * PEPS/UEPS: saldo solo de la capa comprada.
+            - Día 3: ventas por método.
+                * PP: una fila.
+                * PEPS/UEPS: tramos sin promedios.
+            - Día 4: Compra 2 (saldo solo de la capa comprada en PEPS/UEPS).
             """
             rows = []
 
-            # Día 1: Saldo inicial (como entrada + saldo)
+            # ------------------------------
+            # Día 1: Saldo inicial
+            # ------------------------------
             if inv0_u_ex > 0:
-                layers = [[float(inv0_u_ex), float(inv0_pu_ex)]]
+                ent_q1 = int(inv0_u_ex)
+                ent_pu1 = float(inv0_pu_ex)
+                ent_tot1 = ent_q1 * ent_pu1
+                layers = [[float(ent_q1), ent_pu1]]
             else:
+                ent_q1 = ent_pu1 = ent_tot1 = None
                 layers = []
+
             s_q, s_p, s_v = _sum_layers(layers)
 
             rows.append({
                 "Fecha": "Día 1", "Descripción": "Saldo inicial",
-                "Entrada_cant": inv0_u_ex if inv0_u_ex > 0 else None,
-                "Entrada_pu":   inv0_pu_ex if inv0_u_ex > 0 else None,
-                "Entrada_total": (inv0_u_ex * inv0_pu_ex) if inv0_u_ex > 0 else None,
+                "Entrada_cant": ent_q1,
+                "Entrada_pu": round(ent_pu1, 2) if ent_pu1 else None,
+                "Entrada_total": round(ent_tot1, 2) if ent_tot1 else None,
                 "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
+                "Saldo_cant": s_q,
+                "Saldo_pu": round(s_p, 2),
+                "Saldo_total": round(s_v, 2)
             })
 
+            # ------------------------------
             # Día 2: Compra 1
+            # ------------------------------
+            ent_tot = comp1_u * comp1_pu
+
             if method_name == "Promedio Ponderado":
-                ent_tot = comp1_u * comp1_pu
                 q_new = s_q + comp1_u
                 v_new = s_v + ent_tot
                 p_new = (v_new / q_new) if q_new > 0 else 0.0
                 layers = [[q_new, p_new]]
                 s_q, s_p, s_v = _sum_layers(layers)
+
                 rows.append({
                     "Fecha": "Día 2", "Descripción": "Compra 1",
-                    "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu, 2), "Entrada_total": round(ent_tot, 2),
+                    "Entrada_cant": comp1_u,
+                    "Entrada_pu": round(comp1_pu, 2),
+                    "Entrada_total": round(ent_tot, 2),
                     "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
-                })
-            else:
-                # PEPS / UEPS: saldo total por capas internamente,
-                # pero la fila de Día 2 muestra SOLO la capa comprada en la columna Saldo.
-                ent_tot = comp1_u * comp1_pu
-                # Agrego capa a las existentes
-                layers.append([float(comp1_u), float(comp1_pu)])
-                # s_q, s_p, s_v representan el agregado total (por si se usan luego)
-                s_q, s_p, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 2", "Descripción": "Compra 1",
-                    "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu, 2), "Entrada_total": round(ent_tot, 2),
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    # SOLO la capa comprada en esta fila:
-                    "Saldo_cant": comp1_u, "Saldo_pu": round(comp1_pu, 2), "Saldo_total": round(ent_tot, 2)
+                    "Saldo_cant": s_q,
+                    "Saldo_pu": round(s_p, 2),
+                    "Saldo_total": round(s_v, 2)
                 })
 
+            else:
+                # PEPS/UEPS → una sola fila "Compra 1"
+                if comp1_u > 0:
+                    layers.append([float(comp1_u), float(comp1_pu)])
+
+                rows.append({
+                    "Fecha": "Día 2", "Descripción": "Compra 1",
+                    "Entrada_cant": comp1_u,
+                    "Entrada_pu": round(comp1_pu, 2),
+                    "Entrada_total": round(ent_tot, 2),
+                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                    "Saldo_cant": comp1_u,
+                    "Saldo_pu": round(comp1_pu, 2),
+                    "Saldo_total": round(ent_tot, 2)
+                })
+
+            # ------------------------------
             # Día 3: Venta
+            # ------------------------------
             if method_name == "Promedio Ponderado":
                 if s_q > 0 and venta_ex_u > 0:
-                    sale_q  = min(venta_ex_u, s_q)
+                    sale_q = min(venta_ex_u, s_q)
                     sale_pu = layers[0][1] if layers else 0.0
-                    sale_tot= sale_q * sale_pu
+                    sale_tot = sale_q * sale_pu
+
                     q2 = s_q - sale_q
                     v2 = s_v - sale_tot
                     p2 = (v2 / q2) if q2 > 0 else 0.0
                     layers = [[q2, p2]] if q2 > 0 else []
                     s_q, s_p, s_v = _sum_layers(layers)
+
                     rows.append({
-                        "Fecha":"Día 3", "Descripción":"Venta",
-                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
-                        "Salida_cant": sale_q, "Salida_pu": round(sale_pu,2), "Salida_total": round(sale_tot,2),
-                        "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                        "Fecha": "Día 3", "Descripción": "Venta",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": sale_q,
+                        "Salida_pu": round(sale_pu, 2),
+                        "Salida_total": round(sale_tot, 2),
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
                     })
                 else:
                     rows.append({
-                        "Fecha":"Día 3", "Descripción":"Venta",
-                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
-                        "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
-                        "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                        "Fecha": "Día 3", "Descripción": "Venta",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
                     })
+
             else:
+                # PEPS / UEPS (venta por tramos)
                 fifo = (method_name == "PEPS (FIFO)")
-                sale_details, layers_after = _consume_layers_detail(layers, venta_ex_u, fifo=fifo)
-                running_layers = [l[:] for l in layers]
                 metodo_tag = "PEPS" if fifo else "UEPS"
-                # Una fila por tramo
-                for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
-                    sub_details, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
-                    rq, rpu, rv = _sum_layers(running_layers)
+
+                layers_for_calc = [[float(q), float(p)] for (q, p) in layers]
+                sale_remaining = float(venta_ex_u)
+                tramo_index = 1
+
+                while sale_remaining > 0 and any(q > 0 for q, _ in layers_for_calc):
+
+                    # Selección de capa
+                    if fifo:
+                        idx = next(i for i,(q,_) in enumerate(layers_for_calc) if q>0)
+                    else:
+                        idx = max(i for i,(q,_) in enumerate(layers_for_calc) if q>0)
+
+                    layer_q, layer_pu = layers_for_calc[idx]
+                    q_take = min(layer_q, sale_remaining)
+                    tot_take = q_take * layer_pu
+                    sale_remaining -= q_take
+
+                    # Actualizar capa consumida
+                    q_rem = layer_q - q_take
+                    layers_for_calc[idx][0] = q_rem
+
+                    # Determinar capa activa para SALDO
+                    if q_rem > 0:
+                        sdo_q = q_rem
+                        sdo_pu = layer_pu
+                    else:
+                        remaining_layers = [(q,p) for (q,p) in layers_for_calc if q>0]
+                        if remaining_layers:
+                            if fifo:
+                                sdo_q, sdo_pu = remaining_layers[0]
+                            else:
+                                sdo_q, sdo_pu = remaining_layers[-1]
+                        else:
+                            sdo_q, sdo_pu = 0.0, layer_pu
+
+                    sdo_tot = sdo_q * sdo_pu
+
                     rows.append({
-                        "Fecha":"Día 3", "Descripción": f"Venta tramo {i} ({metodo_tag})",
-                        "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
-                        "Salida_cant": q_take, "Salida_pu": round(pu_take,2), "Salida_total": round(tot_take,2),
-                        "Saldo_cant": rq, "Saldo_pu": round(rpu,2), "Saldo_total": round(rv,2)
+                        "Fecha": "Día 3",
+                        "Descripción": f"Venta tramo {tramo_index} ({metodo_tag})",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": int(q_take),
+                        "Salida_pu": round(layer_pu, 2),
+                        "Salida_total": round(tot_take, 2),
+                        "Saldo_cant": int(sdo_q),
+                        "Saldo_pu": round(sdo_pu, 2),
+                        "Saldo_total": round(sdo_tot, 2)
                     })
-                layers = layers_after
+
+                    tramo_index += 1
+
+                layers = [(q,p) for (q,p) in layers_for_calc if q>0]
                 s_q, s_p, s_v = _sum_layers(layers)
 
+            # ------------------------------
             # Día 4: Compra 2
+            # ------------------------------
+            ent2_tot = comp2_u * comp2_pu
+
             if method_name == "Promedio Ponderado":
-                ent2_tot = comp2_u * comp2_pu
                 q3 = s_q + comp2_u
                 v3 = s_v + ent2_tot
                 p3 = (v3 / q3) if q3 > 0 else 0.0
                 layers = [[q3, p3]]
                 s_q, s_p, s_v = _sum_layers(layers)
+
                 rows.append({
-                    "Fecha":"Día 4", "Descripción":"Compra 2",
-                    "Entrada_cant": comp2_u, "Entrada_pu": round(comp2_pu,2), "Entrada_total": round(ent2_tot,2),
-                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                    "Fecha": "Día 4", "Descripción": "Compra 2",
+                    "Entrada_cant": comp2_u,
+                    "Entrada_pu": round(comp2_pu, 2),
+                    "Entrada_total": round(ent2_tot, 2),
+                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                    "Saldo_cant": s_q,
+                    "Saldo_pu": round(s_p, 2),
+                    "Saldo_total": round(s_v, 2)
                 })
+
             else:
-                ent2_tot = comp2_u * comp2_pu
-                layers.append([float(comp2_u), float(comp2_pu)])
+                # PEPS / UEPS: saldo solo de la nueva capa
+                if comp2_u > 0:
+                    layers.append([float(comp2_u), float(comp2_pu)])
+
                 rows.append({
-                    "Fecha":"Día 4", "Descripción":"Compra 2",
-                    "Entrada_cant": comp2_u, "Entrada_pu": round(comp2_pu,2), "Entrada_total": round(ent2_tot,2),
-                    "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
-                    # Solo la capa comprada en la fila
-                    "Saldo_cant": comp2_u, "Saldo_pu": round(comp2_pu,2), "Saldo_total": round(ent2_tot,2)
+                    "Fecha": "Día 4", "Descripción": "Compra 2",
+                    "Entrada_cant": comp2_u,
+                    "Entrada_pu": round(comp2_pu, 2),
+                    "Entrada_total": round(ent2_tot, 2),
+                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                    "Saldo_cant": comp2_u,
+                    "Saldo_pu": round(comp2_pu, 2),
+                    "Saldo_total": round(ent2_tot, 2)
                 })
 
             return rows
@@ -2724,6 +2806,7 @@ def page_level2(username):
                 if v is None or v == "":
                     return True
                 try:
+                    # por si acaso llega un NaN
                     import math
                     return isinstance(v, float) and math.isnan(v)
                 except Exception:
@@ -2735,6 +2818,7 @@ def page_level2(username):
                 user = edited.iloc[i].to_dict()
                 exp  = expected_rows[i]
                 ok_cells = []
+                # Para cada celda numérica, si exp tiene número, validamos; si está vacío, no se exige
                 for key in [
                     "Entrada_cant","Entrada_pu","Entrada_total",
                     "Salida_cant","Salida_pu","Salida_total",
@@ -2753,6 +2837,7 @@ def page_level2(username):
                 ok_row = all(ok_cells)
                 flags.append((f"{exp['Fecha']} · {exp['Descripción']}", ok_row))
 
+
             aciertos = sum(1 for _, ok in flags if ok)
             st.metric("Aciertos por fila", f"{aciertos}/{len(flags)}")
             for label, ok in flags:
@@ -2763,83 +2848,43 @@ def page_level2(username):
             else:
                 st.warning("Hay diferencias en una o más filas. Revisa cantidades, costos unitarios y el método aplicado en cada día/tramo.")
 
-            # ================
-            # Feedback IA mejorado (pistas por fila)
-            # ================
+            # Feedback IA opcional
             if ask_ai:
-                import json as _json
+                # Arma una descripción compacta del intento del estudiante
+                def _row_summary(idx):
+                    r = edited.iloc[idx].to_dict()
+                    def g(k):
+                        v = _to_float(r.get(k, ""))
+                        return "—" if v is None else f"{v:.2f}" if isinstance(v, float) else str(v)
+                    return (f"{edited.iloc[idx]['Fecha']} {edited.iloc[idx]['Descripción']}: "
+                            f"E({g('Entrada_cant')},{g('Entrada_pu')},{g('Entrada_total')}) | "
+                            f"S({g('Salida_cant')},{g('Salida_pu')},{g('Salida_total')}) | "
+                            f"Saldo({g('Saldo_cant')},{g('Saldo_pu')},{g('Saldo_total')})")
 
-                # Construimos un JSON fila por fila con:
-                # - label de la fila
-                # - si está correcta o no
-                # - valores esperados vs valores del estudiante por columna
-                rows_ai = []
-                for i, (label, ok_row) in enumerate(flags):
-                    exp = expected_rows[i]
-                    user = edited.iloc[i].to_dict()
-                    cells = {}
-                    for key in [
-                        "Entrada_cant","Entrada_pu","Entrada_total",
-                        "Salida_cant","Salida_pu","Salida_total",
-                        "Saldo_cant","Saldo_pu","Saldo_total"
-                    ]:
-                        exp_val = exp[key]
-                        usr_val = _to_float(user.get(key, ""))
-                        cells[key] = {
-                            "expected": None if _is_empty_exp(exp_val) else exp_val,
-                            "student": usr_val
-                        }
-                    rows_ai.append({
-                        "row_label": label,
-                        "correct": ok_row,
-                        "cells": cells
-                    })
+                intento = "\n".join(_row_summary(i) for i in range(len(expected_rows)))
 
-                rows_json = _json.dumps(rows_ai, ensure_ascii=False)
+                # Salidas clave para guía
+                # saldo final esperado
+                final_exp = expected_rows[-1]
+                exp_qtyF = final_exp["Saldo_cant"] if final_exp["Saldo_cant"] != "" else None
+                exp_valF = final_exp["Saldo_total"] if final_exp["Saldo_total"] != "" else None
+                exp_puF  = final_exp["Saldo_pu"] if final_exp["Saldo_pu"] != "" else None
 
-                metodo_txt = ex_metodo
-                contexto = (
-                    "Día 1 = Saldo inicial (se registra como ENTRADA y SALDO), "
-                    "Día 2 = Compra 1, Día 3 = Venta, Día 4 = Compra 2. "
-                    "Columnas: Entrada_cant (unidades de entrada), Entrada_pu (costo unitario), "
-                    "Entrada_total (cantidad × costo unitario), Salida_* (igual pero para la venta), "
-                    "Saldo_* (inventario que queda después del movimiento)."
+                sol_desc = (
+                    f"Método: {ex_metodo}. "
+                    f"Saldo final esperado: cant={exp_qtyF}, val={exp_valF}, pu={exp_puF}. "
+                    f"Cantidad de filas esperadas: {len(expected_rows)}."
                 )
 
-                prompt = f"""
-Eres un profesor experto en contabilidad de inventarios.
-
-Estás evaluando un KARDEX con el método: {metodo_txt}.
-Contexto del ejercicio: {contexto}
-
-Te doy un JSON con la solución esperada y los valores digitados por el estudiante, fila por fila:
-
-{rows_json}
-
-Instrucciones para tu respuesta:
-- Responde en ESPAÑOL, de forma clara y pedagógica.
-- SOLO comentes las filas donde "correct" es false (es decir, donde hay errores).
-- Para cada fila con errores:
-    - Escribe un encabezado tipo: "Fila: Día X · Descripción".
-    - Debajo, escribe entre 2 y 4 viñetas (•) explicando QUÉ debería revisar el estudiante y POR QUÉ podría estar mal esa fila.
-- NO digas los valores correctos ni muestres directamente la solución.
-- Da pistas, por ejemplo:
-    - "Revisa que el Total de Entrada sea igual a cantidad por costo unitario."
-    - "En esta fila, en {metodo_txt} no deberías promediar el costo, sino usar la capa correspondiente."
-    - "Después de la venta, el saldo debe restar la cantidad y el valor de la salida, usando el costo correcto."
-- Distingue si el problema está en:
-    - las columnas de Entrada,
-    - las columnas de Salida,
-    - o las columnas de Saldo.
-- Si casi todo está bien y solo falla una columna, menciona que la fila está bien encaminada pero hay un detalle puntual.
-
-No incluyas nada de código ni JSON en la respuesta final, solo texto normal con encabezados y viñetas.
-"""
-
                 with st.spinner("Generando retroalimentación de IA…"):
-                    fb_txt = ia_feedback(prompt)
-
-                with st.expander("💬 Retroalimentación de la IA (pistas por fila)"):
+                    fb_txt = ia_feedback(
+                        "Evalúa el procedimiento de un KARDEX paso a paso. " + sol_desc +
+                        "\nEl estudiante diligenció:\n" + intento +
+                        "\nIndica: (1) si respeta el método (promedio/PEPS/UEPS) en cada día/tramo, "
+                        "(2) posibles errores (promediar en PEPS/UEPS, usar costo equivocado en venta, no actualizar saldo), "
+                        "(3) un tip memotécnico breve y aplicable."
+                    )
+                with st.expander("💬 Retroalimentación de la IA"):
                     st.write(fb_txt)
 
     # ====== Helpers de performance y parseo ======
