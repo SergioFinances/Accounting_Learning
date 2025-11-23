@@ -3164,30 +3164,6 @@ def page_level2(username):
             pu = (v / q) if q > 0 else 0.0
             return q, pu, v
 
-        def _consume_layers_detail(layers, qty_out, fifo=True):
-            """
-            Devuelve (sale_details, layers_after)
-            sale_details: lista de tramos [(take_qty, pu, total), ...]
-            layers_after: capas restantes tras consumir qty_out
-            """
-            order = layers[:] if fifo else layers[::-1]
-            remaining = qty_out
-            sale_details = []
-            new_layers = []
-            for q, pu in order:
-                if remaining <= 0:
-                    new_layers.append([q, pu])
-                    continue
-                take = min(q, remaining)
-                if take > 0:
-                    sale_details.append((take, pu, take*pu))
-                    rest = q - take
-                    remaining -= take
-                    if rest > 0:
-                        new_layers.append([rest, pu])
-            layers_after = new_layers if fifo else new_layers[::-1]
-            return sale_details, layers_after
-
         # ========= Escenarios diferenciados =========
         # --- Promedio Ponderado (Bolsos)
         inv0_u, inv0_pu = 80, 10.0
@@ -3201,15 +3177,147 @@ def page_level2(username):
         peps_venta_u = 120
         peps_comp2_u, peps_comp2_pu = 70, 12.0
 
-        # ---------- Solución PP ----------
+        # ---------- Solución PP ----------    
         pp_after_c1, pp_after_sale, pp_final = cached_solve_pp(
             inv0_u, inv0_pu, comp1_u, comp1_pu, venta_u, comp2_u, comp2_pu
         )
 
-        # ---------- Solución PEPS (filas dinámicas) ----------
-        peps_rows_expected, peps_final = cached_solve_peps_rows(
-            peps_inv0_u, peps_inv0_pu, peps_comp1_u, peps_comp1_pu, peps_venta_u, peps_comp2_u, peps_comp2_pu
-        )
+        # ---------- Solución PEPS (filas esperadas, SIN “Saldo (día 1)”) ----------
+        def build_peps_exam_rows():
+            """
+            Construye las filas esperadas del Kardex PEPS para el examen, con esta lógica:
+            - Día 1: saldo inicial como ENTRADA + SALDO.
+            - Día 2: solo la fila de Compra 1 (sin 'Saldo (día 1)').
+            - Día 3: una fila por tramo de venta, mostrando el saldo como la capa activa
+                    (no se promedia el costo).
+            - Día 4: Compra 2, el saldo muestra solo la nueva capa comprada.
+            """
+            rows = []
+
+            # ----------------- Día 1: Saldo inicial como entrada + saldo -----------------
+            layers = []
+            if peps_inv0_u > 0:
+                ent_q = peps_inv0_u
+                ent_pu = peps_inv0_pu
+                ent_tot = ent_q * ent_pu
+                sdo_q = peps_inv0_u
+                sdo_pu = peps_inv0_pu
+                sdo_tot = ent_tot
+                layers.append([float(peps_inv0_u), float(peps_inv0_pu)])
+            else:
+                ent_q = ent_pu = ent_tot = ""
+                sdo_q = sdo_pu = sdo_tot = 0.0
+
+            rows.append({
+                "fecha": "Día 1", "desc": "Saldo inicial",
+                "ent_q": ent_q if ent_q != "" else "",
+                "ent_pu": ent_pu if ent_q != "" else "",
+                "ent_tot": ent_tot if ent_q != "" else "",
+                "sal_q": "", "sal_pu": "", "sal_tot": "",
+                "sdo_q": sdo_q, "sdo_pu": sdo_pu, "sdo_tot": sdo_tot,
+            })
+
+            # ----------------- Día 2: Compra 1 (nueva capa) -----------------
+            if peps_comp1_u > 0:
+                ent_q2 = peps_comp1_u
+                ent_pu2 = peps_comp1_pu
+                ent_tot2 = ent_q2 * ent_pu2
+                rows.append({
+                    "fecha": "Día 2", "desc": "Compra 1",
+                    "ent_q": ent_q2, "ent_pu": ent_pu2, "ent_tot": ent_tot2,
+                    "sal_q": "", "sal_pu": "", "sal_tot": "",
+                    # En SALDO se muestra solo la capa comprada
+                    "sdo_q": ent_q2, "sdo_pu": ent_pu2, "sdo_tot": ent_tot2,
+                })
+                layers.append([float(peps_comp1_u), float(peps_comp1_pu)])
+            else:
+                rows.append({
+                    "fecha": "Día 2", "desc": "Compra 1",
+                    "ent_q": "", "ent_pu": "", "ent_tot": "",
+                    "sal_q": "", "sal_pu": "", "sal_tot": "",
+                    "sdo_q": 0, "sdo_pu": 0.0, "sdo_tot": 0.0,
+                })
+
+            # ----------------- Día 3: Venta en tramos (PEPS, sin promediar) -----------------
+            total_inventario = sum(q for q, _ in layers)
+            if peps_venta_u > 0 and total_inventario > 0:
+                layers_for_calc = [[float(q), float(p)] for q, p in layers]
+                sale_remaining = float(peps_venta_u)
+                tramo_index = 1
+
+                while sale_remaining > 0 and any(q > 0 for q, _ in layers_for_calc):
+                    # En PEPS se toma siempre la capa más antigua con unidades disponibles
+                    idx_layer = next(i for i, (q, _) in enumerate(layers_for_calc) if q > 0)
+                    layer_q, layer_pu = layers_for_calc[idx_layer]
+                    q_take = min(layer_q, sale_remaining)
+                    tot_take = q_take * layer_pu
+                    sale_remaining -= q_take
+
+                    # Actualizar capa consumida
+                    q_rem = layer_q - q_take
+                    layers_for_calc[idx_layer][0] = q_rem
+
+                    # Determinar la capa que se muestra en SALDO después del tramo
+                    if q_rem > 0:
+                        # Quedan unidades en la misma capa
+                        sdo_q = q_rem
+                        sdo_pu = layer_pu
+                    else:
+                        # Esa capa se agotó, buscamos la siguiente capa disponible (PEPS)
+                        remaining_layers = [(q, p) for (q, p) in layers_for_calc if q > 0]
+                        if remaining_layers:
+                            sdo_q, sdo_pu = remaining_layers[0]
+                        else:
+                            sdo_q, sdo_pu = 0.0, layer_pu
+                    sdo_tot = sdo_q * sdo_pu
+
+                    rows.append({
+                        "fecha": "Día 3",
+                        "desc": f"Venta tramo {tramo_index} (PEPS)",
+                        "ent_q": "", "ent_pu": "", "ent_tot": "",
+                        "sal_q": q_take, "sal_pu": layer_pu, "sal_tot": tot_take,
+                        "sdo_q": sdo_q, "sdo_pu": sdo_pu, "sdo_tot": sdo_tot,
+                    })
+
+                    tramo_index += 1
+
+                # Actualizamos las capas finales (si quisieras usarlas luego)
+                layers = layers_for_calc
+            else:
+                # Escenario sin venta efectiva
+                q_tot, pu_tot, v_tot = _sum_layers(layers) if layers else (0, 0.0, 0.0)
+                rows.append({
+                    "fecha": "Día 3",
+                    "desc": "Venta",
+                    "ent_q": "", "ent_pu": "", "ent_tot": "",
+                    "sal_q": "", "sal_pu": "", "sal_tot": "",
+                    "sdo_q": q_tot, "sdo_pu": pu_tot, "sdo_tot": v_tot,
+                })
+
+            # ----------------- Día 4: Compra 2 (nueva capa) -----------------
+            if peps_comp2_u > 0:
+                ent_q4 = peps_comp2_u
+                ent_pu4 = peps_comp2_pu
+                ent_tot4 = ent_q4 * ent_pu4
+                rows.append({
+                    "fecha": "Día 4", "desc": "Compra 2",
+                    "ent_q": ent_q4, "ent_pu": ent_pu4, "ent_tot": ent_tot4,
+                    "sal_q": "", "sal_pu": "", "sal_tot": "",
+                    # Igual que en el ejemplo guiado: el saldo de esta fila muestra solo la nueva capa
+                    "sdo_q": ent_q4, "sdo_pu": ent_pu4, "sdo_tot": ent_tot4,
+                })
+                layers.append([float(peps_comp2_u), float(peps_comp2_pu)])
+            else:
+                rows.append({
+                    "fecha": "Día 4", "desc": "Compra 2",
+                    "ent_q": "", "ent_pu": "", "ent_tot": "",
+                    "sal_q": "", "sal_pu": "", "sal_tot": "",
+                    "sdo_q": 0, "sdo_pu": 0.0, "sdo_tot": 0.0,
+                })
+
+            return rows
+
+        peps_rows_expected = build_peps_exam_rows()
 
         # ========= UI: una sola FORM para todo =========
         with st.form("n2_eval_all"):
