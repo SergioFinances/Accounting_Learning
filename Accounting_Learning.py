@@ -3176,7 +3176,8 @@ def page_level2(username):
             - Día 1: saldo inicial como ENTRADA + SALDO.
             - Día 2: solo la fila de Compra 1 (sin 'Saldo (día 1)').
             - Día 3: una fila por tramo de venta, mostrando el saldo como la capa activa
-                    (no se promedia el costo).
+                    (no se promedia el costo). Si una capa se agota en el tramo,
+                    el SALDO de esa fila muestra 0 unidades al costo de esa capa.
             - Día 4: Compra 2, el saldo muestra solo la nueva capa comprada.
             """
             rows = []
@@ -3244,18 +3245,15 @@ def page_level2(username):
                     q_rem = layer_q - q_take
                     layers_for_calc[idx_layer][0] = q_rem
 
-                    # Determinar la capa que se muestra en SALDO después del tramo
+                    # 💡 NUEVA LÓGICA: SALDO de la fila muestra SIEMPRE la capa del tramo
                     if q_rem > 0:
-                        # Quedan unidades en la misma capa
+                        # Quedan unidades en la misma capa que se está consumiendo
                         sdo_q = q_rem
                         sdo_pu = layer_pu
                     else:
-                        # Esa capa se agotó, buscamos la siguiente capa disponible (PEPS)
-                        remaining_layers = [(q, p) for (q, p) in layers_for_calc if q > 0]
-                        if remaining_layers:
-                            sdo_q, sdo_pu = remaining_layers[0]
-                        else:
-                            sdo_q, sdo_pu = 0.0, layer_pu
+                        # La capa se agotó en este tramo: saldo 0 unidades al mismo costo
+                        sdo_q = 0.0
+                        sdo_pu = layer_pu
                     sdo_tot = sdo_q * sdo_pu
 
                     rows.append({
