@@ -3639,7 +3639,10 @@ def page_level3(username):
     # =========================================
     with tabs[1]:
         st.subheader("KARDEX dinámico con devoluciones (PP · PEPS · UEPS)")
-        st.caption("Días 1–3 prellenados. La demostración narrada inicia en el Día 4 (devolución de compra) y Día 5 (devolución de venta).")
+        st.caption(
+            "Días 1–3 prellenados según el método. "
+            "La demostración narrada se centra en el Día 4 (devolución de compra) y Día 5 (devolución de venta)."
+        )
 
         # ========= Helpers =========
         def _fmt_money(v):
@@ -3686,32 +3689,53 @@ def page_level3(username):
             "Método",
             ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
             key="n3_kx_met",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
 
         # Días 1–3
         st.markdown("📦 **Día 1.** Saldo inicial:")
         c1a, c1b = st.columns([1, 1], gap="small")
         with c1a:
-            inv0_u = st.number_input("Cantidad (u)", min_value=0, value=100, step=10, key="n3_kx_inv_u")
+            inv0_u = st.number_input(
+                "Cantidad (u)", min_value=0, value=100, step=10, key="n3_kx_inv_u"
+            )
         with c1b:
-            inv0_pu = st.number_input("Costo unitario ($/u)", min_value=0.0, value=10.0, step=0.5, key="n3_kx_inv_pu")
+            inv0_pu = st.number_input(
+                "Costo unitario ($/u)",
+                min_value=0.0,
+                value=10.0,
+                step=0.5,
+                key="n3_kx_inv_pu",
+            )
 
         st.markdown("🛒 **Día 2.** Compra:")
         c2a, c2b = st.columns([1, 1], gap="small")
         with c2a:
-            comp_u = st.number_input("Compra (u)", min_value=0, value=60, step=10, key="n3_kx_comp_u")
+            comp_u = st.number_input(
+                "Compra (u)", min_value=0, value=60, step=10, key="n3_kx_comp_u"
+            )
         with c2b:
-            comp_pu = st.number_input("Costo compra ($/u)", min_value=0.0, value=12.0, step=0.5, key="n3_kx_comp_pu")
+            comp_pu = st.number_input(
+                "Costo compra ($/u)",
+                min_value=0.0,
+                value=12.0,
+                step=0.5,
+                key="n3_kx_comp_pu",
+            )
 
         st.markdown("💰 **Día 3.** Venta:")
-        venta_u = st.number_input("Venta (u)", min_value=0, value=120, step=10, key="n3_kx_venta_u")
+        venta_u = st.number_input(
+            "Venta (u)", min_value=0, value=120, step=10, key="n3_kx_venta_u"
+        )
 
         st.markdown("---")
         st.markdown("↩️ **Día 4.** Devolución de compra (a proveedor):")
         dev_comp_u = st.number_input(
             "Unidades devueltas al proveedor",
-            min_value=0, value=10, step=5, key="n3_kx_dev_comp_u"
+            min_value=0,
+            value=10,
+            step=5,
+            key="n3_kx_dev_comp_u",
         )
         st.caption(
             "La devolución se valora al **mismo costo unitario de la compra original**. "
@@ -3721,7 +3745,10 @@ def page_level3(username):
         st.markdown("↪️ **Día 5.** Devolución de venta (del cliente):")
         dev_venta_u = st.number_input(
             "Unidades devueltas por el cliente",
-            min_value=0, value=8, step=2, key="n3_kx_dev_venta_u"
+            min_value=0,
+            value=8,
+            step=2,
+            key="n3_kx_dev_venta_u",
         )
         st.caption(
             "La devolución se valora al **mismo costo unitario con el que salieron en la venta original**. "
@@ -3733,19 +3760,29 @@ def page_level3(username):
 
         c_demo_a, c_demo_b = st.columns([1, 1])
         with c_demo_a:
-            narr_speed = st.slider("Velocidad de narración", 0.75, 1.50, 1.00, 0.05, key="n3_kx_rate")
+            narr_speed = st.slider(
+                "Velocidad de narración", 0.75, 1.50, 1.00, 0.05, key="n3_kx_rate"
+            )
         with c_demo_b:
-            narr_muted = st.toggle("Silenciar voz", value=False, key="n3_kx_mute")
+            narr_muted = st.toggle(
+                "Silenciar voz", value=False, key="n3_kx_mute"
+            )
 
         # ========= Generación de filas y guion =========
         def compute_rows_and_script_with_returns(
-            method_name, inv0_u, inv0_pu, comp_u, comp_pu, venta_u,
-            dev_comp_u, dev_venta_u
+            method_name,
+            inv0_u,
+            inv0_pu,
+            comp_u,
+            comp_pu,
+            venta_u,
+            dev_comp_u,
+            dev_venta_u,
         ):
             """
             Construye todas las filas (Día 1–5).
             Días 1–3: prellenados según el método.
-            Días 4–5: se narran (acciones en script) y aparecen vacíos al inicio en la tabla.
+            Días 4–5: se narran (acciones en script).
             En PEPS/UEPS NUNCA se promedia: se trabaja siempre por capas.
             """
             rows = []
@@ -3772,14 +3809,21 @@ def page_level3(username):
                 layers = []
                 s_q, s_pu, s_v = 0.0, 0.0, 0.0
 
-            rows.append({
-                "fecha": "Día 1", "desc": "Saldo inicial",
-                "ent_q": ent_q_1, "ent_pu": ent_pu_1, "ent_tot": ent_tot_1,
-                "sal_q": None, "sal_pu": None, "sal_tot": None,
-                "sdo_q": int(s_q) if s_q > 0 else 0,
-                "sdo_pu": round(s_pu, 2),
-                "sdo_tot": round(s_v, 2),
-            })
+            rows.append(
+                {
+                    "fecha": "Día 1",
+                    "desc": "Saldo inicial",
+                    "ent_q": ent_q_1,
+                    "ent_pu": ent_pu_1,
+                    "ent_tot": ent_tot_1,
+                    "sal_q": None,
+                    "sal_pu": None,
+                    "sal_tot": None,
+                    "sdo_q": int(s_q) if s_q > 0 else 0,
+                    "sdo_pu": round(s_pu, 2),
+                    "sdo_tot": round(s_v, 2),
+                }
+            )
 
             # =====================
             # DÍA 2 · COMPRA
@@ -3794,14 +3838,21 @@ def page_level3(username):
                     layers = [[new_q, new_p]]
                     s_q, s_pu, s_v = new_q, new_p, new_v
 
-                rows.append({
-                    "fecha": "Día 2", "desc": "Compra",
-                    "ent_q": int(comp_u) if comp_u > 0 else None,
-                    "ent_pu": round(comp_pu, 2) if comp_u > 0 else None,
-                    "ent_tot": round(ent_tot, 2) if comp_u > 0 else None,
-                    "sal_q": None, "sal_pu": None, "sal_tot": None,
-                    "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2),
-                })
+                rows.append(
+                    {
+                        "fecha": "Día 2",
+                        "desc": "Compra",
+                        "ent_q": int(comp_u) if comp_u > 0 else None,
+                        "ent_pu": round(comp_pu, 2) if comp_u > 0 else None,
+                        "ent_tot": round(ent_tot, 2) if comp_u > 0 else None,
+                        "sal_q": None,
+                        "sal_pu": None,
+                        "sal_tot": None,
+                        "sdo_q": int(s_q),
+                        "sdo_pu": round(s_pu, 2),
+                        "sdo_tot": round(s_v, 2),
+                    }
+                )
             else:
                 # PEPS / UEPS: solo fila Compra; el saldo de esa fila muestra solo la capa comprada
                 ent_tot = comp_u * comp_pu
@@ -3809,16 +3860,22 @@ def page_level3(username):
                     layers.append([float(comp_u), float(comp_pu)])
                 s_q_total, s_pu_total, s_v_total = _sum_layers(layers)
 
-                rows.append({
-                    "fecha": "Día 2", "desc": "Compra",
-                    "ent_q": int(comp_u) if comp_u > 0 else None,
-                    "ent_pu": round(comp_pu, 2) if comp_u > 0 else None,
-                    "ent_tot": round(ent_tot, 2) if comp_u > 0 else None,
-                    "sal_q": None, "sal_pu": None, "sal_tot": None,
-                    "sdo_q": int(comp_u) if comp_u > 0 else 0,
-                    "sdo_pu": round(comp_pu, 2) if comp_u > 0 else 0.0,
-                    "sdo_tot": round(ent_tot, 2) if comp_u > 0 else 0.0,
-                })
+                rows.append(
+                    {
+                        "fecha": "Día 2",
+                        "desc": "Compra",
+                        "ent_q": int(comp_u) if comp_u > 0 else None,
+                        "ent_pu": round(comp_pu, 2) if comp_u > 0 else None,
+                        "ent_tot": round(ent_tot, 2) if comp_u > 0 else None,
+                        "sal_q": None,
+                        "sal_pu": None,
+                        "sal_tot": None,
+                        # Saldo mostrado: solamente la capa de la compra
+                        "sdo_q": int(comp_u) if comp_u > 0 else 0,
+                        "sdo_pu": round(comp_pu, 2) if comp_u > 0 else 0.0,
+                        "sdo_tot": round(ent_tot, 2) if comp_u > 0 else 0.0,
+                    }
+                )
                 s_q, s_pu, s_v = s_q_total, s_pu_total, s_v_total
 
             # =====================
@@ -3838,58 +3895,97 @@ def page_level3(username):
                     layers = [[new_q, new_p]] if new_q > 0 else []
                     s_q, s_pu, s_v = new_q, new_p, new_v
 
-                    rows.append({
-                        "fecha": "Día 3", "desc": "Venta",
-                        "ent_q": None, "ent_pu": None, "ent_tot": None,
-                        "sal_q": int(sal_q), "sal_pu": round(sal_pu, 2), "sal_tot": round(sal_tot, 2),
-                        "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2),
-                    })
+                    rows.append(
+                        {
+                            "fecha": "Día 3",
+                            "desc": "Venta",
+                            "ent_q": None,
+                            "ent_pu": None,
+                            "ent_tot": None,
+                            "sal_q": int(sal_q),
+                            "sal_pu": round(sal_pu, 2),
+                            "sal_tot": round(sal_tot, 2),
+                            "sdo_q": int(s_q),
+                            "sdo_pu": round(s_pu, 2),
+                            "sdo_tot": round(s_v, 2),
+                        }
+                    )
 
-                # ------- PEPS / UEPS -------
+                # ------- PEPS / UEPS (SIN PROMEDIAR) -------
                 else:
-                    fifo = (method_name == "PEPS (FIFO)")
-                    sale_details, layers_after = _consume_layers_detail(layers, venta_u, fifo=fifo)
-
-                    # 💡 CORRECCIÓN: costo para la devolución
-                    if sale_details:
-                        if fifo:
-                            # PEPS: devoluciones al costo de la PRIMERA capa vendida
-                            sale_unit_cost = sale_details[0][1]
-                        else:
-                            # UEPS: devoluciones al costo de la ÚLTIMA capa vendida
-                            sale_unit_cost = sale_details[-1][1]
-                    else:
-                        sale_unit_cost = None
-
-                    running_layers = [l[:] for l in layers]
+                    fifo = method_name == "PEPS (FIFO)"
                     metodo_tag = "PEPS" if fifo else "UEPS"
 
-                    def _sum_layers_copy(lrs):
-                        q = sum(q for q, _ in lrs)
-                        v = sum(q * p for q, p in lrs)
-                        pu = (v / q) if q > 0 else 0.0
-                        return q, pu, v
+                    # Simulamos por capas SIN promediar, tramo a tramo
+                    sim_layers = [l[:] for l in layers]
+                    remaining_sale = venta_u
+                    sale_details = []
 
-                    for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
-                        sd, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
-                        rq, rpu, rv = _sum_layers_copy(running_layers)
+                    while remaining_sale > 0 and sim_layers:
+                        idx = 0 if fifo else len(sim_layers) - 1
+                        q_layer, pu_layer = sim_layers[idx]
+                        take = min(q_layer, remaining_sale)
+                        if take <= 0:
+                            break
 
-                        rows.append({
-                            "fecha": "Día 3", "desc": f"Venta tramo {i} ({metodo_tag})",
-                            "ent_q": None, "ent_pu": None, "ent_tot": None,
-                            "sal_q": int(q_take), "sal_pu": round(pu_take, 2), "sal_tot": round(tot_take, 2),
-                            "sdo_q": int(rq), "sdo_pu": round(rpu, 2), "sdo_tot": round(rv, 2),
-                        })
+                        tot_take = take * pu_layer
+                        sale_details.append((take, pu_layer, tot_take))
 
-                    layers = layers_after
+                        new_q_layer = q_layer - take
+                        if new_q_layer > 0:
+                            sim_layers[idx][0] = new_q_layer
+                        else:
+                            sim_layers.pop(idx)
+
+                        # Saldo mostrado SOLO de la capa afectada en este tramo
+                        saldo_q = new_q_layer if new_q_layer > 0 else 0
+                        saldo_pu = pu_layer
+                        saldo_tot = saldo_q * saldo_pu
+
+                        rows.append(
+                            {
+                                "fecha": "Día 3",
+                                "desc": f"Venta tramo {len(sale_details)} ({metodo_tag})",
+                                "ent_q": None,
+                                "ent_pu": None,
+                                "ent_tot": None,
+                                "sal_q": int(take),
+                                "sal_pu": round(pu_layer, 2),
+                                "sal_tot": round(tot_take, 2),
+                                "sdo_q": int(saldo_q),
+                                "sdo_pu": round(saldo_pu, 2),
+                                "sdo_tot": round(saldo_tot, 2),
+                            }
+                        )
+
+                        remaining_sale -= take
+
+                    layers = sim_layers
                     s_q, s_pu, s_v = _sum_layers(layers)
+
+                    # Costo de referencia para devolución en ventas
+                    if sale_details:
+                        sale_unit_cost = (
+                            sale_details[0][1] if fifo else sale_details[-1][1]
+                        )
+                    else:
+                        sale_unit_cost = None
             else:
-                rows.append({
-                    "fecha": "Día 3", "desc": "Venta",
-                    "ent_q": None, "ent_pu": None, "ent_tot": None,
-                    "sal_q": None, "sal_pu": None, "sal_tot": None,
-                    "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2),
-                })
+                rows.append(
+                    {
+                        "fecha": "Día 3",
+                        "desc": "Venta",
+                        "ent_q": None,
+                        "ent_pu": None,
+                        "ent_tot": None,
+                        "sal_q": None,
+                        "sal_pu": None,
+                        "sal_tot": None,
+                        "sdo_q": int(s_q),
+                        "sdo_pu": round(s_pu, 2),
+                        "sdo_tot": round(s_v, 2),
+                    }
+                )
 
             # A partir de aquí se narran solo las devoluciones
             narr_start_idx = len(rows)
@@ -3899,8 +3995,6 @@ def page_level3(username):
             # =====================
             if dev_comp_u > 0 and s_q > 0:
                 if method_name == "Promedio Ponderado":
-                    prev_q, prev_pu, prev_v = s_q, s_pu, s_v
-
                     take_q = min(dev_comp_u, s_q)
                     # Devolvemos al precio original de compra
                     take_pu = comp_pu
@@ -3912,35 +4006,78 @@ def page_level3(username):
                     layers = [[new_q, new_p]] if new_q > 0 else []
                     s_q, s_pu, s_v = new_q, new_p, new_v
 
-                    rows.append({
-                        "fecha": "Día 4", "desc": "Devolución de compra",
-                        "ent_q": None, "ent_pu": None, "ent_tot": None,
-                        "sal_q": int(take_q), "sal_pu": round(take_pu, 2), "sal_tot": round(take_val, 2),
-                        "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2),
-                    })
+                    rows.append(
+                        {
+                            "fecha": "Día 4",
+                            "desc": "Devolución de compra",
+                            "ent_q": None,
+                            "ent_pu": None,
+                            "ent_tot": None,
+                            "sal_q": int(take_q),
+                            "sal_pu": round(take_pu, 2),
+                            "sal_tot": round(take_val, 2),
+                            "sdo_q": int(s_q),
+                            "sdo_pu": round(s_pu, 2),
+                            "sdo_tot": round(s_v, 2),
+                        }
+                    )
 
-                    script.append({
-                        "title": "Día 4 · Devolución de compra (PP)",
-                        "text": (
-                            f"En el Día 4 registramos una **devolución de compra**: devolvemos "
-                            f"{int(take_q)} unidades al proveedor al mismo costo de compra "
-                            f"({_fmt_money(take_pu)} por unidad). Esto reduce el inventario y se recalcula "
-                            f"el costo promedio del saldo."
-                        ),
-                        "actions": [
-                            {"row": len(rows) - 1, "cell": "sal_q", "money": False, "val": int(take_q)},
-                            {"row": len(rows) - 1, "cell": "sal_pu", "money": True, "val": round(take_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "sal_tot", "money": True, "val": round(take_val, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_q", "money": False, "val": int(s_q)},
-                            {"row": len(rows) - 1, "cell": "sdo_pu", "money": True, "val": round(s_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
-                        ],
-                    })
+                    script.append(
+                        {
+                            "title": "Día 4 · Devolución de compra (PP)",
+                            "text": (
+                                f"En el Día 4 registramos una **devolución de compra**: devolvemos "
+                                f"{int(take_q)} unidades al proveedor al mismo costo de compra "
+                                f"({_fmt_money(take_pu)} por unidad). Esto reduce el inventario y se "
+                                f"recalcula el costo promedio del saldo."
+                            ),
+                            "actions": [
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sal_q",
+                                    "money": False,
+                                    "val": int(take_q),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sal_pu",
+                                    "money": True,
+                                    "val": round(take_pu, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sal_tot",
+                                    "money": True,
+                                    "val": round(take_val, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_q",
+                                    "money": False,
+                                    "val": int(s_q),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_pu",
+                                    "money": True,
+                                    "val": round(s_pu, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_tot",
+                                    "money": True,
+                                    "val": round(s_v, 2),
+                                },
+                            ],
+                        }
+                    )
                 else:
-                    fifo = (method_name == "PEPS (FIFO)")
+                    fifo = method_name == "PEPS (FIFO)"
                     metodo_tag = "PEPS" if fifo else "UEPS"
 
-                    sale_details, layers_after = _consume_layers_detail(layers, dev_comp_u, fifo=fifo)
+                    sale_details, layers_after = _consume_layers_detail(
+                        layers, dev_comp_u, fifo=fifo
+                    )
                     layers = layers_after
                     s_q, s_pu, s_v = _sum_layers(layers)
 
@@ -3948,45 +4085,81 @@ def page_level3(username):
                     take_val = sum(t for _, _, t in sale_details)
                     take_pu = (take_val / take_q) if take_q > 0 else 0.0
 
-                    rows.append({
-                        "fecha": "Día 4", "desc": "Devolución de compra",
-                        "ent_q": None, "ent_pu": None, "ent_tot": None,
-                        "sal_q": int(take_q), "sal_pu": round(take_pu, 2), "sal_tot": round(take_val, 2),
-                        "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2),
-                    })
+                    rows.append(
+                        {
+                            "fecha": "Día 4",
+                            "desc": "Devolución de compra",
+                            "ent_q": None,
+                            "ent_pu": None,
+                            "ent_tot": None,
+                            "sal_q": int(take_q),
+                            "sal_pu": round(take_pu, 2),
+                            "sal_tot": round(take_val, 2),
+                            "sdo_q": int(s_q),
+                            "sdo_pu": round(s_pu, 2),
+                            "sdo_tot": round(s_v, 2),
+                        }
+                    )
 
-                    script.append({
-                        "title": f"Día 4 · Devolución de compra ({metodo_tag})",
-                        "text": (
-                            f"Registramos una **devolución de compra** en {metodo_tag}, retirando "
-                            f"{int(take_q)} unidades siguiendo la lógica de capas del método. "
-                            f"El costo devuelto proviene de las capas consumidas en esa devolución."
-                        ),
-                        "actions": [
-                            {"row": len(rows) - 1, "cell": "sal_q", "money": False, "val": int(take_q)},
-                            {"row": len(rows) - 1, "cell": "sal_pu", "money": True, "val": round(take_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "sal_tot", "money": True, "val": round(take_val, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_q", "money": False, "val": int(s_q)},
-                            {"row": len(rows) - 1, "cell": "sdo_pu", "money": True, "val": round(s_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
-                        ],
-                    })
+                    script.append(
+                        {
+                            "title": f"Día 4 · Devolución de compra ({metodo_tag})",
+                            "text": (
+                                f"Registramos una **devolución de compra** en {metodo_tag}, retirando "
+                                f"{int(take_q)} unidades siguiendo la lógica de capas del método. "
+                                f"El costo devuelto proviene de las capas consumidas en esa devolución."
+                            ),
+                            "actions": [
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sal_q",
+                                    "money": False,
+                                    "val": int(take_q),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sal_pu",
+                                    "money": True,
+                                    "val": round(take_pu, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sal_tot",
+                                    "money": True,
+                                    "val": round(take_val, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_q",
+                                    "money": False,
+                                    "val": int(s_q),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_pu",
+                                    "money": True,
+                                    "val": round(s_pu, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_tot",
+                                    "money": True,
+                                    "val": round(s_v, 2),
+                                },
+                            ],
+                        }
+                    )
 
             # =====================
             # DÍA 5 · DEVOLUCIÓN DE VENTA (REINGRESO)
             # =====================
             if dev_venta_u > 0:
-                # Base: costo unitario de la venta original según el método
                 base_pu_for_return = (
-                    sale_unit_cost
-                    if sale_unit_cost is not None
-                    else (s_pu if s_q > 0 else 0.0)
+                    sale_unit_cost if sale_unit_cost is not None else (s_pu if s_q > 0 else 0.0)
                 )
 
                 # ------- PROMEDIO PONDERADO -------
                 if method_name == "Promedio Ponderado":
-                    prev_q, prev_pu, prev_v = s_q, s_pu, s_v
-
                     in_q = dev_venta_u
                     in_pu = base_pu_for_return
                     in_val = in_q * in_pu
@@ -3997,46 +4170,87 @@ def page_level3(username):
                     layers = [[new_q, new_p]] if new_q > 0 else []
                     s_q, s_pu, s_v = new_q, new_p, new_v
 
-                    rows.append({
-                        "fecha": "Día 5", "desc": "Devolución de venta (reingreso)",
-                        "ent_q": int(in_q), "ent_pu": round(in_pu, 2), "ent_tot": round(in_val, 2),
-                        "sal_q": None, "sal_pu": None, "sal_tot": None,
-                        "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2),
-                    })
+                    rows.append(
+                        {
+                            "fecha": "Día 5",
+                            "desc": "Devolución de venta (reingreso)",
+                            "ent_q": int(in_q),
+                            "ent_pu": round(in_pu, 2),
+                            "ent_tot": round(in_val, 2),
+                            "sal_q": None,
+                            "sal_pu": None,
+                            "sal_tot": None,
+                            "sdo_q": int(s_q),
+                            "sdo_pu": round(s_pu, 2),
+                            "sdo_tot": round(s_v, 2),
+                        }
+                    )
 
-                    script.append({
-                        "title": "Día 5 · Devolución de venta (PP)",
-                        "text": (
-                            f"El cliente devuelve {int(in_q)} unidades. En Promedio Ponderado, "
-                            f"reingresan al mismo costo con el que se reconoció la venta "
-                            f"({_fmt_money(in_pu)} por unidad), revirtiendo parte del CMV neto "
-                            f"y recalculando el costo promedio del inventario."
-                        ),
-                        "actions": [
-                            {"row": len(rows) - 1, "cell": "ent_q", "money": False, "val": int(in_q)},
-                            {"row": len(rows) - 1, "cell": "ent_pu", "money": True, "val": round(in_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "ent_tot", "money": True, "val": round(in_val, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_q", "money": False, "val": int(s_q)},
-                            {"row": len(rows) - 1, "cell": "sdo_pu", "money": True, "val": round(s_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
-                        ],
-                    })
+                    script.append(
+                        {
+                            "title": "Día 5 · Devolución de venta (PP)",
+                            "text": (
+                                f"El cliente devuelve {int(in_q)} unidades. En Promedio Ponderado, "
+                                f"reingresan al mismo costo con el que se reconoció la venta "
+                                f"({_fmt_money(in_pu)} por unidad), revirtiendo parte del CMV neto "
+                                f"y recalculando el costo promedio del inventario."
+                            ),
+                            "actions": [
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "ent_q",
+                                    "money": False,
+                                    "val": int(in_q),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "ent_pu",
+                                    "money": True,
+                                    "val": round(in_pu, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "ent_tot",
+                                    "money": True,
+                                    "val": round(in_val, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_q",
+                                    "money": False,
+                                    "val": int(s_q),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_pu",
+                                    "money": True,
+                                    "val": round(s_pu, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_tot",
+                                    "money": True,
+                                    "val": round(s_v, 2),
+                                },
+                            ],
+                        }
+                    )
 
                 # ------- PEPS / UEPS (SIN PROMEDIAR) -------
                 else:
-                    fifo = (method_name == "PEPS (FIFO)")
+                    fifo = method_name == "PEPS (FIFO)"
                     metodo_tag = "PEPS" if fifo else "UEPS"
 
                     in_q = dev_venta_u
-                    in_pu = base_pu_for_return    # PEPS: costo del tramo de salida; UEPS: capa reciente
+                    in_pu = base_pu_for_return
                     in_val = in_q * in_pu
 
-                    # 🔹 Fusionar con la capa correspondiente (MISMA tasa) o crear una nueva
+                    # Fusionar con la capa correspondiente o crear nueva
                     eps = 1e-6
                     layer_idx = None
 
                     if fifo:
-                        # En PEPS buscamos desde el inicio (capas más antiguas)
+                        # PEPS: buscamos desde las capas más antiguas
                         for i, (q, p) in enumerate(layers):
                             if abs(p - in_pu) < eps:
                                 layer_idx = i
@@ -4047,7 +4261,7 @@ def page_level3(username):
                             layers = [[float(in_q), float(in_pu)]] + layers
                             layer_idx = 0
                     else:
-                        # En UEPS buscamos desde el final (capas más recientes)
+                        # UEPS: buscamos desde las capas más recientes
                         for i in range(len(layers) - 1, -1, -1):
                             q, p = layers[i]
                             if abs(p - in_pu) < eps:
@@ -4059,48 +4273,92 @@ def page_level3(username):
                             layers = layers + [[float(in_q), float(in_pu)]]
                             layer_idx = len(layers) - 1
 
-                    # Capa de la devolución (para mostrar el saldo de esa capa, SIN promediar)
                     capa_q, capa_pu = layers[layer_idx]
                     capa_tot = capa_q * capa_pu
 
-                    # Podemos seguir teniendo total global, pero en la fila mostramos solo la capa
                     s_q_total, s_pu_total, s_v_total = _sum_layers(layers)
-
-                    rows.append({
-                        "fecha": "Día 5", "desc": "Devolución de venta (reingreso)",
-                        "ent_q": int(in_q), "ent_pu": round(in_pu, 2), "ent_tot": round(in_val, 2),
-                        "sal_q": None, "sal_pu": None, "sal_tot": None,
-                        # 🔴 SALDO: solo la capa de la devolución, SIN PROMEDIO
-                        "sdo_q": int(capa_q), "sdo_pu": round(capa_pu, 2), "sdo_tot": round(capa_tot, 2),
-                    })
-
                     s_q, s_pu, s_v = s_q_total, s_pu_total, s_v_total
 
-                    script.append({
-                        "title": f"Día 5 · Devolución de venta ({metodo_tag})",
-                        "text": (
-                            f"El cliente devuelve {int(in_q)} unidades. En {metodo_tag}, las reingresamos "
-                            f"al mismo costo con el que salieron en la venta original, "
-                            f"{_fmt_money(in_pu)} por unidad.\n\n"
-                            f"Si todavía existía inventario en esa misma capa, simplemente le sumamos las unidades devueltas; "
-                            f"el costo por unidad NO cambia. En la fila del Día 5 el SALDO muestra la capa asociada a esa devolución."
-                        ),
-                        "actions": [
-                            {"row": len(rows) - 1, "cell": "ent_q", "money": False, "val": int(in_q)},
-                            {"row": len(rows) - 1, "cell": "ent_pu", "money": True, "val": round(in_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "ent_tot", "money": True, "val": round(in_val, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_q", "money": False, "val": int(capa_q)},
-                            {"row": len(rows) - 1, "cell": "sdo_pu", "money": True, "val": round(capa_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_tot", "money": True, "val": round(capa_tot, 2)},
-                        ],
-                    })
+                    rows.append(
+                        {
+                            "fecha": "Día 5",
+                            "desc": "Devolución de venta (reingreso)",
+                            "ent_q": int(in_q),
+                            "ent_pu": round(in_pu, 2),
+                            "ent_tot": round(in_val, 2),
+                            "sal_q": None,
+                            "sal_pu": None,
+                            "sal_tot": None,
+                            # Saldo mostrado: SOLO la capa asociada a la devolución
+                            "sdo_q": int(capa_q),
+                            "sdo_pu": round(capa_pu, 2),
+                            "sdo_tot": round(capa_tot, 2),
+                        }
+                    )
+
+                    script.append(
+                        {
+                            "title": f"Día 5 · Devolución de venta ({metodo_tag})",
+                            "text": (
+                                f"El cliente devuelve {int(in_q)} unidades. En {metodo_tag}, las reingresamos "
+                                f"al mismo costo con el que salieron en la venta original, "
+                                f"{_fmt_money(in_pu)} por unidad.\n\n"
+                                f"Si todavía existía inventario en esa misma capa, simplemente le sumamos las unidades devueltas; "
+                                f"el costo por unidad NO cambia. En la fila del Día 5 el SALDO muestra la capa asociada a esa devolución."
+                            ),
+                            "actions": [
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "ent_q",
+                                    "money": False,
+                                    "val": int(in_q),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "ent_pu",
+                                    "money": True,
+                                    "val": round(in_pu, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "ent_tot",
+                                    "money": True,
+                                    "val": round(in_val, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_q",
+                                    "money": False,
+                                    "val": int(capa_q),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_pu",
+                                    "money": True,
+                                    "val": round(capa_pu, 2),
+                                },
+                                {
+                                    "row": len(rows) - 1,
+                                    "cell": "sdo_tot",
+                                    "money": True,
+                                    "val": round(capa_tot, 2),
+                                },
+                            ],
+                        }
+                    )
 
             return rows, script, narr_start_idx
 
         # Llamada
         demo_rows, demo_script, narr_start_idx = compute_rows_and_script_with_returns(
-            metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u,
-            dev_comp_u, dev_venta_u
+            metodo,
+            inv0_u,
+            inv0_pu,
+            comp_u,
+            comp_pu,
+            venta_u,
+            dev_comp_u,
+            dev_venta_u,
         )
 
         # ========= HTML + JS de la demo narrada =========
@@ -4331,8 +4589,7 @@ def page_level3(username):
         """
 
         html_demo = (
-            html_demo_template
-            .replace("%%ROWS%%", _json.dumps(demo_rows))
+            html_demo_template.replace("%%ROWS%%", _json.dumps(demo_rows))
             .replace("%%SCRIPT%%", _json.dumps(demo_script))
             .replace("%%METODO%%", metodo)
             .replace("%%NARRSTART%%", str(narr_start_idx))
