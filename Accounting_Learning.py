@@ -2145,9 +2145,18 @@ def page_level2(username):
 
         // 🔹 NUEVO: limpiar el texto para la voz
         function cleanForSpeak(text) {
-            // Reemplaza el símbolo $ por la palabra "pesos" solo para la narración
             if (!text) return "";
-            return text.replace(/\$/g, " pesos ");
+
+            return text
+                // Cualquier símbolo $, US$ o similar → "pesos"
+                .replace(/US\$?/gi, " pesos ")
+                .replace(/\$/g, " pesos ")
+
+                // Si tu formato trae COP, también lo cambiamos
+                .replace(/\bCOP\b/gi, " pesos ")
+
+                // Evita que diga "dólares" si aparece en el texto
+                .replace(/dólares?/gi, " pesos ");
         }
 
         function speak(text){
@@ -2169,7 +2178,7 @@ def page_level2(username):
                 }
             });
         }
-        
+
         const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
 
         function buildTable(){
