@@ -272,14 +272,38 @@ def eval_ia_explicacion(pregunta: str, criterios: str, respuesta_estudiante: str
                  "Memotecnia: «menos inventario final → más CMV».")
         return aprobado, comentario, retro
 
-
 def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
-    pregunta = "¿Qué ocurre con el CMV cuando el inventario final DISMINUYE y por qué?"
-    criterios = (
-        "1) Debe afirmar que el CMV AUMENTA.\n"
-        "2) Debe justificar que al cierre se RESTA MENOS en la fórmula (CMV = InvI + Compras − InvF)."
+    """
+    Evaluación flexible de la respuesta abierta del Nivel 1.
+    Acepta respuestas cortas siempre que la idea central sea correcta:
+    → Cuando el inventario final disminuye, el CMV AUMENTA.
+    """
+
+    pregunta = (
+        "Explica qué ocurre con el costo de la mercancía vendida (CMV) cuando "
+        "disminuye el inventario final, manteniendo constantes los demás elementos."
     )
-    return eval_ia_explicacion(pregunta, criterios, respuesta_estudiante)
+
+    criterios = (
+        "Evalúa con AMPLIA FLEXIBILIDAD:\n"
+        "✔ La respuesta es CORRECTA si expresa la idea central, aunque sea muy corta:\n"
+        "   → Cuando el inventario final disminuye, el CMV AUMENTA.\n"
+        "✔ La justificación es DESEABLE pero NO obligatoria.\n"
+        "❌ Solo debe marcarse como INCORRECTO si:\n"
+        "   - Afirma que el CMV disminuye.\n"
+        "   - Dice que no cambia.\n"
+        "   - No tiene relación con el concepto contable.\n"
+        "   - La explicación es totalmente errónea.\n"
+        "\n"
+        "Permite respuestas cortas como: 'Aumenta', 'El CMV sube', 'CMV ↑'."
+    )
+
+    # Llamamos a la misma función que usas en todo el proyecto
+    return eval_ia_explicacion(
+        pregunta=pregunta,
+        criterios=criterios,
+        respuesta_estudiante=respuesta_estudiante
+    )
 
 # ===========================
 # Utilidades UI
