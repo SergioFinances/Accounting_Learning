@@ -2321,14 +2321,27 @@ def page_level2(username):
 
             def _to_float(x):
                 try:
-                    if x in (None, ""): return None
+                    if x in (None, ""):
+                        return None
                     return float(x)
                 except Exception:
                     return None
 
             def _near(a, b):
-                if a is None or b is None: return False
+                if a is None or b is None:
+                    return False
                 return abs(a - b) <= tol
+
+            def _is_empty_exp(v):
+                # Valores que NO queremos exigir en la comparación
+                if v is None or v == "":
+                    return True
+                try:
+                    # por si acaso llega un NaN
+                    import math
+                    return isinstance(v, float) and math.isnan(v)
+                except Exception:
+                    return False
 
             flags = []
             # Comparar fila a fila contra expected_rows
@@ -2336,17 +2349,25 @@ def page_level2(username):
                 user = edited.iloc[i].to_dict()
                 exp  = expected_rows[i]
                 ok_cells = []
-                # Para cada celda numérica, si exp tiene número, validamos; si exp == "" no se exige
-                for key in ["Entrada_cant","Entrada_pu","Entrada_total","Salida_cant","Salida_pu","Salida_total","Saldo_cant","Saldo_pu","Saldo_total"]:
+                # Para cada celda numérica, si exp tiene número, validamos; si está vacío, no se exige
+                for key in [
+                    "Entrada_cant","Entrada_pu","Entrada_total",
+                    "Salida_cant","Salida_pu","Salida_total",
+                    "Saldo_cant","Saldo_pu","Saldo_total"
+                ]:
                     exp_val = exp[key]
                     usr_val = _to_float(user.get(key, ""))
-                    if exp_val == "":  # no obligatorio
+
+                    if _is_empty_exp(exp_val):  # no obligatorio
                         ok = True
                     else:
                         ok = _near(usr_val, float(exp_val))
+
                     ok_cells.append(ok)
+
                 ok_row = all(ok_cells)
                 flags.append((f"{exp['Fecha']} · {exp['Descripción']}", ok_row))
+
 
             aciertos = sum(1 for _, ok in flags if ok)
             st.metric("Aciertos por fila", f"{aciertos}/{len(flags)}")
@@ -3893,31 +3914,52 @@ def page_level3(username):
 
             def _to_float(x):
                 try:
-                    if x in (None, ""): return None
+                    if x in (None, ""):
+                        return None
                     return float(x)
                 except Exception:
                     return None
 
             def _near(a, b):
-                if a is None or b is None: return False
+                if a is None or b is None:
+                    return False
                 return abs(a - b) <= tol
+
+            def _is_empty_exp(v):
+                # valores no exigibles: None, "", NaN
+                if v is None or v == "":
+                    return True
+                try:
+                    import math
+                    return isinstance(v, float) and math.isnan(v)
+                except:
+                    return False
 
             flags = []
             for i in range(len(expected_rows)):
                 user = edited.iloc[i].to_dict()
                 exp  = expected_rows[i]
                 ok_cells = []
-                for key in ["Entrada_cant","Entrada_pu","Entrada_total",
-                            "Salida_cant","Salida_pu","Salida_total",
-                            "Saldo_cant","Saldo_pu","Saldo_total"]:
+
+                for key in [
+                    "Entrada_cant","Entrada_pu","Entrada_total",
+                    "Salida_cant","Salida_pu","Salida_total",
+                    "Saldo_cant","Saldo_pu","Saldo_total"
+                ]:
                     exp_val = exp[key]
                     usr_val = _to_float(user.get(key, ""))
-                    if exp_val == "":      # celda no aplicable → debe quedar en blanco
-                        ok = (usr_val is None)
+
+                    # Si la celda esperada está vacía (None / "" / NaN),
+                    # no exigimos nada → se considera correcta.
+                    if _is_empty_exp(exp_val):
+                        ok = True
                     else:
                         ok = _near(usr_val, float(exp_val))
+
                     ok_cells.append(ok)
+
                 flags.append((f"{exp['Fecha']} · {exp['Descripción']}", all(ok_cells)))
+
 
             aciertos = sum(1 for _, ok in flags if ok)
             st.metric("Aciertos por fila", f"{aciertos}/{len(flags)}")
