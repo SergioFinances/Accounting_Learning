@@ -3639,7 +3639,7 @@ def page_level3(username):
     # =========================================
     with tabs[1]:
         st.subheader("KARDEX dinámico con devoluciones (PP · PEPS · UEPS)")
-        st.caption("Días 1–3 prellenados. La demostración narrada se enfoca en el Día 4 (devolución de compra) y Día 5 (devolución de venta).")
+        st.caption("Días 1–3 prellenados. La demostración narrada inicia en el Día 4 (devolución de compra) y Día 5 (devolución de venta).")
 
         # ========= Helpers =========
         def _fmt_money(v):
@@ -3695,14 +3695,14 @@ def page_level3(username):
         with c1a:
             inv0_u = st.number_input("Cantidad (u)", min_value=0, value=100, step=10, key="n3_kx_inv_u")
         with c1b:
-            inv0_pu = st.number_input("Costo unitario", min_value=0.0, value=10.0, step=0.5, key="n3_kx_inv_pu")
+            inv0_pu = st.number_input("Costo unitario ($/u)", min_value=0.0, value=10.0, step=0.5, key="n3_kx_inv_pu")
 
         st.markdown("🛒 **Día 2.** Compra:")
         c2a, c2b = st.columns([1, 1], gap="small")
         with c2a:
             comp_u = st.number_input("Compra (u)", min_value=0, value=60, step=10, key="n3_kx_comp_u")
         with c2b:
-            comp_pu = st.number_input("Costo compra", min_value=0.0, value=12.0, step=0.5, key="n3_kx_comp_pu")
+            comp_pu = st.number_input("Costo compra ($/u)", min_value=0.0, value=12.0, step=0.5, key="n3_kx_comp_pu")
 
         st.markdown("💰 **Día 3.** Venta:")
         venta_u = st.number_input("Venta (u)", min_value=0, value=120, step=10, key="n3_kx_venta_u")
@@ -3713,14 +3713,23 @@ def page_level3(username):
             "Unidades devueltas al proveedor",
             min_value=0, value=10, step=5, key="n3_kx_dev_comp_u"
         )
-        if metodo == "Promedio Ponderado":
-            st.caption("En Promedio Ponderado, la devolución se registra al **mismo costo unitario al que se compró** la mercancía (no al promedio del saldo).")
+        st.caption(
+            "La devolución se valora al **mismo costo unitario de la compra original**. "
+            "En PP ajusta el promedio; en PEPS/UEPS reduce las capas según el método."
+        )
 
         st.markdown("↪️ **Día 5.** Devolución de venta (del cliente):")
-        dev_venta_u = st.number_input("Unidades devueltas por el cliente", min_value=0, value=8, step=2, key="n3_kx_dev_venta_u")
+        dev_venta_u = st.number_input(
+            "Unidades devueltas por el cliente",
+            min_value=0, value=8, step=2, key="n3_kx_dev_venta_u"
+        )
+        st.caption(
+            "La devolución se valora al **mismo costo unitario con el que salieron en la venta original**. "
+            "En PEPS/UEPS se reingresan a esa misma capa, sin promediar."
+        )
 
         st.markdown("---")
-        st.markdown("### 🎬 Demostración narrada (foco en devoluciones)")
+        st.markdown("### 🎬 Demostración narrada (arranca en Día 4 y 5)")
 
         c_demo_a, c_demo_b = st.columns([1, 1])
         with c_demo_a:
@@ -3736,7 +3745,8 @@ def page_level3(username):
             """
             Construye todas las filas (Día 1–5).
             Días 1–3: prellenados según el método.
-            Días 4–5: se llenan y se narran paso a paso (devolución de compra y devolución de venta).
+            Días 4–5: se narran (acciones en script) y aparecen vacíos al inicio en la tabla.
+            En PEPS/UEPS NUNCA se promedia: se trabaja siempre por capas.
             """
             rows = []
             script = []
@@ -3793,7 +3803,7 @@ def page_level3(username):
                     "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2),
                 })
             else:
-                # PEPS / UEPS: sin fila "Saldo (día 1)"
+                # PEPS / UEPS: solo fila Compra; el saldo de esa fila muestra solo la capa comprada
                 ent_tot = comp_u * comp_pu
                 if comp_u > 0:
                     layers.append([float(comp_u), float(comp_pu)])
@@ -3840,15 +3850,13 @@ def page_level3(username):
                     fifo = (method_name == "PEPS (FIFO)")
                     sale_details, layers_after = _consume_layers_detail(layers, venta_u, fifo=fifo)
 
-                    # 💡 Aquí corregimos PEPS:
-                    # - En PEPS: devoluciones al costo de la primera capa vendida (sale_details[0].pu)
-                    # - En UEPS: devoluciones al costo de la última capa vendida (sale_details[-1].pu)
+                    # 💡 CORRECCIÓN: costo para la devolución
                     if sale_details:
                         if fifo:
-                            # PEPS: primera salida → primer tramo (10 en tu ejemplo)
+                            # PEPS: devoluciones al costo de la PRIMERA capa vendida
                             sale_unit_cost = sale_details[0][1]
                         else:
-                            # UEPS: asumimos devolución sobre la capa más reciente vendida
+                            # UEPS: devoluciones al costo de la ÚLTIMA capa vendida
                             sale_unit_cost = sale_details[-1][1]
                     else:
                         sale_unit_cost = None
@@ -3932,7 +3940,6 @@ def page_level3(username):
                     fifo = (method_name == "PEPS (FIFO)")
                     metodo_tag = "PEPS" if fifo else "UEPS"
 
-                    prev_layers = [l[:] for l in layers]
                     sale_details, layers_after = _consume_layers_detail(layers, dev_comp_u, fifo=fifo)
                     layers = layers_after
                     s_q, s_pu, s_v = _sum_layers(layers)
@@ -3940,14 +3947,6 @@ def page_level3(username):
                     take_q = sum(q for q, _, _ in sale_details)
                     take_val = sum(t for _, _, t in sale_details)
                     take_pu = (take_val / take_q) if take_q > 0 else 0.0
-
-                    if sale_details:
-                        det_txt = " + ".join(
-                            f"{int(q)}u@{_fmt_money(pu)}={_fmt_money(tot)}"
-                            for (q, pu, tot) in sale_details
-                        )
-                    else:
-                        det_txt = "sin consumo de capas"
 
                     rows.append({
                         "fecha": "Día 4", "desc": "Devolución de compra",
@@ -4010,7 +4009,8 @@ def page_level3(username):
                         "text": (
                             f"El cliente devuelve {int(in_q)} unidades. En Promedio Ponderado, "
                             f"reingresan al mismo costo con el que se reconoció la venta "
-                            f"({_fmt_money(in_pu)} por unidad), revirtiendo parte del CMV neto."
+                            f"({_fmt_money(in_pu)} por unidad), revirtiendo parte del CMV neto "
+                            f"y recalculando el costo promedio del inventario."
                         ),
                         "actions": [
                             {"row": len(rows) - 1, "cell": "ent_q", "money": False, "val": int(in_q)},
@@ -4022,45 +4022,76 @@ def page_level3(username):
                         ],
                     })
 
-                # ------- PEPS / UEPS -------
+                # ------- PEPS / UEPS (SIN PROMEDIAR) -------
                 else:
                     fifo = (method_name == "PEPS (FIFO)")
                     metodo_tag = "PEPS" if fifo else "UEPS"
 
                     in_q = dev_venta_u
-                    in_pu = base_pu_for_return    # 🔹 PEPS: será el precio de la primera salida (10 en tu ejemplo)
+                    in_pu = base_pu_for_return    # PEPS: costo del tramo de salida; UEPS: capa reciente
                     in_val = in_q * in_pu
 
-                    if fifo:
-                        layers = [[float(in_q), float(in_pu)]] + layers
-                    else:
-                        layers = layers + [[float(in_q), float(in_pu)]]
+                    # 🔹 Fusionar con la capa correspondiente (MISMA tasa) o crear una nueva
+                    eps = 1e-6
+                    layer_idx = None
 
-                    s_q, s_pu, s_v = _sum_layers(layers)
+                    if fifo:
+                        # En PEPS buscamos desde el inicio (capas más antiguas)
+                        for i, (q, p) in enumerate(layers):
+                            if abs(p - in_pu) < eps:
+                                layer_idx = i
+                                break
+                        if layer_idx is not None:
+                            layers[layer_idx][0] += in_q
+                        else:
+                            layers = [[float(in_q), float(in_pu)]] + layers
+                            layer_idx = 0
+                    else:
+                        # En UEPS buscamos desde el final (capas más recientes)
+                        for i in range(len(layers) - 1, -1, -1):
+                            q, p = layers[i]
+                            if abs(p - in_pu) < eps:
+                                layer_idx = i
+                                break
+                        if layer_idx is not None:
+                            layers[layer_idx][0] += in_q
+                        else:
+                            layers = layers + [[float(in_q), float(in_pu)]]
+                            layer_idx = len(layers) - 1
+
+                    # Capa de la devolución (para mostrar el saldo de esa capa, SIN promediar)
+                    capa_q, capa_pu = layers[layer_idx]
+                    capa_tot = capa_q * capa_pu
+
+                    # Podemos seguir teniendo total global, pero en la fila mostramos solo la capa
+                    s_q_total, s_pu_total, s_v_total = _sum_layers(layers)
 
                     rows.append({
                         "fecha": "Día 5", "desc": "Devolución de venta (reingreso)",
                         "ent_q": int(in_q), "ent_pu": round(in_pu, 2), "ent_tot": round(in_val, 2),
                         "sal_q": None, "sal_pu": None, "sal_tot": None,
-                        "sdo_q": int(s_q), "sdo_pu": round(s_pu, 2), "sdo_tot": round(s_v, 2),
+                        # 🔴 SALDO: solo la capa de la devolución, SIN PROMEDIO
+                        "sdo_q": int(capa_q), "sdo_pu": round(capa_pu, 2), "sdo_tot": round(capa_tot, 2),
                     })
+
+                    s_q, s_pu, s_v = s_q_total, s_pu_total, s_v_total
 
                     script.append({
                         "title": f"Día 5 · Devolución de venta ({metodo_tag})",
                         "text": (
                             f"El cliente devuelve {int(in_q)} unidades. En {metodo_tag}, las reingresamos "
-                            f"al mismo costo con el que salieron en la venta original: "
-                            f"{_fmt_money(in_pu)} por unidad.\n"
-                            f"De esta forma revertimos parte del CMV y mantenemos la coherencia con las capas "
-                            f"que se habían utilizado en la salida."
+                            f"al mismo costo con el que salieron en la venta original, "
+                            f"{_fmt_money(in_pu)} por unidad.\n\n"
+                            f"Si todavía existía inventario en esa misma capa, simplemente le sumamos las unidades devueltas; "
+                            f"el costo por unidad NO cambia. En la fila del Día 5 el SALDO muestra la capa asociada a esa devolución."
                         ),
                         "actions": [
                             {"row": len(rows) - 1, "cell": "ent_q", "money": False, "val": int(in_q)},
                             {"row": len(rows) - 1, "cell": "ent_pu", "money": True, "val": round(in_pu, 2)},
                             {"row": len(rows) - 1, "cell": "ent_tot", "money": True, "val": round(in_val, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_q", "money": False, "val": int(s_q)},
-                            {"row": len(rows) - 1, "cell": "sdo_pu", "money": True, "val": round(s_pu, 2)},
-                            {"row": len(rows) - 1, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
+                            {"row": len(rows) - 1, "cell": "sdo_q", "money": False, "val": int(capa_q)},
+                            {"row": len(rows) - 1, "cell": "sdo_pu", "money": True, "val": round(capa_pu, 2)},
+                            {"row": len(rows) - 1, "cell": "sdo_tot", "money": True, "val": round(capa_tot, 2)},
                         ],
                     })
 
@@ -4072,6 +4103,7 @@ def page_level3(username):
             dev_comp_u, dev_venta_u
         )
 
+        # ========= HTML + JS de la demo narrada =========
         html_demo_template = """
         <style>
         .kx {border-collapse:collapse;width:100%;font-size:14px;margin-bottom:6px}
@@ -4115,12 +4147,12 @@ def page_level3(username):
 
         <script>
         (function(){
-        const rows      = %%ROWS%%;
-        const script    = %%SCRIPT%%;
-        const metodo    = "%%METODO%%";
+        const rows     = %%ROWS%%;
+        const script   = %%SCRIPT%%;
+        const metodo   = "%%METODO%%";
         const narrStart = %%NARRSTART%%;
         const narrMuted = %%MUTED%%;
-        const rate      = %%RATE%%;
+        const rate     = %%RATE%%;
 
         const tbody    = document.getElementById("kbody");
         const narrDiv  = document.getElementById("narr");
@@ -4130,7 +4162,6 @@ def page_level3(username):
 
         let isPaused   = false;
         let isRunning  = false;
-        let currentUtterance = null;
 
         const pesos = (v)=> {
             try { return new Intl.NumberFormat('es-CO',{style:'currency', currency:'COP', maximumFractionDigits:2}).format(v); }
@@ -4143,22 +4174,6 @@ def page_level3(username):
                 ? (Number.isInteger(x)? x.toString() : (Math.round(x*100)/100).toString().replace(".",","))
                 : x);
 
-        // 🔹 Limpiar texto para la voz
-        function cleanForSpeak(text) {
-            if (!text) return "";
-            let t = text;
-
-            t = t.replace(/\bUS?\$\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
-            t = t.replace(/\$\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/g, "$1 pesos");
-            t = t.replace(/\bCOP\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
-            t = t.replace(/(\d+(?:[\.,]\d+)*)\s*(US?\$|COP|\$)\b/gi, "$1 pesos");
-            t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
-            t = t.replace(/(\d+(?:[\.,]\d+)*)\s+pesos\s+pesos/gi, "$1 pesos");
-            t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)\s+pesos/gi, "$1 pesos");
-            t = t.replace(/\s{2,}/g, " ");
-            return t;
-        }
-
         function buildTable(){
             tbody.innerHTML = "";
             rows.forEach((r, i)=>{
@@ -4168,28 +4183,28 @@ def page_level3(username):
                 const isNarr = (i >= narrStart);
 
                 const ent_q   = isNarr ? "" : fmt(r.ent_q);
-                const ent_pu  = isNarr ? "" : (r.ent_pu!=="" && r.ent_pu!==null && r.ent_pu!==undefined ? pesos(r.ent_pu) : "");
-                const ent_tot = isNarr ? "" : (r.ent_tot!=="" && r.ent_tot!==null && r.ent_tot!==undefined ? pesos(r.ent_tot) : "");
+                const ent_pu  = isNarr ? "" : (r.ent_pu!==null && r.ent_pu!==undefined ? pesos(r.ent_pu): "");
+                const ent_tot = isNarr ? "" : (r.ent_tot!==null && r.ent_tot!==undefined ? pesos(r.ent_tot): "");
 
                 const sal_q   = isNarr ? "" : fmt(r.sal_q);
-                const sal_pu  = isNarr ? "" : (r.sal_pu!=="" && r.sal_pu!==null && r.sal_pu!==undefined ? pesos(r.sal_pu) : "");
-                const sal_tot = isNarr ? "" : (r.sal_tot!=="" && r.sal_tot!==null && r.sal_tot!==undefined ? pesos(r.sal_tot) : "");
+                const sal_pu  = isNarr ? "" : (r.sal_pu!==null && r.sal_pu!==undefined ? pesos(r.sal_pu): "");
+                const sal_tot = isNarr ? "" : (r.sal_tot!==null && r.sal_tot!==undefined ? pesos(r.sal_tot): "");
 
                 const sdo_q   = isNarr ? "" : fmt(r.sdo_q);
-                const sdo_pu  = isNarr ? "" : (r.sdo_pu!=="" && r.sdo_pu!==null && r.sdo_pu!==undefined ? pesos(r.sdo_pu) : "");
-                const sdo_tot = isNarr ? "" : (r.sdo_tot!=="" && r.sdo_tot!==null && r.sdo_tot!==undefined ? pesos(r.sdo_tot) : "");
+                const sdo_pu  = isNarr ? "" : (r.sdo_pu!==null && r.sdo_pu!==undefined ? pesos(r.sdo_pu): "");
+                const sdo_tot = isNarr ? "" : (r.sdo_tot!==null && r.sdo_tot!==undefined ? pesos(r.sdo_tot): "");
 
                 tr.innerHTML = `
                     <td>${r.fecha}</td><td>${r.desc}</td>
-                    <td id="r${i}_ent_q"  class="fill muted">${ent_q}</td>
-                    <td id="r${i}_ent_pu" class="fill muted">${ent_pu}</td>
-                    <td id="r${i}_ent_tot"class="fill muted">${ent_tot}</td>
-                    <td id="r${i}_sal_q"  class="fill muted">${sal_q}</td>
-                    <td id="r${i}_sal_pu" class="fill muted">${sal_pu}</td>
-                    <td id="r${i}_sal_tot"class="fill muted">${sal_tot}</td>
-                    <td id="r${i}_sdo_q"  class="fill muted">${sdo_q}</td>
-                    <td id="r${i}_sdo_pu" class="fill muted">${sdo_pu}</td>
-                    <td id="r${i}_sdo_tot"class="fill muted">${sdo_tot}</td>
+                    <td id="r${i}_ent_q"  class="fill">${ent_q}</td>
+                    <td id="r${i}_ent_pu" class="fill">${ent_pu}</td>
+                    <td id="r${i}_ent_tot"class="fill">${ent_tot}</td>
+                    <td id="r${i}_sal_q"  class="fill">${sal_q}</td>
+                    <td id="r${i}_sal_pu" class="fill">${sal_pu}</td>
+                    <td id="r${i}_sal_tot"class="fill">${sal_tot}</td>
+                    <td id="r${i}_sdo_q"  class="fill">${sdo_q}</td>
+                    <td id="r${i}_sdo_pu" class="fill">${sdo_pu}</td>
+                    <td id="r${i}_sdo_tot"class="fill">${sdo_tot}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -4206,10 +4221,8 @@ def page_level3(username):
         function fillCell(rowIdx, key, val, money=false){
             const el = document.getElementById(`r${rowIdx}_${key}`);
             if (!el) return;
-            el.classList.remove("muted");
-            el.style.background = "#fffbe6";
-            el.style.color = "#333";
             el.textContent = money ? pesos(val) : fmt(val);
+            el.style.background = "#fffbe6";
             setTimeout(()=>{ el.style.background=""; }, 300);
         }
 
@@ -4226,31 +4239,22 @@ def page_level3(username):
                 if (narrMuted) return resolve();
                 try{
                     if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-
-                    const u = new SpeechSynthesisUtterance(cleanForSpeak(text));
-                    currentUtterance = u;
-
+                    const u = new SpeechSynthesisUtterance(text);
                     const voices = window.speechSynthesis.getVoices();
                     const pick = voices.find(v => /es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
                     if (pick) u.voice = pick;
-
                     u.rate = rate;
                     u.pitch = 1.0;
-                    u.onend = ()=> { currentUtterance = null; resolve(); };
-                    u.onerror = ()=> { currentUtterance = null; resolve(); };
-
+                    u.onend = ()=> resolve();
                     window.speechSynthesis.speak(u);
                 } catch(e){
-                    currentUtterance = null;
                     resolve();
                 }
             });
         }
 
         async function runScript(){
-            if (isRunning){
-                if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-            }
+            if (isRunning) return;
 
             isRunning = true;
             isPaused = false;
@@ -4260,7 +4264,8 @@ def page_level3(username):
             clearHi();
             narrDiv.textContent = "";
 
-            for (const step of script){
+            for (let sIdx = 0; sIdx < script.length; sIdx++){
+                const step = script[sIdx];
                 await waitIfPaused();
 
                 narrDiv.textContent = step.title;
