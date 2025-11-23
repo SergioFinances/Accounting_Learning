@@ -3714,7 +3714,7 @@ def page_level3(username):
             min_value=0, value=10, step=5, key="n3_kx_dev_comp_u"
         )
         if metodo == "Promedio Ponderado":
-            st.caption("En Promedio Ponderado, la devolución se registra al **mismo costo unitario al que se compró** la mercancía.")
+            st.caption("En Promedio Ponderado, la devolución se registra al **mismo costo unitario al que se compró** la mercancía (no al promedio del saldo).")
 
         st.markdown("↪️ **Día 5.** Devolución de venta (del cliente):")
         dev_venta_u = st.number_input("Unidades devueltas por el cliente", min_value=0, value=8, step=2, key="n3_kx_dev_venta_u")
@@ -3741,9 +3741,8 @@ def page_level3(username):
             rows = []
             script = []
 
-            # CMV de la venta y último costo unitario usado en la venta
-            sale_unit_cost = None          # promedio del costo de la venta
-            last_sale_unit_pu = None       # último costo unitario con el que se vendió
+            # Costo unitario de la venta (promedio de las unidades vendidas)
+            sale_unit_cost = None
 
             # =====================
             # DÍA 1 · SALDO INICIAL
@@ -3777,7 +3776,6 @@ def page_level3(username):
             # =====================
             if method_name == "Promedio Ponderado":
                 ent_tot = comp_u * comp_pu
-                prev_q, prev_v = s_q, s_v
 
                 if comp_u > 0:
                     new_q = s_q + comp_u
@@ -3823,8 +3821,7 @@ def page_level3(username):
                 if method_name == "Promedio Ponderado":
                     sal_q = min(venta_u, s_q)
                     sal_pu = layers[0][1] if layers else 0.0
-                    sale_unit_cost = sal_pu                 # costo promedio de la venta
-                    last_sale_unit_pu = sal_pu              # también es el último costo vendido
+                    sale_unit_cost = sal_pu                # costo unitario al que se reconoció la venta
                     sal_tot = sal_q * sal_pu
 
                     new_q = s_q - sal_q
@@ -3848,12 +3845,6 @@ def page_level3(username):
                     total_sold_qty = sum(q for q, _, _ in sale_details)
                     total_sold_cost = sum(t for _, _, t in sale_details)
                     sale_unit_cost = (total_sold_cost / total_sold_qty) if total_sold_qty > 0 else None
-
-                    # Último costo unitario que salió en la venta (último tramo)
-                    if sale_details:
-                        last_sale_unit_pu = sale_details[-1][1]
-                    else:
-                        last_sale_unit_pu = None
 
                     # Para mostrar las filas por tramo (como en el Nivel 2)
                     running_layers = [l[:] for l in layers]
@@ -3899,7 +3890,7 @@ def page_level3(username):
                     prev_q, prev_pu, prev_v = s_q, s_pu, s_v
 
                     take_q = min(dev_comp_u, s_q)
-                    # 🔴 Ajuste: devolvemos al precio al que se compró, NO al promedio del saldo
+                    # Devolvemos al precio de compra original
                     take_pu = comp_pu
                     take_val = take_q * take_pu
 
@@ -3953,7 +3944,6 @@ def page_level3(username):
                     take_val = sum(t for _, _, t in sale_details)
                     take_pu = (take_val / take_q) if take_q > 0 else 0.0
 
-                    # Texto explicando por tramos desde qué capas sale la devolución
                     if sale_details:
                         det_txt = " + ".join(
                             f"{int(q)}u@{_fmt_money(pu)}={_fmt_money(tot)}"
@@ -3993,12 +3983,11 @@ def page_level3(username):
             # DÍA 5 · DEVOLUCIÓN DE VENTA (REINGRESO)
             # =====================
             if dev_venta_u > 0:
-                # 🔴 Ajuste clave: usar el **último costo unitario con el que se vendió**
-                # (last_sale_unit_pu); si por alguna razón no está, usamos fallback.
+                # 🔵 Ahora devolvemos al **mismo costo unitario con el que se reconoció la venta**
                 base_pu_for_return = (
-                    last_sale_unit_pu
-                    if last_sale_unit_pu is not None
-                    else (sale_unit_cost if sale_unit_cost is not None else (s_pu if s_q > 0 else 0.0))
+                    sale_unit_cost
+                    if sale_unit_cost is not None
+                    else (s_pu if s_q > 0 else 0.0)
                 )
 
                 # ------- PROMEDIO PONDERADO -------
@@ -4026,7 +4015,7 @@ def page_level3(username):
                         "title": "Día 5 · Devolución de venta (PP)",
                         "text": (
                             f"En el Día 5 el cliente devuelve {int(in_q)} unidades. "
-                            f"Las reingresamos al **último costo unitario con el que se registró la venta**, "
+                            f"Las reingresamos al **mismo costo unitario con el que se reconoció la venta**, "
                             f"que en este caso es {_fmt_money(in_pu)} pesos por unidad.\n\n"
                             f"Así, el valor que vuelve al inventario es {int(in_q)} por {_fmt_money(in_pu)}, "
                             f"es decir {_fmt_money(in_val)} pesos. "
@@ -4071,8 +4060,8 @@ def page_level3(username):
                         "title": f"Día 5 · Devolución de venta ({metodo_tag})",
                         "text": (
                             f"El cliente devuelve {int(in_q)} unidades. En {metodo_tag} las reingresamos "
-                            f"al **último costo unitario con el que se habían vendido esas unidades**, "
-                            f"que es {_fmt_money(in_pu)} pesos por unidad.\n\n"
+                            f"al **mismo costo promedio de la venta**, es decir al costo unitario "
+                            f"con el que registramos originalmente esa salida: {_fmt_money(in_pu)} pesos por unidad.\n\n"
                             f"Formamos una nueva capa en el inventario por {_fmt_money(in_val)} pesos. "
                             f"Esto revierte parte del CMV reconocido y actualiza el saldo total de inventario, "
                             f"manteniendo la coherencia con el flujo de capas del método."
@@ -4166,27 +4155,19 @@ def page_level3(username):
                 ? (Number.isInteger(x)? x.toString() : (Math.round(x*100)/100).toString().replace(".",","))
                 : x);
 
-        // 🔹 Limpiar texto para la voz: evitar que lea "dólares" por el símbolo $
+        // 🔹 Limpiar texto para la voz
         function cleanForSpeak(text) {
             if (!text) return "";
             let t = text;
 
-            // US$, $, COP antes o después del número → "n pesos"
-            t = t.replace(/\\bUS?\\$\\s*(\\d+(?:[\\.,]\\d+)*)\\s*(pesos)?/gi, "$1 pesos");
-            t = t.replace(/\\$\\s*(\\d+(?:[\\.,]\\d+)*)\\s*(pesos)?/g, "$1 pesos");
-            t = t.replace(/\\bCOP\\s*(\\d+(?:[\\.,]\\d+)*)\\s*(pesos)?/gi, "$1 pesos");
-            t = t.replace(/(\\d+(?:[\\.,]\\d+)*)\\s*(US?\\$|COP|\\$)\\b/gi, "$1 pesos");
-
-            // "pesos 100" → "100 pesos"
-            t = t.replace(/pesos\\s+(\\d+(?:[\\.,]\\d+)*)/gi, "$1 pesos");
-
-            // "100 pesos pesos" → "100 pesos"
-            t = t.replace(/(\\d+(?:[\\.,]\\d+)*)\\s+pesos\\s+pesos/gi, "$1 pesos");
-
-            // "pesos 100 pesos" → "100 pesos"
-            t = t.replace(/pesos\\s+(\\d+(?:[\\.,]\\d+)*)\\s+pesos/gi, "$1 pesos");
-
-            t = t.replace(/\\s{2,}/g, " ");
+            t = t.replace(/\bUS?\$\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
+            t = t.replace(/\$\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/g, "$1 pesos");
+            t = t.replace(/\bCOP\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
+            t = t.replace(/(\d+(?:[\.,]\d+)*)\s*(US?\$|COP|\$)\b/gi, "$1 pesos");
+            t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
+            t = t.replace(/(\d+(?:[\.,]\d+)*)\s+pesos\s+pesos/gi, "$1 pesos");
+            t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)\s+pesos/gi, "$1 pesos");
+            t = t.replace(/\s{2,}/g, " ");
             return t;
         }
 
@@ -4252,7 +4233,6 @@ def page_level3(username):
             }
         }
 
-        // 🔵 Función speak con limpieza de texto
         function speak(text){
             return new Promise((resolve)=>{
                 if (narrMuted) return resolve();
@@ -4323,7 +4303,6 @@ def page_level3(username):
             isRunning = false;
         }
 
-        // BOTONES
         btnPlay.onclick = runScript;
 
         btnPause.onclick = ()=>{
