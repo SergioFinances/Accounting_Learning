@@ -2387,503 +2387,493 @@ def page_level2(username):
 
         components.html(html_demo, height=250, scrolling=True)
 
+with tabs[2]:
+    st.subheader("Práctica IA: diligencia tu propio KARDEX")
+    st.caption("Selecciona un método y, si quieres, genera un escenario aleatorio. También puedes editar los valores manualmente.")
 
-    with tabs[2]:
-        st.subheader("Práctica IA: diligencia tu propio KARDEX")
-        st.caption("Selecciona un método y, si quieres, genera un escenario aleatorio. También puedes editar los valores manualmente.")
+    # =========================
+    # Utilidades de estado
+    # =========================
+    def _ensure_default_state():
+        ss = st.session_state
+        ss.setdefault("n2_ex_metodo", "Promedio Ponderado")
+        ss.setdefault("n2_ex_inv0_u", 80)
+        ss.setdefault("n2_ex_inv0_pu", 10.0)
+        ss.setdefault("n2_ex_comp1_u", 40)
+        ss.setdefault("n2_ex_comp1_pu", 11.0)
+        ss.setdefault("n2_ex_venta_u", 90)
+        ss.setdefault("n2_ex_comp2_u", 50)
+        ss.setdefault("n2_ex_comp2_pu", 13.0)
 
-        # =========================
-        # Utilidades de estado
-        # =========================
-        def _ensure_default_state():
-            ss = st.session_state
-            ss.setdefault("n2_ex_metodo", "Promedio Ponderado")
-            ss.setdefault("n2_ex_inv0_u", 80)
-            ss.setdefault("n2_ex_inv0_pu", 10.0)
-            ss.setdefault("n2_ex_comp1_u", 40)
-            ss.setdefault("n2_ex_comp1_pu", 11.0)
-            ss.setdefault("n2_ex_venta_u", 90)
-            ss.setdefault("n2_ex_comp2_u", 50)
-            ss.setdefault("n2_ex_comp2_pu", 13.0)
+    def _randomize_scenario_values():
+        # Genera un escenario razonable
+        import random
+        inv0_u  = random.choice([60, 80, 100, 120, 150])
+        inv0_pu = random.choice([8.0, 9.0, 10.0, 11.0, 12.0])
+        comp1_u = random.choice([30, 40, 50, 60, 70])
+        comp1_pu= random.choice([inv0_pu - 1, inv0_pu, inv0_pu + 1, inv0_pu + 2])
+        venta_u = random.choice([40, 60, 90, 110, 130])
+        comp2_u = random.choice([30, 40, 50, 60, 80])
+        comp2_pu= random.choice([comp1_pu - 1, comp1_pu, comp1_pu + 1, comp1_pu + 2])
 
-        def _randomize_scenario_values():
-            # Genera un escenario razonable
-            import random
-            inv0_u  = random.choice([60, 80, 100, 120, 150])
-            inv0_pu = random.choice([8.0, 9.0, 10.0, 11.0, 12.0])
-            comp1_u = random.choice([30, 40, 50, 60, 70])
-            comp1_pu= random.choice([inv0_pu - 1, inv0_pu, inv0_pu + 1, inv0_pu + 2])
-            venta_u = random.choice([40, 60, 90, 110, 130])
-            comp2_u = random.choice([30, 40, 50, 60, 80])
-            comp2_pu= random.choice([comp1_pu - 1, comp1_pu, comp1_pu + 1, comp1_pu + 2])
+        ss = st.session_state
+        ss["n2_ex_inv0_u"]  = inv0_u
+        ss["n2_ex_inv0_pu"] = float(max(1.0, round(inv0_pu, 2)))
+        ss["n2_ex_comp1_u"] = comp1_u
+        ss["n2_ex_comp1_pu"]= float(max(1.0, round(comp1_pu, 2)))
+        ss["n2_ex_venta_u"] = venta_u
+        ss["n2_ex_comp2_u"] = comp2_u
+        ss["n2_ex_comp2_pu"]= float(max(1.0, round(comp2_pu, 2)))
 
-            ss = st.session_state
-            ss["n2_ex_inv0_u"]  = inv0_u
-            ss["n2_ex_inv0_pu"] = float(max(1.0, round(inv0_pu, 2)))
-            ss["n2_ex_comp1_u"] = comp1_u
-            ss["n2_ex_comp1_pu"]= float(max(1.0, round(comp1_pu, 2)))
-            ss["n2_ex_venta_u"] = venta_u
-            ss["n2_ex_comp2_u"] = comp2_u
-            ss["n2_ex_comp2_pu"]= float(max(1.0, round(comp2_pu, 2)))
+    def _request_randomize():
+        st.session_state["n2_ex_rand_request"] = True
 
-        def _request_randomize():
-            st.session_state["n2_ex_rand_request"] = True
+    _ensure_default_state()
 
-        _ensure_default_state()
+    # Atender aleatorización ANTES de instanciar widgets
+    if st.session_state.get("n2_ex_rand_request", False):
+        _randomize_scenario_values()
+        st.session_state.pop("n2_ex_rand_request", None)
+        st.rerun()
 
-        # Atender aleatorización ANTES de instanciar widgets
-        if st.session_state.get("n2_ex_rand_request", False):
-            _randomize_scenario_values()
-            st.session_state.pop("n2_ex_rand_request", None)
-            st.rerun()
-
-        # =========================
-        # Método independiente del ejercicio
-        # =========================
-        c0a, c0b = st.columns([1, 3])
-        with c0a:
-            ex_metodo = st.selectbox(
-                "Método (ejercicio)",
-                ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
-                key="n2_ex_metodo"
-            )
-
-        # =========================
-        # Escenario editable (Día 1-4)
-        # =========================
-        st.markdown("#### 🎯 Escenario del ejercicio")
-
-        # Día 1
-        st.markdown("**Día 1.** La empresa reporta un saldo inicial de inventario de:")
-        c1a, c1b = st.columns([1, 1])
-        with c1a:
-            inv0_u_ex  = st.number_input("Cantidad (u) — Día 1", min_value=0, step=1, key="n2_ex_inv0_u")
-        with c1b:
-            inv0_pu_ex = st.number_input("Costo unitario — Día 1", min_value=0.0, step=0.1, key="n2_ex_inv0_pu")
-
-        # Día 2
-        st.markdown("**Día 2.** La empresa realizó una **compra** de:")
-        c2a, c2b = st.columns([1, 1])
-        with c2a:
-            comp1_u  = st.number_input("Cantidad (u) — Día 2", min_value=0, step=1, key="n2_ex_comp1_u")
-        with c2b:
-            comp1_pu = st.number_input("Costo unitario — Día 2", min_value=0.0, step=0.1, key="n2_ex_comp1_pu")
-
-        # Día 3
-        st.markdown("**Día 3.** La empresa realizó una **venta** de:")
-        venta_ex_u = st.number_input("Cantidad vendida (u) — Día 3", min_value=0, step=1, key="n2_ex_venta_u")
-
-        # Día 4
-        st.markdown("**Día 4.** La empresa realizó otra **compra** de:")
-        c4a, c4b = st.columns([1, 1])
-        with c4a:
-            comp2_u  = st.number_input("Cantidad (u) — Día 4", min_value=0, step=1, key="n2_ex_comp2_u")
-        with c4b:
-            comp2_pu = st.number_input("Costo unitario — Día 4", min_value=0.0, step=0.1, key="n2_ex_comp2_pu")
-
-        # Botón aleatorio al final (no modifica widgets directamente)
-        st.button(
-            "🎲 Generar escenario aleatorio",
-            key="n2_ex_rand_btn",
-            on_click=_request_randomize
+    # =========================
+    # Método independiente del ejercicio
+    # =========================
+    c0a, c0b = st.columns([1, 3])
+    with c0a:
+        ex_metodo = st.selectbox(
+            "Método (ejercicio)",
+            ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
+            key="n2_ex_metodo"
         )
 
-        # =========================
-        # Helpers de cálculo
-        # =========================
-        def _sum_layers(layers):
-            """layers: [[qty, pu], ...] → retorna (qty_total, pu_prom, val_total)"""
-            q = sum(q for q, _ in layers)
-            v = sum(q * p for q, p in layers)
-            pu = (v / q) if q > 0 else 0.0
-            return q, pu, v
+    # =========================
+    # Escenario editable (Día 1-4)
+    # =========================
+    st.markdown("#### 🎯 Escenario del ejercicio")
 
-        def _consume_layers_detail(layers, qty_out, fifo=True):
-            """
-            layers: [[qty, pu], ...]
-            qty_out: cantidad a vender
-            fifo=True (PEPS) o False (UEPS)
-            Retorna:
-            sale_details = [(q_take, pu_take, tot_take), ...]
-            layers_after = capas remanentes en el orden natural (FIFO)
-            """
-            order = layers[:] if fifo else layers[::-1]
-            remaining = qty_out
-            sale_details = []
-            updated = []
-            for q, pu in order:
-                if remaining <= 0:
-                    updated.append([q, pu]); continue
-                take = min(q, remaining)
-                if take > 0:
-                    sale_details.append((take, pu, take * pu))
-                    rest = q - take
-                    remaining -= take
-                    if rest > 0:
-                        updated.append([rest, pu])
-                else:
-                    updated.append([q, pu])
-            final_layers = updated if fifo else updated[::-1]
-            return sale_details, final_layers
+    # Día 1
+    st.markdown("**Día 1.** La empresa reporta un saldo inicial de inventario de:")
+    c1a, c1b = st.columns([1, 1])
+    with c1a:
+        inv0_u_ex  = st.number_input("Cantidad (u) — Día 1", min_value=0, step=1, key="n2_ex_inv0_u")
+    with c1b:
+        inv0_pu_ex = st.number_input("Costo unitario — Día 1", min_value=0.0, step=0.1, key="n2_ex_inv0_pu")
 
-        # =========================
-        # Construcción PARAMÉTRICA de filas esperadas
-        # =========================
-        def build_expected_rows(method_name):
-            """
-            Devuelve una lista de dicts 'row' con columnas:
-            Fecha, Descripción,
-            Entrada_cant, Entrada_pu, Entrada_total,
-            Salida_cant,  Salida_pu,  Salida_total,
-            Saldo_cant,   Saldo_pu,   Saldo_total
+    # Día 2
+    st.markdown("**Día 2.** La empresa realizó una **compra** de:")
+    c2a, c2b = st.columns([1, 1])
+    with c2a:
+        comp1_u  = st.number_input("Cantidad (u) — Día 2", min_value=0, step=1, key="n2_ex_comp1_u")
+    with c2b:
+        comp1_pu = st.number_input("Costo unitario — Día 2", min_value=0.0, step=0.1, key="n2_ex_comp1_pu")
 
-            Lógica alineada con el EJEMPLO GUIADO:
-            - Día 1: el saldo inicial se registra como ENTRADA y como SALDO.
-            - Día 2: SOLO una fila de Compra 1 (sin “Saldo (día 1)”).
-                * Promedio Ponderado: saldo con promedio.
-                * PEPS/UEPS: saldo solo de la capa comprada.
-            - Día 3: ventas por método.
-                * PP: una fila.
-                * PEPS/UEPS: tramos sin promedios.
-            - Día 4: Compra 2 (saldo solo de la capa comprada en PEPS/UEPS).
-            """
-            rows = []
+    # Día 3
+    st.markdown("**Día 3.** La empresa realizó una **venta** de:")
+    venta_ex_u = st.number_input("Cantidad vendida (u) — Día 3", min_value=0, step=1, key="n2_ex_venta_u")
 
-            # ------------------------------
-            # Día 1: Saldo inicial
-            # ------------------------------
-            if inv0_u_ex > 0:
-                ent_q1 = int(inv0_u_ex)
-                ent_pu1 = float(inv0_pu_ex)
-                ent_tot1 = ent_q1 * ent_pu1
-                layers = [[float(ent_q1), ent_pu1]]
+    # Día 4
+    st.markdown("**Día 4.** La empresa realizó otra **compra** de:")
+    c4a, c4b = st.columns([1, 1])
+    with c4a:
+        comp2_u  = st.number_input("Cantidad (u) — Día 4", min_value=0, step=1, key="n2_ex_comp2_u")
+    with c4b:
+        comp2_pu = st.number_input("Costo unitario — Día 4", min_value=0.0, step=0.1, key="n2_ex_comp2_pu")
+
+    # Botón aleatorio al final (no modifica widgets directamente)
+    st.button(
+        "🎲 Generar escenario aleatorio",
+        key="n2_ex_rand_btn",
+        on_click=_request_randomize
+    )
+
+    # =========================
+    # Helpers de cálculo
+    # =========================
+    def _sum_layers(layers):
+        """layers: [[qty, pu], ...] → retorna (qty_total, pu_prom, val_total)"""
+        q = sum(q for q, _ in layers)
+        v = sum(q * p for q, p in layers)
+        pu = (v / q) if q > 0 else 0.0
+        return q, pu, v
+
+    def _consume_layers_detail(layers, qty_out, fifo=True):
+        """
+        layers: [[qty, pu], ...]
+        qty_out: cantidad a vender
+        fifo=True (PEPS) o False (UEPS)
+        Retorna:
+        sale_details = [(q_take, pu_take, tot_take), ...]
+        layers_after = capas remanentes en el orden natural (FIFO)
+        """
+        order = layers[:] if fifo else layers[::-1]
+        remaining = qty_out
+        sale_details = []
+        updated = []
+        for q, pu in order:
+            if remaining <= 0:
+                updated.append([q, pu]); continue
+            take = min(q, remaining)
+            if take > 0:
+                sale_details.append((take, pu, take * pu))
+                rest = q - take
+                remaining -= take
+                if rest > 0:
+                    updated.append([rest, pu])
             else:
-                ent_q1 = ent_pu1 = ent_tot1 = None
-                layers = []
+                updated.append([q, pu])
+        final_layers = updated if fifo else updated[::-1]
+        return sale_details, final_layers
 
+    # =========================
+    # Construcción PARAMÉTRICA de filas esperadas
+    # =========================
+    def build_expected_rows(method_name):
+        """
+        Devuelve una lista de dicts 'row' con columnas:
+        Fecha, Descripción,
+        Entrada_cant, Entrada_pu, Entrada_total,
+        Salida_cant,  Salida_pu,  Salida_total,
+        Saldo_cant,   Saldo_pu,   Saldo_total
+
+        Lógica alineada con el EJEMPLO GUIADO:
+        - Día 1: saldo inicial como ENTRADA y como SALDO.
+        - Día 2: SOLO una fila de Compra 1 (sin “Saldo (día 1)”).
+          * Promedio Ponderado: saldo con promedio.
+          * PEPS/UEPS: saldo solo de la capa comprada.
+        - Día 3: ventas por método.
+          * PP: una fila.
+          * PEPS/UEPS: tramos sin promedios; el saldo del tramo muestra la capa del tramo (0 si se agota).
+        - Día 4: Compra 2 (saldo solo de la capa comprada en PEPS/UEPS).
+        """
+        rows = []
+
+        # ------------------------------
+        # Día 1: Saldo inicial
+        # ------------------------------
+        if inv0_u_ex > 0:
+            ent_q1 = int(inv0_u_ex)
+            ent_pu1 = float(inv0_pu_ex)
+            ent_tot1 = ent_q1 * ent_pu1
+            layers = [[float(ent_q1), ent_pu1]]
+        else:
+            ent_q1 = ent_pu1 = ent_tot1 = None
+            layers = []
+
+        s_q, s_p, s_v = _sum_layers(layers)
+
+        rows.append({
+            "Fecha": "Día 1", "Descripción": "Saldo inicial",
+            "Entrada_cant": ent_q1,
+            "Entrada_pu": round(ent_pu1, 2) if ent_pu1 else None,
+            "Entrada_total": round(ent_tot1, 2) if ent_tot1 else None,
+            "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+            "Saldo_cant": s_q,
+            "Saldo_pu": round(s_p, 2),
+            "Saldo_total": round(s_v, 2)
+        })
+
+        # ------------------------------
+        # Día 2: Compra 1
+        # ------------------------------
+        ent_tot = comp1_u * comp1_pu
+
+        if method_name == "Promedio Ponderado":
+            q_new = s_q + comp1_u
+            v_new = s_v + ent_tot
+            p_new = (v_new / q_new) if q_new > 0 else 0.0
+            layers = [[q_new, p_new]]
             s_q, s_p, s_v = _sum_layers(layers)
 
             rows.append({
-                "Fecha": "Día 1", "Descripción": "Saldo inicial",
-                "Entrada_cant": ent_q1,
-                "Entrada_pu": round(ent_pu1, 2) if ent_pu1 else None,
-                "Entrada_total": round(ent_tot1, 2) if ent_tot1 else None,
+                "Fecha": "Día 2", "Descripción": "Compra 1",
+                "Entrada_cant": comp1_u,
+                "Entrada_pu": round(comp1_pu, 2),
+                "Entrada_total": round(ent_tot, 2),
                 "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
                 "Saldo_cant": s_q,
                 "Saldo_pu": round(s_p, 2),
                 "Saldo_total": round(s_v, 2)
             })
 
-            # ------------------------------
-            # Día 2: Compra 1
-            # ------------------------------
-            ent_tot = comp1_u * comp1_pu
+        else:
+            # PEPS/UEPS → una sola fila "Compra 1"
+            if comp1_u > 0:
+                layers.append([float(comp1_u), float(comp1_pu)])
 
-            if method_name == "Promedio Ponderado":
-                q_new = s_q + comp1_u
-                v_new = s_v + ent_tot
-                p_new = (v_new / q_new) if q_new > 0 else 0.0
-                layers = [[q_new, p_new]]
+            rows.append({
+                "Fecha": "Día 2", "Descripción": "Compra 1",
+                "Entrada_cant": comp1_u,
+                "Entrada_pu": round(comp1_pu, 2),
+                "Entrada_total": round(ent_tot, 2),
+                "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                "Saldo_cant": comp1_u,
+                "Saldo_pu": round(comp1_pu, 2),
+                "Saldo_total": round(ent_tot, 2)
+            })
+
+        # ------------------------------
+        # Día 3: Venta
+        # ------------------------------
+        if method_name == "Promedio Ponderado":
+            if s_q > 0 and venta_ex_u > 0:
+                sale_q = min(venta_ex_u, s_q)
+                sale_pu = layers[0][1] if layers else 0.0
+                sale_tot = sale_q * sale_pu
+
+                q2 = s_q - sale_q
+                v2 = s_v - sale_tot
+                p2 = (v2 / q2) if q2 > 0 else 0.0
+                layers = [[q2, p2]] if q2 > 0 else []
                 s_q, s_p, s_v = _sum_layers(layers)
 
                 rows.append({
-                    "Fecha": "Día 2", "Descripción": "Compra 1",
-                    "Entrada_cant": comp1_u,
-                    "Entrada_pu": round(comp1_pu, 2),
-                    "Entrada_total": round(ent_tot, 2),
+                    "Fecha": "Día 3", "Descripción": "Venta",
+                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                    "Salida_cant": sale_q,
+                    "Salida_pu": round(sale_pu, 2),
+                    "Salida_total": round(sale_tot, 2),
+                    "Saldo_cant": s_q,
+                    "Saldo_pu": round(s_p, 2),
+                    "Saldo_total": round(s_v, 2)
+                })
+            else:
+                rows.append({
+                    "Fecha": "Día 3", "Descripción": "Venta",
+                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
                     "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
                     "Saldo_cant": s_q,
                     "Saldo_pu": round(s_p, 2),
                     "Saldo_total": round(s_v, 2)
                 })
 
-            else:
-                # PEPS/UEPS → una sola fila "Compra 1"
-                if comp1_u > 0:
-                    layers.append([float(comp1_u), float(comp1_pu)])
+        else:
+            # PEPS / UEPS (venta por tramos, SALDO solo de la capa del tramo)
+            fifo = (method_name == "PEPS (FIFO)")
+            metodo_tag = "PEPS" if fifo else "UEPS"
 
-                rows.append({
-                    "Fecha": "Día 2", "Descripción": "Compra 1",
-                    "Entrada_cant": comp1_u,
-                    "Entrada_pu": round(comp1_pu, 2),
-                    "Entrada_total": round(ent_tot, 2),
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": comp1_u,
-                    "Saldo_pu": round(comp1_pu, 2),
-                    "Saldo_total": round(ent_tot, 2)
-                })
+            layers_for_calc = [[float(q), float(p)] for (q, p) in layers]
+            sale_remaining = float(venta_ex_u)
+            tramo_index = 1
 
-            # ------------------------------
-            # Día 3: Venta
-            # ------------------------------
-            if method_name == "Promedio Ponderado":
-                if s_q > 0 and venta_ex_u > 0:
-                    sale_q = min(venta_ex_u, s_q)
-                    sale_pu = layers[0][1] if layers else 0.0
-                    sale_tot = sale_q * sale_pu
+            while sale_remaining > 0 and any(q > 0 for q, _ in layers_for_calc):
 
-                    q2 = s_q - sale_q
-                    v2 = s_v - sale_tot
-                    p2 = (v2 / q2) if q2 > 0 else 0.0
-                    layers = [[q2, p2]] if q2 > 0 else []
-                    s_q, s_p, s_v = _sum_layers(layers)
-
-                    rows.append({
-                        "Fecha": "Día 3", "Descripción": "Venta",
-                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                        "Salida_cant": sale_q,
-                        "Salida_pu": round(sale_pu, 2),
-                        "Salida_total": round(sale_tot, 2),
-                        "Saldo_cant": s_q,
-                        "Saldo_pu": round(s_p, 2),
-                        "Saldo_total": round(s_v, 2)
-                    })
+                # Selección de capa
+                if fifo:
+                    idx = next(i for i,(q,_) in enumerate(layers_for_calc) if q>0)
                 else:
-                    rows.append({
-                        "Fecha": "Día 3", "Descripción": "Venta",
-                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                        "Saldo_cant": s_q,
-                        "Saldo_pu": round(s_p, 2),
-                        "Saldo_total": round(s_v, 2)
-                    })
+                    idx = max(i for i,(q,_) in enumerate(layers_for_calc) if q>0)
 
-            else:
-                # PEPS / UEPS (venta por tramos)
-                fifo = (method_name == "PEPS (FIFO)")
-                metodo_tag = "PEPS" if fifo else "UEPS"
+                layer_q, layer_pu = layers_for_calc[idx]
+                q_take = min(layer_q, sale_remaining)
+                tot_take = q_take * layer_pu
+                sale_remaining -= q_take
 
-                layers_for_calc = [[float(q), float(p)] for (q, p) in layers]
-                sale_remaining = float(venta_ex_u)
-                tramo_index = 1
+                # Actualizar capa consumida
+                q_rem = layer_q - q_take
+                layers_for_calc[idx][0] = q_rem
 
-                while sale_remaining > 0 and any(q > 0 for q, _ in layers_for_calc):
+                # 🔴 NUEVA LÓGICA: SALDO muestra SOLO la capa de ese tramo
+                # Si se agota, queda 0 unidades al mismo costo unitario.
+                if q_rem > 0:
+                    sdo_q = q_rem
+                    sdo_pu = layer_pu
+                else:
+                    sdo_q = 0.0
+                    sdo_pu = layer_pu
 
-                    # Selección de capa
-                    if fifo:
-                        idx = next(i for i,(q,_) in enumerate(layers_for_calc) if q>0)
-                    else:
-                        idx = max(i for i,(q,_) in enumerate(layers_for_calc) if q>0)
-
-                    layer_q, layer_pu = layers_for_calc[idx]
-                    q_take = min(layer_q, sale_remaining)
-                    tot_take = q_take * layer_pu
-                    sale_remaining -= q_take
-
-                    # Actualizar capa consumida
-                    q_rem = layer_q - q_take
-                    layers_for_calc[idx][0] = q_rem
-
-                    # Determinar capa activa para SALDO
-                    if q_rem > 0:
-                        sdo_q = q_rem
-                        sdo_pu = layer_pu
-                    else:
-                        remaining_layers = [(q,p) for (q,p) in layers_for_calc if q>0]
-                        if remaining_layers:
-                            if fifo:
-                                sdo_q, sdo_pu = remaining_layers[0]
-                            else:
-                                sdo_q, sdo_pu = remaining_layers[-1]
-                        else:
-                            sdo_q, sdo_pu = 0.0, layer_pu
-
-                    sdo_tot = sdo_q * sdo_pu
-
-                    rows.append({
-                        "Fecha": "Día 3",
-                        "Descripción": f"Venta tramo {tramo_index} ({metodo_tag})",
-                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                        "Salida_cant": int(q_take),
-                        "Salida_pu": round(layer_pu, 2),
-                        "Salida_total": round(tot_take, 2),
-                        "Saldo_cant": int(sdo_q),
-                        "Saldo_pu": round(sdo_pu, 2),
-                        "Saldo_total": round(sdo_tot, 2)
-                    })
-
-                    tramo_index += 1
-
-                layers = [(q,p) for (q,p) in layers_for_calc if q>0]
-                s_q, s_p, s_v = _sum_layers(layers)
-
-            # ------------------------------
-            # Día 4: Compra 2
-            # ------------------------------
-            ent2_tot = comp2_u * comp2_pu
-
-            if method_name == "Promedio Ponderado":
-                q3 = s_q + comp2_u
-                v3 = s_v + ent2_tot
-                p3 = (v3 / q3) if q3 > 0 else 0.0
-                layers = [[q3, p3]]
-                s_q, s_p, s_v = _sum_layers(layers)
+                sdo_tot = sdo_q * sdo_pu
 
                 rows.append({
-                    "Fecha": "Día 4", "Descripción": "Compra 2",
-                    "Entrada_cant": comp2_u,
-                    "Entrada_pu": round(comp2_pu, 2),
-                    "Entrada_total": round(ent2_tot, 2),
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": s_q,
-                    "Saldo_pu": round(s_p, 2),
-                    "Saldo_total": round(s_v, 2)
+                    "Fecha": "Día 3",
+                    "Descripción": f"Venta tramo {tramo_index} ({metodo_tag})",
+                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                    "Salida_cant": int(q_take),
+                    "Salida_pu": round(layer_pu, 2),
+                    "Salida_total": round(tot_take, 2),
+                    "Saldo_cant": int(sdo_q),
+                    "Saldo_pu": round(sdo_pu, 2),
+                    "Saldo_total": round(sdo_tot, 2)
                 })
 
-            else:
-                # PEPS / UEPS: saldo solo de la nueva capa
-                if comp2_u > 0:
-                    layers.append([float(comp2_u), float(comp2_pu)])
+                tramo_index += 1
 
-                rows.append({
-                    "Fecha": "Día 4", "Descripción": "Compra 2",
-                    "Entrada_cant": comp2_u,
-                    "Entrada_pu": round(comp2_pu, 2),
-                    "Entrada_total": round(ent2_tot, 2),
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": comp2_u,
-                    "Saldo_pu": round(comp2_pu, 2),
-                    "Saldo_total": round(ent2_tot, 2)
-                })
+            layers = [(q,p) for (q,p) in layers_for_calc if q>0]
+            s_q, s_p, s_v = _sum_layers(layers)
 
-            return rows
+        # ------------------------------
+        # Día 4: Compra 2
+        # ------------------------------
+        ent2_tot = comp2_u * comp2_pu
 
-        expected_rows = build_expected_rows(ex_metodo)
+        if method_name == "Promedio Ponderado":
+            q3 = s_q + comp2_u
+            v3 = s_v + ent2_tot
+            p3 = (v3 / q3) if q3 > 0 else 0.0
+            layers = [[q3, p3]]
+            s_q, s_p, s_v = _sum_layers(layers)
 
-        # =========================
-        # Plantilla dinámica para edición
-        # =========================
-        def _blank_row(fecha, desc):
-            return {
-                "Fecha": fecha, "Descripción": desc,
-                "Entrada_cant": "", "Entrada_pu": "", "Entrada_total": "",
-                "Salida_cant": "",  "Salida_pu": "",  "Salida_total": "",
-                "Saldo_cant": "",   "Saldo_pu": "",   "Saldo_total": ""
-            }
+            rows.append({
+                "Fecha": "Día 4", "Descripción": "Compra 2",
+                "Entrada_cant": comp2_u,
+                "Entrada_pu": round(comp2_pu, 2),
+                "Entrada_total": round(ent2_tot, 2),
+                "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                "Saldo_cant": s_q,
+                "Saldo_pu": round(s_p, 2),
+                "Saldo_total": round(s_v, 2)
+            })
 
-        # Construye DataFrame con tantas filas como las esperadas (descripciones fijas)
-        plant_rows = []
-        for r in expected_rows:
-            plant_rows.append(_blank_row(r["Fecha"], r["Descripción"]))
-        plant = pd.DataFrame(plant_rows)
+        else:
+            # PEPS / UEPS: saldo solo de la nueva capa
+            if comp2_u > 0:
+                layers.append([float(comp2_u), float(comp2_pu)])
 
-        st.markdown("#### ✍️ Completa la tabla (números)")
-        st.caption("Escribe **valores numéricos**. Puedes dejar celdas no aplicables en blanco.")
-        edited = st.data_editor(
-            plant,
-            use_container_width=True,
-            num_rows="fixed",
-            key="n2_kardex_student_table_var"
-        )
+            rows.append({
+                "Fecha": "Día 4", "Descripción": "Compra 2",
+                "Entrada_cant": comp2_u,
+                "Entrada_pu": round(comp2_pu, 2),
+                "Entrada_total": round(ent2_tot, 2),
+                "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                "Saldo_cant": comp2_u,
+                "Saldo_pu": round(comp2_pu, 2),
+                "Saldo_total": round(ent2_tot, 2)
+            })
 
-        # =========================
-        # Validación y feedback
-        # =========================
-        with st.form("n2_kardex_check_var"):
-            ask_ai = st.checkbox("💬 Pedir retroalimentación de IA (procedimiento)", value=False, key="n2_kardex_ai_feedback_var")
-            submitted_ex = st.form_submit_button("✅ Validar mi KARDEX")
+        return rows
 
-        if submitted_ex:
-            tol = 0.5
+    expected_rows = build_expected_rows(ex_metodo)
 
-            def _to_float(x):
-                try:
-                    if x in (None, ""):
-                        return None
-                    return float(x)
-                except Exception:
+    # =========================
+    # Plantilla dinámica para edición
+    # =========================
+    def _blank_row(fecha, desc):
+        return {
+            "Fecha": fecha, "Descripción": desc,
+            "Entrada_cant": "", "Entrada_pu": "", "Entrada_total": "",
+            "Salida_cant": "",  "Salida_pu": "",  "Salida_total": "",
+            "Saldo_cant": "",   "Saldo_pu": "",   "Saldo_total": ""
+        }
+
+    # Construye DataFrame con tantas filas como las esperadas (descripciones fijas)
+    plant_rows = []
+    for r in expected_rows:
+        plant_rows.append(_blank_row(r["Fecha"], r["Descripción"]))
+    plant = pd.DataFrame(plant_rows)
+
+    st.markdown("#### ✍️ Completa la tabla (números)")
+    st.caption("Escribe **valores numéricos**. Puedes dejar celdas no aplicables en blanco.")
+    edited = st.data_editor(
+        plant,
+        use_container_width=True,
+        num_rows="fixed",
+        key="n2_kardex_student_table_var"
+    )
+
+    # =========================
+    # Validación y feedback
+    # =========================
+    with st.form("n2_kardex_check_var"):
+        ask_ai = st.checkbox("💬 Pedir retroalimentación de IA (procedimiento)", value=False, key="n2_kardex_ai_feedback_var")
+        submitted_ex = st.form_submit_button("✅ Validar mi KARDEX")
+
+    if submitted_ex:
+        tol = 0.5
+
+        def _to_float(x):
+            try:
+                if x in (None, ""):
                     return None
+                return float(x)
+            except Exception:
+                return None
 
-            def _near(a, b):
-                if a is None or b is None:
-                    return False
-                return abs(a - b) <= tol
+        def _near(a, b):
+            if a is None or b is None:
+                return False
+            return abs(a - b) <= tol
 
-            def _is_empty_exp(v):
-                # Valores que NO queremos exigir en la comparación
-                if v is None or v == "":
-                    return True
-                try:
-                    # por si acaso llega un NaN
-                    import math
-                    return isinstance(v, float) and math.isnan(v)
-                except Exception:
-                    return False
+        def _is_empty_exp(v):
+            # Valores que NO queremos exigir en la comparación
+            if v is None or v == "":
+                return True
+            try:
+                import math
+                return isinstance(v, float) and math.isnan(v)
+            except Exception:
+                return False
 
-            flags = []
-            # Comparar fila a fila contra expected_rows
-            for i in range(len(expected_rows)):
-                user = edited.iloc[i].to_dict()
-                exp  = expected_rows[i]
-                ok_cells = []
-                # Para cada celda numérica, si exp tiene número, validamos; si está vacío, no se exige
-                for key in [
-                    "Entrada_cant","Entrada_pu","Entrada_total",
-                    "Salida_cant","Salida_pu","Salida_total",
-                    "Saldo_cant","Saldo_pu","Saldo_total"
-                ]:
-                    exp_val = exp[key]
-                    usr_val = _to_float(user.get(key, ""))
+        flags = []
+        # Comparar fila a fila contra expected_rows
+        for i in range(len(expected_rows)):
+            user = edited.iloc[i].to_dict()
+            exp  = expected_rows[i]
+            ok_cells = []
+            # Para cada celda numérica, si exp tiene número, validamos; si está vacío, no se exige
+            for key in [
+                "Entrada_cant","Entrada_pu","Entrada_total",
+                "Salida_cant","Salida_pu","Salida_total",
+                "Saldo_cant","Saldo_pu","Saldo_total"
+            ]:
+                exp_val = exp[key]
+                usr_val = _to_float(user.get(key, ""))
 
-                    if _is_empty_exp(exp_val):  # no obligatorio
-                        ok = True
-                    else:
-                        ok = _near(usr_val, float(exp_val))
+                if _is_empty_exp(exp_val):  # no obligatorio
+                    ok = True
+                else:
+                    ok = _near(usr_val, float(exp_val))
 
-                    ok_cells.append(ok)
+                ok_cells.append(ok)
 
-                ok_row = all(ok_cells)
-                flags.append((f"{exp['Fecha']} · {exp['Descripción']}", ok_row))
+            ok_row = all(ok_cells)
+            flags.append((f"{exp['Fecha']} · {exp['Descripción']}", ok_row))
 
+        aciertos = sum(1 for _, ok in flags if ok)
+        st.metric("Aciertos por fila", f"{aciertos}/{len(flags)}")
+        for label, ok in flags:
+            st.write(("✅ " if ok else "❌ ") + label)
 
-            aciertos = sum(1 for _, ok in flags if ok)
-            st.metric("Aciertos por fila", f"{aciertos}/{len(flags)}")
-            for label, ok in flags:
-                st.write(("✅ " if ok else "❌ ") + label)
+        if aciertos == len(flags):
+            st.success("¡Excelente! Tu procedimiento y saldos son coherentes con el método elegido.")
+        else:
+            st.warning("Hay diferencias en una o más filas. Revisa cantidades, costos unitarios y el método aplicado en cada día/tramo.")
 
-            if aciertos == len(flags):
-                st.success("¡Excelente! Tu procedimiento y saldos son coherentes con el método elegido.")
-            else:
-                st.warning("Hay diferencias en una o más filas. Revisa cantidades, costos unitarios y el método aplicado en cada día/tramo.")
+        # Feedback IA opcional
+        if ask_ai:
+            def _row_summary(idx):
+                r = edited.iloc[idx].to_dict()
+                def g(k):
+                    v = _to_float(r.get(k, ""))
+                    return "—" if v is None else f"{v:.2f}" if isinstance(v, float) else str(v)
+                return (f"{edited.iloc[idx]['Fecha']} {edited.iloc[idx]['Descripción']}: "
+                        f"E({g('Entrada_cant')},{g('Entrada_pu')},{g('Entrada_total')}) | "
+                        f"S({g('Salida_cant')},{g('Salida_pu')},{g('Salida_total')}) | "
+                        f"Saldo({g('Saldo_cant')},{g('Saldo_pu')},{g('Saldo_total')})")
 
-            # Feedback IA opcional
-            if ask_ai:
-                # Arma una descripción compacta del intento del estudiante
-                def _row_summary(idx):
-                    r = edited.iloc[idx].to_dict()
-                    def g(k):
-                        v = _to_float(r.get(k, ""))
-                        return "—" if v is None else f"{v:.2f}" if isinstance(v, float) else str(v)
-                    return (f"{edited.iloc[idx]['Fecha']} {edited.iloc[idx]['Descripción']}: "
-                            f"E({g('Entrada_cant')},{g('Entrada_pu')},{g('Entrada_total')}) | "
-                            f"S({g('Salida_cant')},{g('Salida_pu')},{g('Salida_total')}) | "
-                            f"Saldo({g('Saldo_cant')},{g('Saldo_pu')},{g('Saldo_total')})")
+            intento = "\n".join(_row_summary(i) for i in range(len(expected_rows)))
 
-                intento = "\n".join(_row_summary(i) for i in range(len(expected_rows)))
+            final_exp = expected_rows[-1]
+            exp_qtyF = final_exp["Saldo_cant"] if final_exp["Saldo_cant"] != "" else None
+            exp_valF = final_exp["Saldo_total"] if final_exp["Saldo_total"] != "" else None
+            exp_puF  = final_exp["Saldo_pu"] if final_exp["Saldo_pu"] != "" else None
 
-                # Salidas clave para guía
-                # saldo final esperado
-                final_exp = expected_rows[-1]
-                exp_qtyF = final_exp["Saldo_cant"] if final_exp["Saldo_cant"] != "" else None
-                exp_valF = final_exp["Saldo_total"] if final_exp["Saldo_total"] != "" else None
-                exp_puF  = final_exp["Saldo_pu"] if final_exp["Saldo_pu"] != "" else None
+            sol_desc = (
+                f"Método: {ex_metodo}. "
+                f"Saldo final esperado: cant={exp_qtyF}, val={exp_valF}, pu={exp_puF}. "
+                f"Cantidad de filas esperadas: {len(expected_rows)}."
+            )
 
-                sol_desc = (
-                    f"Método: {ex_metodo}. "
-                    f"Saldo final esperado: cant={exp_qtyF}, val={exp_valF}, pu={exp_puF}. "
-                    f"Cantidad de filas esperadas: {len(expected_rows)}."
+            with st.spinner("Generando retroalimentación de IA…"):
+                fb_txt = ia_feedback(
+                    "Evalúa el procedimiento de un KARDEX paso a paso. " + sol_desc +
+                    "\nEl estudiante diligenció:\n" + intento +
+                    "\nIndica: (1) si respeta el método (promedio/PEPS/UEPS) en cada día/tramo, "
+                    "(2) posibles errores (promediar en PEPS/UEPS, usar costo equivocado en venta, no actualizar saldo), "
+                    "(3) un tip memotécnico breve y aplicable."
                 )
+            with st.expander("💬 Retroalimentación de la IA"):
+                st.write(fb_txt)
 
-                with st.spinner("Generando retroalimentación de IA…"):
-                    fb_txt = ia_feedback(
-                        "Evalúa el procedimiento de un KARDEX paso a paso. " + sol_desc +
-                        "\nEl estudiante diligenció:\n" + intento +
-                        "\nIndica: (1) si respeta el método (promedio/PEPS/UEPS) en cada día/tramo, "
-                        "(2) posibles errores (promediar en PEPS/UEPS, usar costo equivocado en venta, no actualizar saldo), "
-                        "(3) un tip memotécnico breve y aplicable."
-                    )
-                with st.expander("💬 Retroalimentación de la IA"):
-                    st.write(fb_txt)
 
     # ====== Helpers de performance y parseo ======
     def _extract_json(txt: str) -> dict:
