@@ -2147,16 +2147,22 @@ def page_level2(username):
         function cleanForSpeak(text) {
             if (!text) return "";
 
-            return text
-                // Cualquier símbolo $, US$ o similar → "pesos"
-                .replace(/US\$?/gi, " pesos ")
-                .replace(/\$/g, " pesos ")
+            let t = text;
 
-                // Si tu formato trae COP, también lo cambiamos
-                .replace(/\bCOP\b/gi, " pesos ")
+            // 1) Casos tipo: $100, $ 100, US$100, US$ 100 → "100 pesos"
+            t = t.replace(/\bUS?\$ ?(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
+            t = t.replace(/\$ ?(\d+(?:[\.,]\d+)*)/g, "$1 pesos");
 
-                // Evita que diga "dólares" si aparece en el texto
-                .replace(/dólares?/gi, " pesos ");
+            // 2) Casos tipo: COP 100 → "100 pesos"
+            t = t.replace(/\bCOP ?(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
+
+            // 3) Si por transformaciones previas quedó "pesos 100" → "100 pesos"
+            t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
+
+            // 4) Evitar "pesos pesos"
+            t = t.replace(/pesos\s+pesos/gi, "pesos");
+
+            return t;
         }
 
         function speak(text){
