@@ -1804,6 +1804,7 @@ def page_level2(username):
                         {"row": 0, "cell": "sdo_tot", "money": True, "val": round(s_v, 2)},
                     ]
                 })
+
             else:
                 script.append({
                     "title": "Paso 1 · Sin saldo inicial",
@@ -1890,7 +1891,7 @@ def page_level2(username):
                     "text": (
                         f"En {metodo_tag} NO promediamos el costo. La compra del Día 2 se registra como una nueva capa: "
                         f"{ent_q_2} unidades a {_fmt_money(ent_pu_2)} pesos, total {_fmt_money(ent_tot_2)} pesos.\n\n"
-                        f"En la columna SALDO de esta fila mostramos solo esa capa comprada, para que se vea "
+                        f"En la columna SALDO de esta fila mostramos solo esa capa comprada..."
                         f"claramente que más adelante la venta consumirá primero una u otra capa según el método, "
                         f"en lugar de combinar todo en un único costo promedio."
                     ),
