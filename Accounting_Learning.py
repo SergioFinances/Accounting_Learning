@@ -434,7 +434,6 @@ def speak_block(texto: str, key_prefix: str, lang_hint="es"):
     """
     components.html(html, height=160)
 
-
 # ===========================
 # Config encuesta
 # ===========================
@@ -2106,6 +2105,7 @@ def page_level2(username):
 
         <div class="controls">
         <button id="playDemo" class="btn">▶️ Reproducir demo</button>
+        <button id="pauseDemo" class="btn">⏸️ Pausar</button>
         <button id="resetDemo" class="btn">↺ Reiniciar</button>
         <span class="badge">%%METODO%%</span>
         </div>
@@ -2131,26 +2131,32 @@ def page_level2(username):
 
         <script>
         (function(){
-        const rows = %%ROWS%%;
-        const script = %%SCRIPT%%;
-        const metodo = "%%METODO%%";
+        const rows      = %%ROWS%%;
+        const script    = %%SCRIPT%%;
+        const metodo    = "%%METODO%%";
+        const narrStart = %%NARRSTART%%;
         const narrMuted = %%MUTED%%;
-        const rate = %%RATE%%;
+        const rate      = %%RATE%%;
 
-        const tbody = document.getElementById("kbody");
-        const narrDiv = document.getElementById("narr");
-        const btnPlay = document.getElementById("playDemo");
-        const btnReset = document.getElementById("resetDemo");
+        const tbody     = document.getElementById("kbody");
+        const narrDiv   = document.getElementById("narr");
+        const btnPlay   = document.getElementById("playDemo");
+        const btnPause  = document.getElementById("pauseDemo");
+        const btnReset  = document.getElementById("resetDemo");
+
+        let isPaused    = false;
+        let isRunning   = false;
+        let currentUtterance = null;
 
         const pesos = (v)=> {
             try {
-                return new Intl.NumberFormat('es-CO', {
-                    style: 'currency',
-                    currency: 'COP',
-                    maximumFractionDigits: 2
+                return new Intl.NumberFormat('es-CO',{
+                    style:'currency',
+                    currency:'COP',
+                    maximumFractionDigits:2
                 }).format(v);
             } catch(e){
-                return "$" + (Math.round(v*100)/100).toLocaleString('es-CO');
+                return "$"+(Math.round(v*100)/100).toLocaleString('es-CO');
             }
         };
 
@@ -2160,136 +2166,209 @@ def page_level2(username):
                 : (typeof x==="number"
                     ? (Number.isInteger(x)
                         ? x.toString()
-                        : (Math.round(x*100)/100).toString().replace(".",",")
-                    )
+                        : (Math.round(x*100)/100).toString().replace(".",","))
                     : x
                 )
         );
 
-        // 🔹 NUEVO: limpiar el texto para la voz
+        function buildTable(){
+            tbody.innerHTML = "";
+            rows.forEach((r, i)=>{
+                const tr = document.createElement("tr");
+                tr.id = "row"+i;
+
+                const isNarr = (i >= narrStart);
+
+                const ent_q   = isNarr ? "" : fmt(r.ent_q);
+                const ent_pu  = isNarr ? "" : (r.ent_pu!==""? (isNaN(r.ent_pu)? fmt(r.ent_pu) : pesos(r.ent_pu)) : "");
+                const ent_tot = isNarr ? "" : (r.ent_tot!==""? pesos(r.ent_tot) : "");
+
+                const sal_q   = isNarr ? "" : fmt(r.sal_q);
+                const sal_pu  = isNarr ? "" : (r.sal_pu!==""? (isNaN(r.sal_pu)? fmt(r.sal_pu) : pesos(r.sal_pu)) : "");
+                const sal_tot = isNarr ? "" : (r.sal_tot!==""? pesos(r.sal_tot) : "");
+
+                const sdo_q   = isNarr ? "" : fmt(r.sdo_q);
+                const sdo_pu  = isNarr ? "" : (r.sdo_pu!==""? (isNaN(r.sdo_pu)? fmt(r.sdo_pu) : pesos(r.sdo_pu)) : "");
+                const sdo_tot = isNarr ? "" : (r.sdo_tot!==""? pesos(r.sdo_tot) : "");
+
+                tr.innerHTML = `
+                    <td>${r.fecha}</td><td>${r.desc}</td>
+                    <td id="r${i}_ent_q"  class="fill">${ent_q}</td>
+                    <td id="r${i}_ent_pu" class="fill">${ent_pu}</td>
+                    <td id="r${i}_ent_tot"class="fill">${ent_tot}</td>
+                    <td id="r${i}_sal_q"  class="fill">${sal_q}</td>
+                    <td id="r${i}_sal_pu" class="fill">${sal_pu}</td>
+                    <td id="r${i}_sal_tot"class="fill">${sal_tot}</td>
+                    <td id="r${i}_sdo_q"  class="fill">${sdo_q}</td>
+                    <td id="r${i}_sdo_pu" class="fill">${sdo_pu}</td>
+                    <td id="r${i}_sdo_tot"class="fill">${sdo_tot}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function clearHi(){
+            [...tbody.querySelectorAll("tr")].forEach(tr=> tr.classList.remove("hi"));
+        }
+        function highlightRow(i){
+            clearHi();
+            const tr = document.getElementById("row"+i);
+            if (tr) tr.classList.add("hi");
+        }
+        function fillCell(rowIdx, key, val, money=false){
+            const el = document.getElementById(`r${rowIdx}_${key}`);
+            if (!el) return;
+            el.textContent = money ? pesos(val) : fmt(val);
+            el.style.background = "#fffbe6";
+            setTimeout(()=>{ el.style.background=""; }, 300);
+        }
+
+        const sleep = (ms)=> new Promise(r => setTimeout(r, ms));
+
+        // 🔹 Limpieza para que siempre diga "número pesos"
         function cleanForSpeak(text) {
             if (!text) return "";
-
             let t = text;
 
-            // 1) Casos tipo: US$100, US$ 100, $100, $ 100, COP 100 → "100 pesos"
-            t = t.replace(/\bUS?\$\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
-            t = t.replace(/\$\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/g, "$1 pesos");
-            t = t.replace(/\bCOP\s*(\d+(?:[\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
-            // 100 $, 100 US$, 100 COP → "100 pesos"
-            t = t.replace(/(\d+(?:[\.,]\d+)*)\s*(US?\$|COP|\$)\b/gi, "$1 pesos");
+            // US$100, US$ 100, $100, $ 100, COP 100 → "100 pesos"
+            t = t.replace(/\bUS?\$\s*(\d+(?:[\\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
+            t = t.replace(/\$\s*(\d+(?:[\\.,]\d+)*)\s*(pesos)?/g, "$1 pesos");
+            t = t.replace(/\bCOP\s*(\d+(?:[\\.,]\d+)*)\s*(pesos)?/gi, "$1 pesos");
+            t = t.replace(/(\d+(?:[\\.,]\d+)*)\s*(US?\$|COP|\$)\b/gi, "$1 pesos");
 
-            // 2) Si quedó "pesos 100" → "100 pesos"
-            t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)/gi, "$1 pesos");
+            // "pesos 100" → "100 pesos"
+            t = t.replace(/pesos\s+(\d+(?:[\\.,]\d+)*)/gi, "$1 pesos");
 
-            // 3) Si quedó "100 pesos pesos" → "100 pesos"
-            t = t.replace(/(\d+(?:[\.,]\d+)*)\s+pesos\s+pesos/gi, "$1 pesos");
+            // "100 pesos pesos" → "100 pesos"
+            t = t.replace(/(\d+(?:[\\.,]\d+)*)\s+pesos\s+pesos/gi, "$1 pesos");
 
-            // 4) Si quedó "pesos 100 pesos" → "100 pesos"
-            t = t.replace(/pesos\s+(\d+(?:[\.,]\d+)*)\s+pesos/gi, "$1 pesos");
+            // "pesos 100 pesos" → "100 pesos"
+            t = t.replace(/pesos\s+(\d+(?:[\\.,]\d+)*)\s+pesos/gi, "$1 pesos");
 
-            // 5) Limpiar espacios dobles
             t = t.replace(/\s{2,}/g, " ");
-
             return t;
         }
 
+        // Hablar respetando pausa / reanudación
         function speak(text){
             return new Promise((resolve)=>{
                 if (narrMuted) return resolve();
                 try{
                     if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-                    // 🟢 Usamos la versión limpia, sin "$"
+
                     const u = new SpeechSynthesisUtterance(cleanForSpeak(text));
+                    currentUtterance = u;
+
                     const voices = window.speechSynthesis.getVoices();
-                    const pick = voices.find(v=>/es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
+                    const pick = voices.find(v => /es|spanish|mex|col/i.test((v.name+" "+v.lang))) || voices[0];
                     if (pick) u.voice = pick;
+
                     u.rate = rate;
                     u.pitch = 1.0;
-                    u.onend = ()=> resolve();
+                    u.onend = ()=> { currentUtterance = null; resolve(); };
+                    u.onerror = ()=> { currentUtterance = null; resolve(); };
+
                     window.speechSynthesis.speak(u);
                 } catch(e){
+                    currentUtterance = null;
                     resolve();
                 }
             });
         }
 
-        const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
-
-        function buildTable(){
-            tbody.innerHTML = "";
-            rows.forEach((r, i)=>{
-            const tr = document.createElement("tr");
-            tr.id = "row"+i;
-            tr.innerHTML = `
-                <td>${r.fecha}</td><td>${r.desc}</td>
-                <td id="r${i}_ent_q"  class="fill muted"></td>
-                <td id="r${i}_ent_pu" class="fill muted"></td>
-                <td id="r${i}_ent_tot"class="fill muted"></td>
-                <td id="r${i}_sal_q"  class="fill muted"></td>
-                <td id="r${i}_sal_pu" class="fill muted"></td>
-                <td id="r${i}_sal_tot"class="fill muted"></td>
-                <td id="r${i}_sdo_q"  class="fill muted"></td>
-                <td id="r${i}_sdo_pu" class="fill muted"></td>
-                <td id="r${i}_sdo_tot"class="fill muted"></td>
-            `;
-            tbody.appendChild(tr);
-            });
-        }
-        function clearTable(){
-            [...tbody.querySelectorAll("td")].forEach(td=>{
-            if (td.id) { td.textContent = ""; td.classList.add("muted"); }
-            });
-            [...tbody.querySelectorAll("tr")].forEach(tr=> tr.classList.remove("hi"));
-            narrDiv.textContent = "";
-        }
-        function highlightRow(i){
-            [...tbody.querySelectorAll("tr")].forEach((tr, idx)=>{
-            tr.classList.toggle("hi", idx === i);
-            });
-        }
-        function fillCell(rowIdx, key, val, money=false){
-            const el = document.getElementById(`r${rowIdx}_${key}`);
-            if (!el) return;
-            el.classList.remove("muted");
-            el.style.background = "#fffbe6";
-            el.style.color = "#333";
-            el.textContent = money ? pesos(val) : fmt(val);
-            setTimeout(()=>{ el.style.background=""; }, 300);
+        async function waitIfPaused(){
+            while(isPaused){
+                await sleep(150);
+            }
         }
 
         async function runScript(){
-            clearTable();
-            // Pintar título de cada paso, resaltar fila y llenar celdas en orden
+            if (isRunning){
+                try {
+                    if (window.speechSynthesis && window.speechSynthesis.speaking) {
+                        window.speechSynthesis.cancel();
+                    }
+                } catch(e){}
+            }
+
+            isRunning = true;
+            isPaused = false;
+            if (btnPause) btnPause.textContent = "⏸️ Pausar";
+
+            buildTable();
+            clearHi();
+            narrDiv.textContent = "";
+
             for (const step of script){
-            narrDiv.textContent = step.title;
-            // resaltar filas involucradas: la primera acción indica la fila
-            if (step.actions && step.actions.length>0){
-                highlightRow(step.actions[0].row);
-            }
-            // duración base proporcional al texto
-            const dur = Math.max(2200, Math.min(7000, step.text.length * 55 / rate));
-            const chunks = Math.max(3, step.actions.length);
-            const waits = Array.from({length:chunks-1}, (_,k)=> Math.floor(dur*(k+1)/chunks));
+                await waitIfPaused();
 
-            const pVoice = speak(step.text);
+                narrDiv.textContent = step.title;
 
-            for (let i=0;i<step.actions.length;i++){
-                const a = step.actions[i];
-                if (i>0){ await sleep(waits[i-1]); }
-                fillCell(a.row, a.cell, a.val, !!a.money);
+                if (step.actions && step.actions.length>0){
+                    highlightRow(step.actions[0].row);
+                }
+
+                const dur = Math.max(2200, Math.min(7000, step.text.length * 55 / rate));
+                const chunks = Math.max(3, step.actions.length);
+                const waits = Array.from({length:chunks-1}, (_,k)=> Math.floor(dur*(k+1)/chunks));
+
+                const pVoice = speak(step.text);
+
+                for (let i=0;i<step.actions.length;i++){
+                    await waitIfPaused();
+                    const a = step.actions[i];
+                    if (i>0){ await sleep(waits[i-1]); }
+                    fillCell(a.row, a.cell, a.val, !!a.money);
+                }
+
+                await pVoice;
+                await waitIfPaused();
+                await sleep(200);
             }
 
-            await pVoice;
-            await sleep(200);
-            }
-            highlightRow(-1);
+            clearHi();
+            isRunning = false;
         }
 
+        // Botones
+        btnPlay.onclick = runScript;
+
+        btnPause.onclick = ()=>{
+            try{
+                if (!window.speechSynthesis) return;
+                if (!isPaused){
+                    // Pasar a PAUSA
+                    if (window.speechSynthesis.speaking){
+                        window.speechSynthesis.pause();
+                    }
+                    isPaused = true;
+                    btnPause.textContent = "▶️ Reanudar";
+                } else {
+                    // REANUDAR
+                    if (window.speechSynthesis.paused){
+                        window.speechSynthesis.resume();
+                    }
+                    isPaused = false;
+                    btnPause.textContent = "⏸️ Pausar";
+                }
+            }catch(e){}
+        };
+
+        btnReset.onclick = ()=>{
+            try{
+                if (window.speechSynthesis){
+                    window.speechSynthesis.cancel();
+                }
+            }catch(e){}
+            isPaused = false;
+            isRunning = false;
+            if (btnPause) btnPause.textContent = "⏸️ Pausar";
+            buildTable();
+            clearHi();
+            narrDiv.textContent = "";
+        };
+
         buildTable();
-        btnPlay.onclick  = runScript;
-        btnReset.onclick = ()=>{ clearTable(); buildTable(); };
-        if (window.speechSynthesis) { window.speechSynthesis.onvoiceschanged = ()=>{}; }
         })();
         </script>
         """
@@ -2299,12 +2378,12 @@ def page_level2(username):
             .replace("%%ROWS%%", _json.dumps(demo_rows))
             .replace("%%SCRIPT%%", _json.dumps(demo_script))
             .replace("%%METODO%%", metodo)
+            .replace("%%NARRSTART%%", str(narr_start_idx))
             .replace("%%MUTED%%", "true" if narr_muted else "false")
             .replace("%%RATE%%", str(narr_speed))
         )
 
-        components.html(html_demo, height=250, scrolling=True)
-
+        components.html(html_demo, height=360, scrolling=True)
 
     with tabs[2]:
         st.subheader("Práctica IA: diligencia tu propio KARDEX")
