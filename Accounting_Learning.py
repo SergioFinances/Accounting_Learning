@@ -1726,8 +1726,9 @@ def page_level2(username):
             Construye las filas del KARDEX y un 'script' con guiones pedagógicos
             adaptados a los valores que el estudiante definió.
             - Siempre registra el saldo inicial como una ENTRADA (Día 1).
-            - Día 2: solo la compra (sin fila intermedia de saldo).
+            - Día 2: solo la compra (sin fila extra de saldo).
             - Día 3: venta según el método (PP una fila, PEPS/UEPS por tramos).
+            En PEPS/UEPS NO se promedia el saldo: se trabaja por capas.
             """
 
             def _sum_layers(layers):
@@ -1759,7 +1760,7 @@ def page_level2(username):
                 return details, layers_after
 
             rows = []   # cada fila: dict con keys: fecha, desc, ent_q, ent_pu, ent_tot, sal_q, sal_pu, sal_tot, sdo_q, sdo_pu, sdo_tot
-            script = [] # cada paso: {"title","text","actions":[{"row":i,"cell":"rX","money":bool,"val":v}, ...]}
+            script = [] # guiones para la narración
 
             # ----------------------------------------------------
             # DÍA 1 · SALDO INICIAL (SIEMPRE COMO ENTRADA + SALDO)
@@ -1834,7 +1835,7 @@ def page_level2(username):
                     new_p = (new_v / new_q) if new_q > 0 else 0.0
                     layers = [[new_q, new_p]]
                     s_q, s_pu, s_v = new_q, new_p, new_v
-                # Fila Día 2
+
                 rows.append({
                     "fecha": "Día 2", "desc": "Compra",
                     "ent_q": ent_q_2, "ent_pu": ent_pu_2, "ent_tot": ent_tot_2,
@@ -1869,18 +1870,18 @@ def page_level2(username):
                 start_sale_row_index = 2
 
             else:
-                # PEPS / UEPS → se manejan capas, pero aquí solo mostramos la capa de la compra en Día 2
+                # PEPS / UEPS → se manejan capas, pero en esta fila mostramos solo la capa de la compra
                 if comp_u > 0:
                     layers.append([float(comp_u), float(comp_pu)])
-                s_q, s_pu, s_v = _sum_layers(layers)
+                s_q, _, _ = _sum_layers(layers)
 
                 rows.append({
                     "fecha": "Día 2", "desc": "Compra",
                     "ent_q": ent_q_2, "ent_pu": ent_pu_2, "ent_tot": ent_tot_2,
                     "sal_q": None, "sal_pu": None, "sal_tot": None,
-                    "sdo_q": int(ent_q_2) if ent_q_2 is not None else 0,
-                    "sdo_pu": round(ent_pu_2, 2) if ent_pu_2 is not None else 0.0,
-                    "sdo_tot": round(ent_tot_2, 2) if ent_tot_2 is not None else 0.0,
+                    "sdo_q": ent_q_2 or 0,
+                    "sdo_pu": round(ent_pu_2 or 0.0, 2),
+                    "sdo_tot": round(ent_tot_2 or 0.0, 2),
                 })
 
                 metodo_tag = "PEPS" if method_name == "PEPS (FIFO)" else "UEPS (LIFO)"
@@ -1889,9 +1890,9 @@ def page_level2(username):
                     "text": (
                         f"En {metodo_tag} NO promediamos el costo. La compra del Día 2 se registra como una nueva capa: "
                         f"{ent_q_2} unidades a {_fmt_money(ent_pu_2)}, total {_fmt_money(ent_tot_2)}.\n\n"
-                        f"En la columna SALDO de esta fila mostramos solo esa capa comprada, porque la idea es que "
-                        f"visualices claramente que ahora el inventario tiene, por separado, la capa del Día 1 "
-                        f"y esta nueva capa del Día 2. La salida del Día 3 consumirá primero una u otra capa según el método."
+                        f"En la columna SALDO de esta fila mostramos solo esa capa comprada, para que se vea "
+                        f"claramente que más adelante la venta consumirá primero una u otra capa según el método, "
+                        f"en lugar de combinar todo en un único promedio."
                     ),
                     "actions": [
                         {"row": 1, "cell": "ent_q", "money": False, "val": ent_q_2},
@@ -1949,64 +1950,93 @@ def page_level2(username):
                         ]
                     })
 
-                # ======== PEPS / UEPS (TRAMOS) ========
+                # ======== PEPS / UEPS (TRAMOS, SIN PROMEDIO) ========
                 else:
                     fifo = (method_name == "PEPS (FIFO)")
                     metodo_tag = "PEPS" if fifo else "UEPS"
-                    sale_details, layers_after = _consume_layers_detail(layers, venta_u, fifo=fifo)
 
+                    # Copia de capas para irlas consumiendo tramo a tramo
+                    layers_for_calc = [[float(q), float(p)] for (q, p) in layers]
+                    sale_remaining = float(venta_u)
+                    tramo_index = 1
                     acc_row = start_sale_row_index
-                    running_layers = [l[:] for l in layers]  # copia para ir actualizando el saldo "visible"
 
-                    for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
-                        # Actualizamos running_layers para obtener el saldo tras ESTE tramo
-                        _, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
-                        rq, rpu, rv = _sum_layers(running_layers)
+                    while sale_remaining > 0 and any(q > 0 for q, _ in layers_for_calc):
+                        # Seleccionar la capa según el método
+                        if fifo:
+                            idx_layer = next(i for i, (q, _) in enumerate(layers_for_calc) if q > 0)
+                        else:
+                            idx_layer = max(i for i, (q, _) in enumerate(layers_for_calc) if q > 0)
+
+                        layer_q, layer_pu = layers_for_calc[idx_layer]
+                        q_take = min(layer_q, sale_remaining)
+                        tot_take = q_take * layer_pu
+                        sale_remaining -= q_take
+
+                        # Actualizar la capa consumida
+                        q_rem = layer_q - q_take
+                        layers_for_calc[idx_layer][0] = q_rem
+
+                        # Determinar qué capa se muestra en el SALDO de este tramo
+                        if q_rem > 0:
+                            # Quedan unidades en la MISMA capa que acabamos de consumir
+                            sdo_q = q_rem
+                            sdo_pu = layer_pu
+                        else:
+                            # Esa capa se agotó → buscamos la siguiente capa disponible
+                            remaining_layers = [(q, p) for (q, p) in layers_for_calc if q > 0]
+                            if remaining_layers:
+                                if fifo:
+                                    sdo_q, sdo_pu = remaining_layers[0]
+                                else:
+                                    sdo_q, sdo_pu = remaining_layers[-1]
+                            else:
+                                sdo_q, sdo_pu = 0.0, layer_pu
+                        sdo_tot = sdo_q * sdo_pu
 
                         rows.append({
                             "fecha": "Día 3",
-                            "desc": f"Venta tramo {i} ({metodo_tag})",
+                            "desc": f"Venta tramo {tramo_index} ({metodo_tag})",
                             "ent_q": None, "ent_pu": None, "ent_tot": None,
-                            "sal_q": int(q_take), "sal_pu": round(pu_take, 2), "sal_tot": round(tot_take, 2),
-                            "sdo_q": int(rq), "sdo_pu": round(rpu, 2), "sdo_tot": round(rv, 2),
+                            "sal_q": int(q_take), "sal_pu": round(layer_pu, 2), "sal_tot": round(tot_take, 2),
+                            "sdo_q": int(sdo_q), "sdo_pu": round(sdo_pu, 2), "sdo_tot": round(sdo_tot, 2),
                         })
 
                         if fifo:
                             frase_capa = (
                                 "En PEPS, primero salen las unidades más antiguas. "
-                                "Por eso este tramo consume unidades de las capas que entraron primero."
+                                "Por eso este tramo consume unidades de la capa que entró primero."
                             )
                         else:
                             frase_capa = (
                                 "En UEPS, primero salen las unidades más recientes. "
-                                "Por eso este tramo consume unidades de las capas que entraron de último."
+                                "Por eso este tramo consume unidades de la capa que entró de último."
                             )
 
                         script.append({
-                            "title": f"Paso 3 · Venta (tramo {i}) — {metodo_tag}",
+                            "title": f"Paso 3 · Venta (tramo {tramo_index}) — {metodo_tag}",
                             "text": (
-                                f"En este tramo sacamos {int(q_take)} unidades de la capa con costo "
-                                f"{_fmt_money(pu_take)}. El costo del tramo es {int(q_take)} × "
-                                f"{_fmt_money(pu_take)} = {_fmt_money(tot_take)}.\n\n"
+                                f"En este tramo sacamos {int(q_take)} unidades de una capa valorada a "
+                                f"{_fmt_money(layer_pu)}. El costo del tramo es {int(q_take)} × "
+                                f"{_fmt_money(layer_pu)} = {_fmt_money(tot_take)}.\n\n"
                                 f"{frase_capa}\n"
-                                f"Después de este tramo, el SALDO queda en {int(rq)} unidades con un valor "
-                                f"total de {_fmt_money(rv)}. El costo unitario promedio del saldo "
-                                f"(a modo de referencia) es {_fmt_money(rpu)}, pero recuerda que en PEPS/UEPS "
-                                f"seguimos trabajando por capas, no promediando todas las entradas."
+                                f"En la columna SALDO de esta fila mostramos la capa que queda activa después del tramo: "
+                                f"{int(sdo_q)} unidades a {_fmt_money(sdo_pu)}. "
+                                f"Observa que en {metodo_tag} trabajamos por capas, no con un único costo promedio "
+                                f"del inventario."
                             ),
                             "actions": [
                                 {"row": acc_row, "cell": "sal_q", "money": False, "val": int(q_take)},
-                                {"row": acc_row, "cell": "sal_pu", "money": True,  "val": round(pu_take, 2)},
+                                {"row": acc_row, "cell": "sal_pu", "money": True,  "val": round(layer_pu, 2)},
                                 {"row": acc_row, "cell": "sal_tot", "money": True, "val": round(tot_take, 2)},
-                                {"row": acc_row, "cell": "sdo_q", "money": False, "val": int(rq)},
-                                {"row": acc_row, "cell": "sdo_pu", "money": True, "val": round(rpu, 2)},
-                                {"row": acc_row, "cell": "sdo_tot", "money": True, "val": round(rv, 2)},
+                                {"row": acc_row, "cell": "sdo_q", "money": False, "val": int(sdo_q)},
+                                {"row": acc_row, "cell": "sdo_pu", "money": True, "val": round(sdo_pu, 2)},
+                                {"row": acc_row, "cell": "sdo_tot", "money": True, "val": round(sdo_tot, 2)},
                             ]
                         })
-                        acc_row += 1
 
-                    # Actualizamos la estructura de capas final tras TODA la venta
-                    layers = layers_after
+                        tramo_index += 1
+                        acc_row += 1
 
             else:
                 # No hay venta o no hay saldo
