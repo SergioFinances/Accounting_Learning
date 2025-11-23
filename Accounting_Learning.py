@@ -5309,23 +5309,19 @@ def page_level3(username):
                     return str(resp)
                 except Exception as e:
                     msg = str(e)
-                    # Detectar rate-limit explícito
-                    if "429" in msg or "rate-limited" in msg.lower() or "rate limit" in msg.lower() or "rate" in msg.lower():
+                    if "429" in msg or "rate-limited" in msg.lower() or "rate limit" in msg.lower():
                         st.session_state["n3_ai_rate_limited"] = True
-                        # devolvemos default (silencioso) para activar fallbacks
                         return default
-                    # Otros errores temporales → backoff breve y reintentar
                     time.sleep(min(base_sleep * (2 ** t), 4.0))
                     continue
             return default
 
         def q5_scenario():
             """
-            Escenario de Q5 ajustado para que:
-            - Todos los costos unitarios sean enteros.
-            - El promedio después de cada operación también sea entero.
-            - Devolución en compras se valore al costo de la compra.
-            - Devolución en ventas se valore al costo de la venta (PP).
+            Escenario de Q5:
+            - Devolución en compras al costo de la compra.
+            - Devolución en ventas al costo de la venta (PP).
+            - Números ajustados para que los promedios sean 'bonitos'.
             """
             return {
                 "inv0_u":   80,    # Día 1: unidades iniciales
@@ -5349,13 +5345,13 @@ def page_level3(username):
         @st.cache_data(show_spinner=False)
         def build_expected_rows_q5_pp(sc: dict, sig: str):
             """
-            Construye las filas esperadas del Kardex de Q5 (Promedio Ponderado) con la lógica:
-            - Día 1: saldo inicial.
-            - Día 2: compra → se recalcula el promedio.
-            - Día 3: venta → CMV al promedio vigente.
-            - Día 4: devolución en compras → salida al costo de la compra (comp1_pu).
-            - Día 5: devolución en ventas → reingreso al costo de la venta (promedio usado en D3).
-            Todo está parametrizado para evitar costos unitarios con decimales.
+            Kardex esperado Q5 (Promedio Ponderado):
+
+            D1: saldo inicial
+            D2: compra → promedio
+            D3: venta → CMV al promedio vigente
+            D4: devolución en compra → salida al costo de la compra (comp1_pu)
+            D5: devolución en venta → reingreso al costo de la venta (promedio usado en D3)
             """
             inv0_u_ex  = sc["inv0_u"]
             inv0_pu_ex = sc["inv0_pu"]
@@ -5366,7 +5362,7 @@ def page_level3(username):
             dev_venta_u= sc["dev_venta"]
 
             rows = []
-            sale_unit_cost = None  # costo unitario de la venta (para la devolución de ventas)
+            sale_unit_cost = None  # costo unitario de la venta (para D5)
 
             # Día 1: Saldo inicial
             layers = [[float(inv0_u_ex), float(inv0_pu_ex)]]
@@ -5378,7 +5374,7 @@ def page_level3(username):
                 "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
             })
 
-            # Día 2: Compra 1 (promedio ponderado)
+            # Día 2: Compra 1 → promedio
             ent_tot = comp1_u * comp1_pu
             q_new = s_q + comp1_u
             v_new = s_v + ent_tot
@@ -5392,10 +5388,10 @@ def page_level3(username):
                 "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
             })
 
-            # Día 3: Venta (usa promedio vigente)
+            # Día 3: Venta al promedio vigente
             sale_q  = min(venta_ex_u, s_q)
             sale_pu = layers[0][1] if layers else 0.0
-            sale_unit_cost = sale_pu  # lo usaremos para la devolución en ventas
+            sale_unit_cost = sale_pu
             sale_tot = sale_q * sale_pu
             q2 = s_q - sale_q
             v2 = s_v - sale_tot
@@ -5409,7 +5405,7 @@ def page_level3(username):
                 "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
             })
 
-            # Día 4: Devolución de compra (salida al costo de la compra comp1_pu)
+            # Día 4: Devolución de compra al costo de la compra (comp1_pu)
             take_q  = min(dev_comp_u, s_q)
             take_pu = comp1_pu
             take_val = take_q * take_pu
@@ -5425,7 +5421,7 @@ def page_level3(username):
                 "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
             })
 
-            # Día 5: Devolución de venta (reingreso al costo de la venta)
+            # Día 5: Devolución de venta al costo de la venta
             in_q  = dev_venta_u
             in_pu = sale_unit_cost if sale_unit_cost is not None else s_p
             in_val = in_q * in_pu
@@ -5438,11 +5434,12 @@ def page_level3(username):
                 "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
                 "Saldo_cant": q5, "Saldo_pu": round(p5, 2), "Saldo_total": round(v5, 2)
             })
+
             return rows
 
         @st.cache_data(show_spinner=False)
         def blank_df_for_editor(sig: str, expected_rows: list) -> _pd.DataFrame:
-            """Devuelve un DF vacío (sin None) según las filas esperadas (cacheado por firma)."""
+            """Devuelve un DF vacío según las filas esperadas (cacheado por firma)."""
             def _blank_like(r):
                 return {
                     "Fecha": r["Fecha"], "Descripción": r["Descripción"],
@@ -5453,7 +5450,7 @@ def page_level3(username):
             return _pd.DataFrame([_blank_like(r) for r in expected_rows])
 
         # =========================
-        # Q1–Q3: Selección múltiple + Q4 abierta + Q5 ejercicio
+        # Q1–Q3 + Q4 abierta + Q5 ejercicio
         # =========================
         with st.form("n3_eval_form_mcq"):
             st.markdown("### Preguntas de selección múltiple")
@@ -5501,15 +5498,11 @@ def page_level3(username):
                 key="n3_q4"
             )
 
-            # Solo feedback de IA para Q4
             ask_ai_q4 = st.checkbox("💬 Pedir feedback SOLO para la pregunta 4 (opcional)", key="n3_eval_ai_q4", value=False)
 
             st.markdown("### Ejercicio tipo práctica (Promedio Ponderado)")
             st.caption("**Q5**: Completa el KARDEX D1–D5. Tabla completamente en blanco. **Método: Promedio Ponderado**.")
 
-            # =========================
-            # Descripción del escenario
-            # =========================
             _sc = q5_scenario()
             _sig = _scenario_signature(_sc)
 
@@ -5529,10 +5522,7 @@ def page_level3(username):
     """
             )
 
-            # Filas esperadas (para validar luego) — cacheadas por firma
             expected_rows_q5 = build_expected_rows_q5_pp(_sc, _sig)
-
-            # DF vacío para el editor — cacheado por firma
             df_q5_blank = blank_df_for_editor(_sig, expected_rows_q5)
 
             tail_col_config = {
@@ -5555,7 +5545,7 @@ def page_level3(username):
                 num_rows="fixed",
                 column_config=tail_col_config,
                 hide_index=True,
-                key="n3_q5_editor_v3"   # clave nueva para evitar reciclar valores
+                key="n3_q5_editor_v3"
             )
 
             submitted = st.form_submit_button("🧪 Enviar evaluación")
@@ -5574,7 +5564,7 @@ def page_level3(username):
             q2_ok = (answers["n3_q2"] == correct["n3_q2"])
             q3_ok = (answers["n3_q3"] == correct["n3_q3"])
 
-            # Q4 abierta con IA (robusto y on-topic)
+            # ---- Q4 abierta con IA ----
             def grade_open_q4(text: str):
                 prompt = (
                     "Evalúa SOLO sobre devoluciones y coherencia con el método (PP/PEPS/UEPS).\n"
@@ -5586,7 +5576,6 @@ def page_level3(username):
                     f"RESPUESTA:\n{text}"
                 )
 
-                # limpiar flag rate-limit y pedir IA de forma segura
                 st.session_state.pop("n3_ai_rate_limited", None)
                 raw = safe_ia_feedback(prompt, default="")
                 sraw = str(raw or "")
@@ -5594,12 +5583,10 @@ def page_level3(username):
                 score1 = 1 if first.upper().endswith("1") else 0
                 fb = "\n".join(sraw.strip().splitlines()[1:]).strip()
 
-                # fallback pedagógico si el modelo no devolvió nada útil o hubo rate-limit
                 rate_limited = bool(st.session_state.get("n3_ai_rate_limited", False))
                 if not fb or rate_limited:
                     fb = _on_topic_fallback_q4()
 
-                # si el estudiante se desvió a ecuación/pasivos/patrimonio → fuerza 0 + feedback correcto
                 banned_student = ["activo = pasivo + patrimonio", "ecuación contable", "pasivo", "patrimonio"]
                 if any(b in (text or "").lower() for b in banned_student):
                     score1 = 0
@@ -5608,15 +5595,13 @@ def page_level3(username):
                 return score1, fb
 
             q4_score1, q4_fb = grade_open_q4(q4_text or "")
-
-            # Solo mostramos feedback IA para Q4 si el usuario lo pidió
             if ask_ai_q4:
                 q4_fb = _sanitize_on_topic_q4(q4_fb)
             else:
                 q4_fb = ""
 
-            # Q5 validación (tolerancia)
-            TOL = 10
+            # ---- Q5 validación corregida ----
+            TOL = 0.5
             num_keys = [
                 "Entrada_cant","Entrada_pu","Entrada_total",
                 "Salida_cant","Salida_pu","Salida_total",
@@ -5625,13 +5610,15 @@ def page_level3(username):
 
             def _to_float(x):
                 try:
-                    if x in ("", None): return None
+                    if x in ("", None):
+                        return None
                     return float(x)
                 except:
                     return None
 
             def _near(a, b, tol=TOL):
-                if a is None or b in ("", None): return False
+                if a is None or b in ("", None):
+                    return False
                 try:
                     return abs(float(a) - float(b)) <= tol
                 except:
@@ -5645,8 +5632,14 @@ def page_level3(username):
                 for k in num_keys:
                     exp_val = exp_row[k]
                     usr_val = _to_float(user_row.get(k, ""))
-                    ok_cells.append(True if exp_val == "" else _near(usr_val, exp_val))
+
+                    # 🔑 SI NO HAY VALOR ESPERADO (None o ""), NO SE EXIGE
+                    if exp_val in (None, ""):
+                        ok_cells.append(True)
+                    else:
+                        ok_cells.append(_near(usr_val, exp_val))
                 ok_rows.append(all(ok_cells))
+
             q5_ok = all(ok_rows)
 
             total_hits = int(q1_ok) + int(q2_ok) + int(q3_ok) + int(q4_score1) + int(q5_ok)
@@ -5659,10 +5652,11 @@ def page_level3(username):
 
             st.markdown("### Resultado")
             cA, cB = st.columns(2)
-            with cA: st.metric("Aciertos", f"{total_hits}/5")
-            with cB: st.metric("Estado", "APROBADO ✅" if passed else "NO APROBADO ❌")
+            with cA:
+                st.metric("Aciertos", f"{total_hits}/5")
+            with cB:
+                st.metric("Estado", "APROBADO ✅" if passed else "NO APROBADO ❌")
 
-            # Solo DETALLE en este expander
             with st.expander("Detalle de corrección"):
                 st.write(f"**Q1:** {'✅' if q1_ok else '❌'}")
                 st.write(f"**Q2:** {'✅' if q2_ok else '❌'}")
