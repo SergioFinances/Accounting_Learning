@@ -6004,21 +6004,16 @@ def page_level4(username):
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
             else:
-                rows.append({
-                    "Fecha":"Día 2", "Descripción":"Saldo (día 1)",
-                    "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
-                    "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
-                })
+                # PEPS / UEPS: agregamos una nueva capa sin fila "Saldo (día 1)"
                 ent_tot = c1_u * c1_pu
                 layers.append([float(c1_u), float(c1_pu)])  # nueva capa
+                s_q, s_pu, s_v = _sum_layers(layers)
                 rows.append({
                     "Fecha":"Día 2", "Descripción":"Compra",
                     "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu,2), "Entrada_total": round(ent_tot,2),
                     "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
-                    "Saldo_cant": c1_u, "Saldo_pu": round(c1_pu,2), "Saldo_total": round(ent_tot,2)
+                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
-                s_q, s_pu, s_v = _sum_layers(layers)
 
             # --- Día 3: venta
             if v_u > 0 and s_q > 0:
@@ -6184,6 +6179,7 @@ def page_level4(username):
 
             compras_netas       = compras_brutas - dev_compras_valor
 
+            # CMV neto: se descuenta explícitamente el costo de la devolución en ventas
             cmv_neto            = cmv_bruto - costo_dev_venta
             utilidad_bruta      = ventas_netas - cmv_neto
 
@@ -6297,7 +6293,9 @@ def page_level4(username):
             <tr><td>(-) Devoluciones en ventas</td><td id="pyg_dv" class="muted"></td></tr>
             <tr><td><b>Ventas netas</b></td><td id="pyg_vn" class="muted"></td></tr>
 
-            <tr><td><b>CMV</b></td><td id="pyg_cmvn" class="muted"></td></tr>
+            <tr><td>CMV bruto</td><td id="pyg_cmvb" class="muted"></td></tr>
+            <tr><td>(-) Costo devolución en ventas</td><td id="pyg_cdv" class="muted"></td></tr>
+            <tr><td><b>CMV neto</b></td><td id="pyg_cmvn" class="muted"></td></tr>
 
             <tr><td><b>Utilidad bruta</b></td><td id="pyg_ub" class="muted"></td></tr>
             <tr><td>Gastos operativos</td><td id="pyg_go" class="muted"></td></tr>
@@ -6369,7 +6367,7 @@ def page_level4(username):
         }
 
         function clearPYG(){
-            ["vb","dv","vn","cmvn","ub","go","ro","oi","oe","uai","imp","un"].forEach(id=>{
+            ["vb","dv","vn","cmvb","cdv","cmvn","ub","go","ro","oi","oe","uai","imp","un"].forEach(id=>{
             const el = document.getElementById("pyg_"+id);
             el.textContent = ""; el.classList.add("muted");
             });
@@ -6429,6 +6427,8 @@ def page_level4(username):
             const vb = pesos(pyg.ventas_brutas);
             const dv = pesos(pyg.dev_ventas_brutas);
             const vn = pesos(pyg.ventas_netas);
+            const cmvb = pesos(pyg.cmv_bruto);
+            const cdv = pesos(pyg.costo_dev_venta);
             const cmvn = pesos(pyg.cmv_neto);
             const ub = pesos(pyg.utilidad_bruta);
             const go = pesos(pyg.gastos_op);
@@ -6449,9 +6449,11 @@ def page_level4(username):
             ["dv", pyg.dev_ventas_brutas, `A continuación, restamos las devoluciones en ventas. Volvieron ${dvu} unidades, valorizadas al mismo precio de venta ${pu}. Esto equivale a ${dv}.`],
             ["vn", pyg.ventas_netas, `Las ventas netas resultan de ventas brutas menos devoluciones en ventas. Obtenemos ${vn}.`],
 
-            ["cmvn", pyg.cmv_neto, `Ahora calculamos el costo de la mercadería vendida. Este CMV se obtiene desde el KARDEX según el método de inventario y ya descuenta el costo de las unidades devueltas por los clientes. Su valor es ${cmvn}.`],
+            ["cmvb", pyg.cmv_bruto, `Ahora pasamos al costo de la mercadería vendida bruto. Este valor proviene directamente del KARDEX según el método de inventario aplicado. Su valor es ${cmvb}.`],
+            ["cdv", pyg.costo_dev_venta, `Luego reconocemos el costo de las unidades devueltas por los clientes. Ese costo se resta del CMV bruto y asciende a ${cdv}.`],
+            ["cmvn", pyg.cmv_neto, `El costo de la mercadería vendida neto resulta de restar el costo de las devoluciones en ventas al CMV bruto. Obtenemos un CMV neto de ${cmvn}.`],
 
-            ["ub", pyg.utilidad_bruta, `La utilidad bruta es ventas netas menos el costo de la mercadería vendida. Esto nos da ${ub}.`],
+            ["ub", pyg.utilidad_bruta, `La utilidad bruta es ventas netas menos el costo de la mercadería vendida neto. Esto nos da ${ub}.`],
             ["go", pyg.gastos_op, `Luego restamos los gastos operativos parametrizados. En total suman ${go}.`],
             ["ro", pyg.resultado_operativo, `El resultado operativo es la utilidad bruta menos los gastos operativos. Obtenemos ${ro}.`],
 
@@ -6518,6 +6520,7 @@ def page_level4(username):
             "gastos_op": sum(v for _, v in esc["gastos_operativos"]),
             "otros_ingresos": sum(v for _, v in esc["otros_ingresos"]),
             "otros_egresos": sum(v for _, v in esc["otros_egresos"]),
+
             "tasa": esc["tasa_impuesto"],
         }, ensure_ascii=False)
 
