@@ -4598,7 +4598,6 @@ def page_level3(username):
 
         components.html(html_demo, height=360, scrolling=True)
 
-
     # =========================================
     # TAB 2 · PRÁCTICA IA (KARDEX DÍAS 1–5)
     # =========================================
@@ -4705,6 +4704,11 @@ def page_level3(username):
             return q, pu, v
 
         def _consume_layers_detail(layers, qty_out, fifo=True):
+            """
+            Devuelve:
+            - sale_details: [(q_take, pu, total), ...]
+            - final_layers: capas remanentes en orden FIFO natural
+            """
             order = layers[:] if fifo else layers[::-1]
             remaining = qty_out
             sale_details = []
@@ -4737,168 +4741,363 @@ def page_level3(username):
             Saldo_cant,   Saldo_pu,   Saldo_total
 
             Secuencia:
-            D1: Saldo inicial
-            D2: (PP: Compra 1 promediada) | (PEPS/UEPS: Saldo día 1 + Compra 1 como capa)
-            D3: Venta (PP una fila; PEPS/UEPS por tramos)
-            D4: Devolución de compra (reduce inventario)
-            D5: Devolución de venta (reingreso al costo de la venta original)
+            D1: Saldo inicial (como ENTRADA + SALDO).
+            D2: Compra 1
+                - PP: saldo con promedio.
+                - PEPS/UEPS: saldo muestra SOLO la capa comprada (sin promediar).
+            D3: Venta
+                - PP: una fila.
+                - PEPS/UEPS: tramos por capa; si se agota una capa, el saldo de esa fila muestra 0 a ese costo.
+            D4: Devolución de compra
+                - PP: al costo de la compra original (comp1_pu).
+                - PEPS/UEPS: descuenta capas según el método.
+            D5: Devolución de venta
+                - PP: reingreso al costo de la venta original (sale_unit_cost).
+                - PEPS/UEPS: reingreso al mismo costo de salida, fusionando capa y mostrando SOLO esa capa en el saldo.
             """
             rows = []
+            sale_unit_cost = None  # para devolver las ventas al mismo costo
 
-            # Costo unitario de la venta (para devolver al mismo costo)
-            sale_unit_cost = None
+            # --------------------------
+            # Día 1 · Saldo inicial (ENTRADA + SALDO)
+            # --------------------------
+            if inv0_u_ex > 0:
+                ent_q1 = int(inv0_u_ex)
+                ent_pu1 = float(inv0_pu_ex)
+                ent_tot1 = ent_q1 * ent_pu1
+                layers = [[float(ent_q1), ent_pu1]]
+            else:
+                ent_q1 = ent_pu1 = ent_tot1 = None
+                layers = []
 
-            # Día 1
-            layers = [[float(inv0_u_ex), float(inv0_pu_ex)]] if inv0_u_ex > 0 else []
             s_q, s_p, s_v = _sum_layers(layers)
+
             rows.append({
                 "Fecha": "Día 1", "Descripción": "Saldo inicial",
-                "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                "Entrada_cant": ent_q1,
+                "Entrada_pu": round(ent_pu1, 2) if ent_pu1 is not None else None,
+                "Entrada_total": round(ent_tot1, 2) if ent_tot1 is not None else None,
                 "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
+                "Saldo_cant": s_q,
+                "Saldo_pu": round(s_p, 2),
+                "Saldo_total": round(s_v, 2)
             })
 
-            # Día 2
+            # --------------------------
+            # Día 2 · Compra 1 (SIN "Saldo día 1")
+            # --------------------------
+            ent_tot2 = comp1_u * comp1_pu
             if method_name == "Promedio Ponderado":
-                ent_tot = comp1_u * comp1_pu
+                # PP: se promedia con el saldo anterior
                 q_new = s_q + comp1_u
-                v_new = s_v + ent_tot
+                v_new = s_v + ent_tot2
                 p_new = (v_new / q_new) if q_new > 0 else 0.0
                 layers = [[q_new, p_new]]
                 s_q, s_p, s_v = _sum_layers(layers)
+
                 rows.append({
                     "Fecha": "Día 2", "Descripción": "Compra 1",
-                    "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu, 2), "Entrada_total": round(ent_tot, 2),
+                    "Entrada_cant": comp1_u,
+                    "Entrada_pu": round(comp1_pu, 2),
+                    "Entrada_total": round(ent_tot2, 2),
                     "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
+                    "Saldo_cant": s_q,
+                    "Saldo_pu": round(s_p, 2),
+                    "Saldo_total": round(s_v, 2)
                 })
             else:
-                rows.append({
-                    "Fecha": "Día 2", "Descripción": "Saldo (día 1)",
-                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
-                })
-                ent_tot = comp1_u * comp1_pu
-                layers.append([float(comp1_u), float(comp1_pu)])
+                # PEPS / UEPS: la fila muestra SOLO la capa de la compra
+                if comp1_u > 0:
+                    layers.append([float(comp1_u), float(comp1_pu)])
+
                 rows.append({
                     "Fecha": "Día 2", "Descripción": "Compra 1",
-                    "Entrada_cant": comp1_u, "Entrada_pu": round(comp1_pu, 2), "Entrada_total": round(ent_tot, 2),
+                    "Entrada_cant": comp1_u,
+                    "Entrada_pu": round(comp1_pu, 2),
+                    "Entrada_total": round(ent_tot2, 2),
                     "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": comp1_u, "Saldo_pu": round(comp1_pu, 2), "Saldo_total": round(ent_tot, 2)
+                    "Saldo_cant": comp1_u,
+                    "Saldo_pu": round(comp1_pu, 2),
+                    "Saldo_total": round(ent_tot2, 2)
                 })
+                # Estado real para siguientes días (todas las capas)
                 s_q, s_p, s_v = _sum_layers(layers)
 
-            # Día 3: Venta
+            # --------------------------
+            # Día 3 · Venta
+            # --------------------------
             if method_name == "Promedio Ponderado":
                 if s_q > 0 and venta_ex_u > 0:
                     sale_q = min(venta_ex_u, s_q)
                     sale_pu = layers[0][1] if layers else 0.0
                     sale_unit_cost = sale_pu
                     sale_tot = sale_q * sale_pu
+
                     q2 = s_q - sale_q
                     v2 = s_v - sale_tot
                     p2 = (v2 / q2) if q2 > 0 else 0.0
                     layers = [[q2, p2]] if q2 > 0 else []
                     s_q, s_p, s_v = _sum_layers(layers)
+
                     rows.append({
                         "Fecha": "Día 3", "Descripción": "Venta",
                         "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                        "Salida_cant": sale_q, "Salida_pu": round(sale_pu, 2), "Salida_total": round(sale_tot, 2),
-                        "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
+                        "Salida_cant": sale_q,
+                        "Salida_pu": round(sale_pu, 2),
+                        "Salida_total": round(sale_tot, 2),
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
                     })
                 else:
                     rows.append({
                         "Fecha": "Día 3", "Descripción": "Venta",
                         "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
                         "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                        "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
                     })
             else:
+                # PEPS / UEPS: venta por tramos, sin promediar
                 fifo = (method_name == "PEPS (FIFO)")
-                sale_details, layers_after = _consume_layers_detail(layers, venta_ex_u, fifo=fifo)
-                total_sold_qty = sum(q for q, _, _ in sale_details)
-                total_sold_cost = sum(t for _, _, t in sale_details)
-                sale_unit_cost = (total_sold_cost / total_sold_qty) if total_sold_qty > 0 else None
-
-                running_layers = [l[:] for l in layers]
                 metodo_tag = "PEPS" if fifo else "UEPS"
-                for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
-                    _, running_layers = _consume_layers_detail(running_layers, q_take, fifo=fifo)
-                    rq, rpu, rv = _sum_layers(running_layers)
-                    rows.append({
-                        "Fecha": "Día 3", "Descripción": f"Venta tramo {i} ({metodo_tag})",
-                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                        "Salida_cant": q_take, "Salida_pu": round(pu_take, 2), "Salida_total": round(tot_take, 2),
-                        "Saldo_cant": rq, "Saldo_pu": round(rpu, 2), "Saldo_total": round(rv, 2)
-                    })
-                layers = layers_after
-                s_q, s_p, s_v = _sum_layers(layers)
 
-            # Día 4: Devolución de compra
-            if method_name == "Promedio Ponderado":
-                take_q = min(dev_comp_u, s_q)
-                take_pu = s_p
-                take_val = take_q * take_pu
-                q4 = max(s_q - take_q, 0)
-                v4 = max(s_v - take_val, 0.0)
-                p4 = (v4 / q4) if q4 > 0 else 0.0
-                layers = [[q4, p4]] if q4 > 0 else []
-                s_q, s_p, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 4", "Descripción": "Devolución de compra",
-                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                    "Salida_cant": take_q, "Salida_pu": round(take_pu, 2), "Salida_total": round(take_val, 2),
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
-                })
-            else:
-                fifo = (method_name == "PEPS (FIFO)")
-                sale_details, layers_after = _consume_layers_detail(layers, dev_comp_u, fifo=fifo)
-                take_q = sum(q for q, _, _ in sale_details)
-                take_val = sum(t for _, _, t in sale_details)
-                take_pu = (take_val / take_q) if take_q > 0 else 0.0
-                layers = layers_after
-                s_q, s_p, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 4", "Descripción": "Devolución de compra",
-                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                    "Salida_cant": take_q, "Salida_pu": round(take_pu, 2), "Salida_total": round(take_val, 2),
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
-                })
+                total_inv = sum(q for q, _ in layers)
+                if venta_ex_u > 0 and total_inv > 0:
+                    layers_for_state = [[float(q), float(p)] for (q, p) in layers]
+                    sale_remaining = float(venta_ex_u)
+                    tramo_index = 1
+                    sale_details = []
 
-            # Día 5: Devolución de venta (reingreso al costo de la venta)
-            if method_name == "Promedio Ponderado":
-                in_q = dev_venta_u
-                in_pu = sale_unit_cost if sale_unit_cost is not None else s_p
-                in_val = in_q * in_pu
-                q5 = s_q + in_q
-                v5 = s_v + in_val
-                p5 = (v5 / q5) if q5 > 0 else 0.0
-                layers = [[q5, p5]] if q5 > 0 else []
-                s_q, s_p, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
-                    "Entrada_cant": in_q, "Entrada_pu": round(in_pu, 2), "Entrada_total": round(in_val, 2),
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": s_q, "Saldo_pu": round(s_p, 2), "Saldo_total": round(s_v, 2)
-                })
-            else:
-                fifo = (method_name == "PEPS (FIFO)")
-                in_q = dev_venta_u
-                base_pu = sale_unit_cost if sale_unit_cost is not None else s_p
-                in_pu = base_pu
-                in_val = in_q * in_pu
-                if fifo:
-                    layers = [[float(in_q), float(in_pu)]] + layers
+                    while sale_remaining > 0 and any(q > 0 for q, _ in layers_for_state):
+                        # Capa según método
+                        if fifo:
+                            idx_layer = next(i for i, (q, _) in enumerate(layers_for_state) if q > 0)
+                        else:
+                            idx_layer = max(i for i, (q, _) in enumerate(layers_for_state) if q > 0)
+
+                        layer_q, layer_pu = layers_for_state[idx_layer]
+                        q_take = min(layer_q, sale_remaining)
+                        tot_take = q_take * layer_pu
+                        sale_remaining -= q_take
+
+                        # Actualizar capa
+                        q_rem = layer_q - q_take
+                        layers_for_state[idx_layer][0] = q_rem
+
+                        # Guardar detalle para costo de devolución de venta
+                        sale_details.append((q_take, layer_pu, tot_take))
+
+                        # SALDO que se muestra: SOLO la capa de este tramo
+                        if q_rem > 0:
+                            sdo_q = q_rem
+                            sdo_pu = layer_pu
+                        else:
+                            sdo_q = 0.0
+                            sdo_pu = layer_pu
+                        sdo_tot = sdo_q * sdo_pu
+
+                        rows.append({
+                            "Fecha": "Día 3",
+                            "Descripción": f"Venta tramo {tramo_index} ({metodo_tag})",
+                            "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                            "Salida_cant": int(q_take),
+                            "Salida_pu": round(layer_pu, 2),
+                            "Salida_total": round(tot_take, 2),
+                            "Saldo_cant": int(sdo_q),
+                            "Saldo_pu": round(sdo_pu, 2),
+                            "Saldo_total": round(sdo_tot, 2)
+                        })
+
+                        tramo_index += 1
+
+                    # Costo unitario para la devolución de venta:
+                    if sale_details:
+                        if fifo:
+                            # PEPS: costo de la primera capa vendida
+                            sale_unit_cost = sale_details[0][1]
+                        else:
+                            # UEPS: costo de la última capa vendida
+                            sale_unit_cost = sale_details[-1][1]
+
+                    # Capas remanentes reales para días 4–5
+                    layers = [(q, p) for (q, p) in layers_for_state if q > 0]
+                    s_q, s_p, s_v = _sum_layers(layers)
                 else:
-                    layers = layers + [[float(in_q), float(in_pu)]]
-                s_q2, s_p2, s_v2 = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
-                    "Entrada_cant": dev_venta_u, "Entrada_pu": round(in_pu, 2), "Entrada_total": round(in_val, 2),
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": s_q2, "Saldo_pu": round(s_p2, 2), "Saldo_total": round(s_v2, 2)
-                })
+                    rows.append({
+                        "Fecha": "Día 3",
+                        "Descripción": "Venta",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
+                    })
+
+            # --------------------------
+            # Día 4 · Devolución de compra
+            # --------------------------
+            if method_name == "Promedio Ponderado":
+                if dev_comp_u > 0 and s_q > 0:
+                    # Devolución al COSTO ORIGINAL de la compra 1 (no al promedio vigente)
+                    take_q = min(dev_comp_u, s_q)
+                    take_pu = float(comp1_pu)
+                    take_val = take_q * take_pu
+
+                    q4 = max(s_q - take_q, 0.0)
+                    v4 = max(s_v - take_val, 0.0)
+                    p4 = (v4 / q4) if q4 > 0 else 0.0
+                    layers = [[q4, p4]] if q4 > 0 else []
+                    s_q, s_p, s_v = _sum_layers(layers)
+
+                    rows.append({
+                        "Fecha": "Día 4", "Descripción": "Devolución de compra",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": take_q,
+                        "Salida_pu": round(take_pu, 2),
+                        "Salida_total": round(take_val, 2),
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
+                    })
+                else:
+                    rows.append({
+                        "Fecha": "Día 4", "Descripción": "Devolución de compra",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
+                    })
+            else:
+                # PEPS / UEPS: devolvemos siguiendo capas del método
+                if dev_comp_u > 0 and s_q > 0:
+                    fifo = (method_name == "PEPS (FIFO)")
+                    sale_details, layers_after = _consume_layers_detail(layers, dev_comp_u, fifo=fifo)
+                    take_q = sum(q for q, _, _ in sale_details)
+                    take_val = sum(t for _, _, t in sale_details)
+                    take_pu = (take_val / take_q) if take_q > 0 else 0.0
+                    layers = layers_after
+                    s_q, s_p, s_v = _sum_layers(layers)
+
+                    rows.append({
+                        "Fecha": "Día 4", "Descripción": "Devolución de compra",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": take_q,
+                        "Salida_pu": round(take_pu, 2),
+                        "Salida_total": round(take_val, 2),
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
+                    })
+                else:
+                    rows.append({
+                        "Fecha": "Día 4", "Descripción": "Devolución de compra",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
+                    })
+
+            # --------------------------
+            # Día 5 · Devolución de venta (reingreso)
+            # --------------------------
+            if method_name == "Promedio Ponderado":
+                if dev_venta_u > 0:
+                    in_q = dev_venta_u
+                    in_pu = sale_unit_cost if sale_unit_cost is not None else s_p
+                    in_val = in_q * in_pu
+
+                    q5 = s_q + in_q
+                    v5 = s_v + in_val
+                    p5 = (v5 / q5) if q5 > 0 else 0.0
+                    layers = [[q5, p5]] if q5 > 0 else []
+                    s_q, s_p, s_v = _sum_layers(layers)
+
+                    rows.append({
+                        "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
+                        "Entrada_cant": in_q,
+                        "Entrada_pu": round(in_pu, 2),
+                        "Entrada_total": round(in_val, 2),
+                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
+                    })
+                else:
+                    rows.append({
+                        "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
+                    })
+            else:
+                # PEPS / UEPS: reingresamos al costo de la venta original, a la capa correspondiente
+                if dev_venta_u > 0:
+                    fifo = (method_name == "PEPS (FIFO)")
+                    base_pu = sale_unit_cost if sale_unit_cost is not None else s_p
+                    in_q = dev_venta_u
+                    in_pu = base_pu
+                    in_val = in_q * in_pu
+
+                    # Fusionar con capa del mismo costo (sin promediar)
+                    eps = 1e-6
+                    layer_idx = None
+
+                    if fifo:
+                        # PEPS: buscamos desde el inicio
+                        for i, (q, p) in enumerate(layers):
+                            if abs(p - in_pu) < eps:
+                                layer_idx = i
+                                break
+                        if layer_idx is not None:
+                            layers[layer_idx][0] += in_q
+                        else:
+                            layers = [[float(in_q), float(in_pu)]] + layers
+                            layer_idx = 0
+                    else:
+                        # UEPS: buscamos desde el final
+                        for i in range(len(layers) - 1, -1, -1):
+                            q, p = layers[i]
+                            if abs(p - in_pu) < eps:
+                                layer_idx = i
+                                break
+                        if layer_idx is not None:
+                            layers[layer_idx][0] += in_q
+                        else:
+                            layers = layers + [[float(in_q), float(in_pu)]]
+                            layer_idx = len(layers) - 1
+
+                    # Capa asociada a la devolución (saldo que se muestra SOLO con esa capa)
+                    capa_q, capa_pu = layers[layer_idx]
+                    capa_tot = capa_q * capa_pu
+
+                    # Estado global (por si se usara después)
+                    s_q, s_p, s_v = _sum_layers(layers)
+
+                    rows.append({
+                        "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
+                        "Entrada_cant": in_q,
+                        "Entrada_pu": round(in_pu, 2),
+                        "Entrada_total": round(in_val, 2),
+                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                        "Saldo_cant": int(capa_q),
+                        "Saldo_pu": round(capa_pu, 2),
+                        "Saldo_total": round(capa_tot, 2)
+                    })
+                else:
+                    rows.append({
+                        "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
+                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
+                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
+                        "Saldo_cant": s_q,
+                        "Saldo_pu": round(s_p, 2),
+                        "Saldo_total": round(s_v, 2)
+                    })
 
             return rows
 
