@@ -65,7 +65,6 @@ client = OpenAI(
     api_key=OPENROUTER_API_KEY,
 )
 
-
 PRIMARY_MODEL  = "deepseek/deepseek-chat-v3.1:free"
 FALLBACK_MODEL = "openai/gpt-oss-20b:free"
 
@@ -6697,47 +6696,50 @@ def page_level4(username):
             st.rerun()
 
         # =========================
-        # Escenario visible (inputs)
+        # Escenario visible (SOLO LECTURA, el estudiante no lo edita)
         # =========================
         st.markdown("#### 🎯 Escenario del ejercicio")
+        ss = st.session_state
+
         colA, colB, colC = st.columns(3)
         with colA:
-            st.number_input("Día 1: inventario inicial (u)", min_value=0, step=1, key=K("inv0_u"))
-            st.number_input("Día 1: costo unitario inicial", min_value=0.0, step=0.1, key=K("inv0_pu"))
+            st.metric("Día 1: inventario inicial (u)", ss[K("inv0_u")])
+            st.metric("Día 1: costo unitario inicial", f"{ss[K('inv0_pu')]:.2f}")
         with colB:
-            st.number_input("Día 2: compra (u)", min_value=0, step=1, key=K("comp1_u"))
-            st.number_input("Día 2: costo unitario compra", min_value=0.0, step=0.1, key=K("comp1_pu"))
+            st.metric("Día 2: compra (u)", ss[K("comp1_u")])
+            st.metric("Día 2: costo unitario compra", f"{ss[K('comp1_pu')]:.2f}")
         with colC:
-            st.number_input("Día 3: venta (u)", min_value=0, step=1, key=K("venta_u"))
-            st.number_input("Precio de venta ($/u)", min_value=0.0, step=0.5, key=K("p_venta"))
+            st.metric("Día 3: venta (u)", ss[K("venta_u")])
+            st.metric("Precio de venta ($/u)", f"{ss[K('p_venta')]:.2f}")
 
         colD, colE, colF = st.columns(3)
         with colD:
-            st.number_input("Día 4: devolución en compra (u)", min_value=0, step=1, key=K("dev_comp_u"))
+            st.metric("Día 4: devolución en compra (u)", ss[K("dev_comp_u")])
         with colE:
-            st.number_input("Día 5: devolución en venta (u)", min_value=0, step=1, key=K("dev_vent_u"))
+            st.metric("Día 5: devolución en venta (u)", ss[K("dev_vent_u")])
         with colF:
-            st.slider("Tasa de impuesto (%)", min_value=0, max_value=50,
-                      value=int(st.session_state[K("tasa")]*100), step=1, key=K("tasa_pct"))
-        st.session_state[K("tasa")] = float(st.session_state[K("tasa_pct")]) / 100.0
+            tasa_pct = int(ss[K("tasa")] * 100)
+            st.metric("Tasa de impuesto (%)", f"{tasa_pct} %")
 
-        st.markdown("##### Gastos operativos (edita los tres ítems)")
+        st.markdown("##### Gastos operativos del período")
         g1, g2, g3 = st.columns(3)
         with g1:
-            st.text_input("Ítem 1", key=K("go_1_name"))
-            st.number_input("Valor 1", min_value=0.0, step=10.0, key=K("go_1_val"))
+            st.write(f"**{ss[K('go_1_name')] or 'Gasto 1'}**")
+            st.write(f"{ss[K('go_1_val')]:,.2f}")
         with g2:
-            st.text_input("Ítem 2", key=K("go_2_name"))
-            st.number_input("Valor 2", min_value=0.0, step=10.0, key=K("go_2_val"))
+            st.write(f"**{ss[K('go_2_name')] or 'Gasto 2'}**")
+            st.write(f"{ss[K('go_2_val')]:,.2f}")
         with g3:
-            st.text_input("Ítem 3", key=K("go_3_name"))
-            st.number_input("Valor 3", min_value=0.0, step=10.0, key=K("go_3_val"))
+            st.write(f"**{ss[K('go_3_name')] or 'Gasto 3'}**")
+            st.write(f"{ss[K('go_3_val')]:,.2f}")
 
         o1, o2 = st.columns(2)
         with o1:
-            st.number_input("Otros ingresos (total)", min_value=0.0, step=10.0, key=K("otros_ing"))
+            st.write("**Otros ingresos (total)**")
+            st.write(f"{ss[K('otros_ing')]:,.2f}")
         with o2:
-            st.number_input("Otros egresos (total)", min_value=0.0, step=10.0, key=K("otros_egr"))
+            st.write("**Otros egresos (total)**")
+            st.write(f"{ss[K('otros_egr')]:,.2f}")
 
         # =========================
         # Helpers comunes (inventario)
@@ -6986,7 +6988,7 @@ def page_level4(username):
                 })
 
             # =========================
-            # Métricas PyG del periodo
+            # Métricas PyG del periodo (MISMA ESTRUCTURA QUE EJEMPLO GUIADO)
             # =========================
             ventas_brutas       = esc_loc["venta_u"] * esc_loc["p_venta"]
             dev_ventas_brutas   = esc_loc["dev_vent"] * esc_loc["p_venta"]
