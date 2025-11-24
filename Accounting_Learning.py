@@ -6660,18 +6660,16 @@ def page_level4(username):
             comp1_pu = round(inv0_pu + random.uniform(-1.0, 2.0), 2)
             comp1_pu = max(1.0, comp1_pu)
 
-            # Para PEPS/UEPS forzamos que el costo de la compra sea distinto
-            # al costo inicial, para que el método de valoración tenga impacto.
+            # Para PEPS/UEPS forzamos diferencia de costos entre capas
             if metodo_sel in ["PEPS (FIFO)", "UEPS (LIFO)"]:
                 if abs(comp1_pu - inv0_pu) < 0.5:
-                    # Aseguramos una diferencia mínima de 0.5
                     delta = random.choice([-1.0, 1.0]) * random.uniform(0.5, 1.5)
                     comp1_pu = max(1.0, round(inv0_pu + delta, 2))
 
-            # Venta hasta existencia razonable (dejamos algo para que haya saldo final)
+            # Venta hasta existencia razonable
             total_disp = inv0_u + comp1_u
             venta_u = random.choice([20, 40, 60, 80, 100])
-            venta_u = min(venta_u, max(10, total_disp - 10))  # que no se lleve TODO el inventario
+            venta_u = min(venta_u, max(10, total_disp - 10))
             venta_u = max(0, venta_u)
 
             # Precio de venta SIEMPRE mayor que el costo
@@ -6705,9 +6703,6 @@ def page_level4(username):
             ss[K("otros_egr")] = otros_egr
             ss[K("tasa")] = tasa
 
-        def _n4_request_random():
-            st.session_state[K("rand_req")] = True
-
         _n4_ensure_default_state()
 
         # ====== CONTROLES SUPERIORES: Método + Aleatorio ======
@@ -6721,16 +6716,10 @@ def page_level4(username):
         with ctop2:
             st.button(
                 "🎲 Generar escenario aleatorio",
-                on_click=_n4_request_random,
+                on_click=_n4_randomize_scenario,   # ⬅️ ahora randomiza directo
                 key=K("rand_btn"),
                 help="Genera cantidades, costos y devoluciones coherentes con el método elegido.",
             )
-
-        # Si se pidió escenario aleatorio, lo generamos y recargamos
-        if st.session_state.get(K("rand_req"), False):
-            _n4_randomize_scenario()
-            st.session_state.pop(K("rand_req"), None)
-            st.rerun()
 
         # =========================
         # Escenario visible (inputs)
@@ -6880,10 +6869,6 @@ def page_level4(username):
         # Builder KARDEX + métricas PyG (misma lógica que TAB 2)
         # =========================
         def _n4_build_kardex_and_metrics(method_name: str):
-            """
-            Replica la lógica del Ejemplo Guiado (TAB 2) pero usando el escenario
-            parametrizado en esta pestaña (TAB 3).
-            """
             ss = st.session_state
             esc_loc = {
                 "inv0_u": ss[K("inv0_u")],
@@ -6926,17 +6911,25 @@ def page_level4(username):
             metodo = method_name
             fifo = True if "PEPS" in metodo else False if "UEPS" in metodo else None
 
-            # --- Día 1: saldo inicial
+            # --- Día 1: saldo inicial (entrada + saldo)
             rows = []
             layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
             s_q, s_pu, s_v = _sum_layers(layers)
+
+            if inv0_u > 0:
+                ent_q = inv0_u
+                ent_pu = inv0_pu
+                ent_tot = inv0_u * inv0_pu
+            else:
+                ent_q = ent_pu = ent_tot = None
+
             rows.append(
                 {
                     "Fecha": "Día 1",
                     "Descripción": "Saldo inicial",
-                    "Entrada_cant": None,
-                    "Entrada_pu": None,
-                    "Entrada_total": None,
+                    "Entrada_cant": ent_q,
+                    "Entrada_pu": None if ent_pu is None else round(ent_pu, 2),
+                    "Entrada_total": None if ent_tot is None else round(ent_tot, 2),
                     "Salida_cant": None,
                     "Salida_pu": None,
                     "Salida_total": None,
@@ -6970,7 +6963,6 @@ def page_level4(username):
                     }
                 )
             else:
-                # PEPS / UEPS: nueva capa, manteniendo capas separadas
                 ent_tot = c1_u * c1_pu
                 layers.append([float(c1_u), float(c1_pu)])
                 s_q, s_pu, s_v = _sum_layers(layers)
@@ -7240,7 +7232,6 @@ def page_level4(username):
 
             compras_netas = compras_brutas - dev_compras_valor
 
-            # CMV neto = CMV bruto – costo de devolución de ventas
             cmv_neto = cmv_bruto - costo_dev_venta
             utilidad_bruta = ventas_netas - cmv_neto
 
@@ -7289,7 +7280,6 @@ def page_level4(username):
             method_name = ss[K("metodo")]
             _, resumen = _n4_build_kardex_and_metrics(method_name)
 
-            # Misma desagregación que en el Ejemplo guiado:
             return {
                 "Ventas brutas": resumen["ventas_brutas"],
                 "(-) Devoluciones en ventas": resumen["dev_ventas_brutas"],
@@ -7378,8 +7368,7 @@ def page_level4(username):
             submitted = st.form_submit_button("✅ Validar mi Estado de Resultados")
 
         if submitted:
-            # Margen de error amplio para diferencias de redondeo
-            tol = 5.0
+            tol = 5.0  # margen de error
 
             def _to_float_or_none(x):
                 try:
