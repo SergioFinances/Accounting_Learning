@@ -6648,6 +6648,9 @@ def page_level4(username):
         def _n4_randomize_scenario():
             import random
 
+            ss = st.session_state
+            metodo_sel = ss.get(K("metodo"), "Promedio Ponderado")
+
             # Inventario inicial coherente
             inv0_u  = random.choice([50, 60, 80, 100, 120])
             inv0_pu = round(random.uniform(8.0, 14.0), 2)
@@ -6657,9 +6660,19 @@ def page_level4(username):
             comp1_pu = round(inv0_pu + random.uniform(-1.0, 2.0), 2)
             comp1_pu = max(1.0, comp1_pu)
 
-            # Venta hasta existencia razonable
+            # Para PEPS/UEPS forzamos que el costo de la compra sea distinto
+            # al costo inicial, para que el método de valoración tenga impacto.
+            if metodo_sel in ["PEPS (FIFO)", "UEPS (LIFO)"]:
+                if abs(comp1_pu - inv0_pu) < 0.5:
+                    # Aseguramos una diferencia mínima de 0.5
+                    delta = random.choice([-1.0, 1.0]) * random.uniform(0.5, 1.5)
+                    comp1_pu = max(1.0, round(inv0_pu + delta, 2))
+
+            # Venta hasta existencia razonable (dejamos algo para que haya saldo final)
+            total_disp = inv0_u + comp1_u
             venta_u = random.choice([20, 40, 60, 80, 100])
-            venta_u = min(venta_u, inv0_u + comp1_u)  # no puede exceder inventario disponible
+            venta_u = min(venta_u, max(10, total_disp - 10))  # que no se lleve TODO el inventario
+            venta_u = max(0, venta_u)
 
             # Precio de venta SIEMPRE mayor que el costo
             p_venta = round(random.uniform(inv0_pu + 4, inv0_pu + 10), 2)
@@ -6678,7 +6691,6 @@ def page_level4(username):
 
             tasa = random.choice([0.19, 0.25, 0.30])
 
-            ss = st.session_state
             ss[K("inv0_u")]  = inv0_u
             ss[K("inv0_pu")] = inv0_pu
             ss[K("comp1_u")] = comp1_u
@@ -6711,8 +6723,10 @@ def page_level4(username):
                 "🎲 Generar escenario aleatorio",
                 on_click=_n4_request_random,
                 key=K("rand_btn"),
+                help="Genera cantidades, costos y devoluciones coherentes con el método elegido.",
             )
 
+        # Si se pidió escenario aleatorio, lo generamos y recargamos
         if st.session_state.get(K("rand_req"), False):
             _n4_randomize_scenario()
             st.session_state.pop(K("rand_req"), None)
@@ -7337,7 +7351,8 @@ def page_level4(username):
 
         st.caption(
             "Ingresa los valores numéricos. El validador exige coherencia total con el escenario "
-            "y el método seleccionado (incluyendo CMV brutos, devoluciones y utilidad)."
+            "y el método seleccionado (incluyendo CMV brutos, devoluciones y utilidad). "
+            "Se permite un margen de error de ±5 unidades monetarias por renglón para absorber diferencias de redondeo."
         )
         edited_pyg = st.data_editor(
             df_blank_pyg,
@@ -7363,7 +7378,8 @@ def page_level4(username):
             submitted = st.form_submit_button("✅ Validar mi Estado de Resultados")
 
         if submitted:
-            tol = 0.5
+            # Margen de error amplio para diferencias de redondeo
+            tol = 5.0
 
             def _to_float_or_none(x):
                 try:
@@ -7402,12 +7418,13 @@ def page_level4(username):
             if correct_rows == len(order_rows):
                 st.success(
                     "¡Excelente! Tu Estado de Resultados es consistente con el escenario, "
-                    "el KARDEX y el método de valoración."
+                    "el KARDEX y el método de valoración (dentro del margen de error permitido)."
                 )
             else:
                 st.warning(
                     "Hay diferencias. Revisa la secuencia y los vínculos con el KARDEX "
-                    "(ventas, CMV brutos, devoluciones y cálculo del impuesto)."
+                    "(ventas, CMV brutos, devoluciones y cálculo del impuesto). "
+                    "Recuerda que hay un margen de ±5 unidades monetarias por renglón."
                 )
 
             if ask_ai:
