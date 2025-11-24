@@ -6617,7 +6617,7 @@ def page_level4(username):
     with tabs[2]:
         st.subheader("Práctica IA: Estado de Resultados (Nivel 4)")
         st.caption(
-            "Genera un escenario, observa el KARDEX de referencia según el método y completa el Estado de Resultados. "
+            "Define un escenario, observa el KARDEX de referencia según el método y completa el Estado de Resultados. "
             "Luego valida y, si quieres, recibe retroalimentación de IA."
         )
 
@@ -6626,7 +6626,7 @@ def page_level4(username):
         K = lambda name: f"{KP}{name}"
 
         # =========================
-        # Estado y escenario (defaults + aleatorio)
+        # Estado y escenario (defaults)
         # =========================
         def _n4_ensure_default_state():
             ss = st.session_state
@@ -6649,81 +6649,15 @@ def page_level4(username):
             ss.setdefault(K("otros_egr"), 20.0)
             ss.setdefault(K("tasa"), 0.30)
 
-        def _n4_randomize_scenario():
-            import random
-
-            ss = st.session_state
-            metodo_sel = ss.get(K("metodo"), "Promedio Ponderado")
-
-            # Inventario inicial coherente
-            inv0_u  = random.choice([50, 60, 80, 100, 120])
-            inv0_pu = round(random.uniform(8.0, 14.0), 2)
-
-            # Compra coherente (no menor que cero, precios correctos)
-            comp1_u  = random.choice([20, 30, 40, 50, 60])
-            comp1_pu = round(inv0_pu + random.uniform(-1.0, 2.0), 2)
-            comp1_pu = max(1.0, comp1_pu)
-
-            # Para PEPS/UEPS forzamos diferencia de costos entre capas
-            if metodo_sel in ["PEPS (FIFO)", "UEPS (LIFO)"]:
-                if abs(comp1_pu - inv0_pu) < 0.5:
-                    delta = random.choice([-1.0, 1.0]) * random.uniform(0.5, 1.5)
-                    comp1_pu = max(1.0, round(inv0_pu + delta, 2))
-
-            # Venta hasta existencia razonable (se vende algo, pero no todo)
-            total_disp = inv0_u + comp1_u
-            venta_u = random.choice([20, 40, 60, 80, 100])
-            venta_u = min(venta_u, max(10, total_disp - 10))
-            venta_u = max(10, venta_u)
-
-            # Precio de venta SIEMPRE mayor que el costo (al menos 4 unidades más)
-            costo_max = max(inv0_pu, comp1_pu)
-            p_venta = round(random.uniform(costo_max + 4, costo_max + 10), 2)
-
-            # Devoluciones coherentes
-            dev_comp_u = random.choice([0, 2, 4, 6, 8, 10])
-            dev_comp_u = min(dev_comp_u, comp1_u)
-
-            dev_vent_u = random.choice([0, 2, 4, 6, 8])
-            dev_vent_u = min(dev_vent_u, venta_u)
-
-            # Gastos, ingresos y egresos
-            go_vals = sorted(random.sample([80.0, 100.0, 120.0, 150.0, 180.0], 3))
-            otros_ing = random.choice([20.0, 30.0, 40.0, 50.0])
-            otros_egr = random.choice([10.0, 15.0, 20.0])
-
-            tasa = random.choice([0.19, 0.25, 0.30])
-
-            ss[K("inv0_u")]  = inv0_u
-            ss[K("inv0_pu")] = inv0_pu
-            ss[K("comp1_u")] = comp1_u
-            ss[K("comp1_pu")] = comp1_pu
-            ss[K("venta_u")] = venta_u
-            ss[K("p_venta")] = p_venta
-            ss[K("dev_comp_u")]  = dev_comp_u
-            ss[K("dev_vent_u")]  = dev_vent_u
-            ss[K("go_1_name")], ss[K("go_2_name")], ss[K("go_3_name")] = "Gasto A", "Gasto B", "Gasto C"
-            ss[K("go_1_val")], ss[K("go_2_val")], ss[K("go_3_val")] = go_vals
-            ss[K("otros_ing")] = otros_ing
-            ss[K("otros_egr")] = otros_egr
-            ss[K("tasa")] = tasa
-
         _n4_ensure_default_state()
 
-        # ====== CONTROLES SUPERIORES: Método + Aleatorio ======
-        ctop1, ctop2 = st.columns([1.3, 1])
+        # ====== CONTROLES SUPERIORES: Método (sin botón aleatorio) ======
+        ctop1, _ = st.columns([1.3, 1])
         with ctop1:
             st.selectbox(
                 "Método de valoración (afecta CMV y devoluciones de venta)",
                 ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
                 key=K("metodo"),
-            )
-        with ctop2:
-            st.button(
-                "🎲 Generar escenario aleatorio",
-                on_click=_n4_randomize_scenario,
-                key=K("rand_btn"),
-                help="Genera cantidades, costos y devoluciones coherentes con el método elegido.",
             )
 
         # =========================
