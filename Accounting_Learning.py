@@ -6250,7 +6250,7 @@ def page_level4(username):
         <div class="controls">
         <button id="play" class="btn">▶️ Reproducir</button>
         <button id="pause" class="btn">⏸️ Pausa</button>
-        <button id="reset" class="btn">⏹️ Detener/Reiniciar</button>
+        <button id="reset" class="btn">⏹️ Reiniciar</button>
         <span class="badge">__METODO__</span>
         <span class="ratewrap">
             Velocidad voz <input id="rate" type="range" min="0.7" max="1.3" step="0.1" value="1">
