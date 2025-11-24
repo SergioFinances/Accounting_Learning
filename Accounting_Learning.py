@@ -6293,9 +6293,9 @@ def page_level4(username):
             <tr><td>(-) Devoluciones en ventas</td><td id="pyg_dv" class="muted"></td></tr>
             <tr><td><b>Ventas netas</b></td><td id="pyg_vn" class="muted"></td></tr>
 
-            <tr><td>CMV bruto</td><td id="pyg_cmvb" class="muted"></td></tr>
+            <tr><td>Costos de mercancía vendida brutos</td><td id="pyg_cmvb" class="muted"></td></tr>
             <tr><td>(-) Costo devolución en ventas</td><td id="pyg_cdv" class="muted"></td></tr>
-            <tr><td><b>CMV neto</b></td><td id="pyg_cmvn" class="muted"></td></tr>
+            <tr><td><b>Costos de mercancía vendida netos</b></td><td id="pyg_cmvn" class="muted"></td></tr>
 
             <tr><td><b>Utilidad bruta</b></td><td id="pyg_ub" class="muted"></td></tr>
             <tr><td>Gastos operativos</td><td id="pyg_go" class="muted"></td></tr>
@@ -6358,9 +6358,9 @@ def page_level4(username):
             tr.id = "r"+i;
             tr.innerHTML = `
                 <td>${r.Fecha}</td><td>${r.Descripción}</td>
-                <td>${fmt(r.Entrada_cant)}</td><td>${r.Entrada_pu===""?"":pesos(r.Entrada_pu)}</td><td>${r.Entrada_total===""?"":pesos(r.Entrada_total)}</td>
-                <td>${fmt(r.Salida_cant)}</td><td>${r.Salida_pu===""?"":pesos(r.Salida_pu)}</td><td>${r.Salida_total===""?"":pesos(r.Salida_total)}</td>
-                <td>${fmt(r.Saldo_cant)}</td><td>${r.Saldo_pu===""?"":pesos(r.Saldo_pu)}</td><td>${r.Saldo_total===""?"":pesos(r.Saldo_total)}</td>
+                <td>${fmt(r.Entrada_cant)}</td><td>${(r.Entrada_pu==null||r.Entrada_pu==="")?"":pesos(r.Entrada_pu)}</td><td>${(r.Entrada_total==null||r.Entrada_total==="")?"":pesos(r.Entrada_total)}</td>
+                <td>${fmt(r.Salida_cant)}</td><td>${(r.Salida_pu==null||r.Salida_pu==="")?"":pesos(r.Salida_pu)}</td><td>${(r.Salida_total==null||r.Salida_total==="")?"":pesos(r.Salida_total)}</td>
+                <td>${fmt(r.Saldo_cant)}</td><td>${(r.Saldo_pu==null||r.Saldo_pu==="")?"":pesos(r.Saldo_pu)}</td><td>${(r.Saldo_total==null||r.Saldo_total==="")?"":pesos(r.Saldo_total)}</td>
             `;
             tb.appendChild(tr);
             });
@@ -6449,11 +6449,11 @@ def page_level4(username):
             ["dv", pyg.dev_ventas_brutas, `A continuación, restamos las devoluciones en ventas. Volvieron ${dvu} unidades, valorizadas al mismo precio de venta ${pu}. Esto equivale a ${dv}.`],
             ["vn", pyg.ventas_netas, `Las ventas netas resultan de ventas brutas menos devoluciones en ventas. Obtenemos ${vn}.`],
 
-            ["cmvb", pyg.cmv_bruto, `Ahora pasamos al costo de la mercadería vendida bruto. Este valor proviene directamente del KARDEX según el método de inventario aplicado. Su valor es ${cmvb}.`],
-            ["cdv", pyg.costo_dev_venta, `Luego reconocemos el costo de las unidades devueltas por los clientes. Ese costo se resta del CMV bruto y asciende a ${cdv}.`],
-            ["cmvn", pyg.cmv_neto, `El costo de la mercadería vendida neto resulta de restar el costo de las devoluciones en ventas al CMV bruto. Obtenemos un CMV neto de ${cmvn}.`],
+            ["cmvb", pyg.cmv_bruto, `Ahora pasamos a los costos de mercancía vendida brutos. Este valor proviene directamente del KARDEX según el método de inventario aplicado. Su valor es ${cmvb}.`],
+            ["cdv", pyg.costo_dev_venta, `Luego reconocemos el costo de las unidades devueltas por los clientes. Ese costo se resta de los costos de mercancía vendida brutos y asciende a ${cdv}.`],
+            ["cmvn", pyg.cmv_neto, `Los costos de mercancía vendida netos resultan de restar el costo de las devoluciones en ventas a los costos de mercancía vendida brutos. Obtenemos un valor neto de ${cmvn}.`],
 
-            ["ub", pyg.utilidad_bruta, `La utilidad bruta es ventas netas menos el costo de la mercadería vendida neto. Esto nos da ${ub}.`],
+            ["ub", pyg.utilidad_bruta, `La utilidad bruta es ventas netas menos los costos de mercancía vendida netos. Esto nos da ${ub}.`],
             ["go", pyg.gastos_op, `Luego restamos los gastos operativos parametrizados. En total suman ${go}.`],
             ["ro", pyg.resultado_operativo, `El resultado operativo es la utilidad bruta menos los gastos operativos. Obtenemos ${ro}.`],
 
@@ -6520,7 +6520,6 @@ def page_level4(username):
             "gastos_op": sum(v for _, v in esc["gastos_operativos"]),
             "otros_ingresos": sum(v for _, v in esc["otros_ingresos"]),
             "otros_egresos": sum(v for _, v in esc["otros_egresos"]),
-
             "tasa": esc["tasa_impuesto"],
         }, ensure_ascii=False)
 
