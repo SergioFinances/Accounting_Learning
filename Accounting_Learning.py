@@ -6612,7 +6612,10 @@ def page_level4(username):
     # =====================================================
     with tabs[2]:
         st.subheader("Práctica IA: Estado de Resultados (Nivel 4)")
-        st.caption("Genera un escenario, observa el KARDEX de referencia y completa el Estado de Resultados. Valida y recibe retroalimentación.")
+        st.caption(
+            "Genera un escenario, observa el KARDEX de referencia según el método y completa el Estado de Resultados. "
+            "Luego valida y, si quieres, recibe retroalimentación de IA."
+        )
 
         # ========= Prefijo de claves (namespacing) =========
         KP = "lvl4_"
@@ -6641,34 +6644,47 @@ def page_level4(username):
             ss.setdefault(K("otros_ing"), 40.0)
             ss.setdefault(K("otros_egr"), 20.0)
             ss.setdefault(K("tasa"), 0.30)
-            # método para visualizar KARDEX de referencia
-            ss.setdefault(K("kdx_view_metodo"), ss[K("metodo")])
 
         def _n4_randomize_scenario():
             import random
-            inv0_u  = random.choice([60, 80, 100, 120, 150])
+
+            inv0_u = random.choice([60, 80, 100, 120, 150])
             inv0_pu = random.choice([8.0, 9.0, 10.0, 11.0, 12.0])
             comp1_u = random.choice([30, 40, 50, 60, 70])
-            comp1_pu= random.choice([inv0_pu - 1, inv0_pu, inv0_pu + 1, inv0_pu + 2])
+            comp1_pu = random.choice(
+                [inv0_pu - 1, inv0_pu, inv0_pu + 1, inv0_pu + 2]
+            )
             venta_u = random.choice([40, 60, 90, 110, 130])
             p_venta = random.choice([16.0, 18.0, 20.0, 22.0, 24.0])
-            dev_comp_u  = max(0, min(comp1_u, random.choice([4, 6, 8, 10, 12, 15])))
-            dev_vent_u  = max(0, min(venta_u, random.choice([2, 4, 6, 8, 10, 12])))
-            go_vals = sorted(random.sample([80.0, 90.0, 100.0, 120.0, 140.0, 150.0], 3))
+            dev_comp_u = max(
+                0, min(comp1_u, random.choice([4, 6, 8, 10, 12, 15]))
+            )
+            dev_vent_u = max(
+                0, min(venta_u, random.choice([2, 4, 6, 8, 10, 12]))
+            )
+            go_vals = sorted(
+                random.sample(
+                    [80.0, 90.0, 100.0, 120.0, 140.0, 150.0], 3
+                )
+            )
             otros_ing = random.choice([20.0, 30.0, 40.0, 50.0])
             otros_egr = random.choice([10.0, 15.0, 20.0, 25.0])
             tasa = random.choice([0.19, 0.25, 0.30])
 
             ss = st.session_state
-            ss[K("inv0_u")]  = inv0_u
+            ss[K("inv0_u")] = inv0_u
             ss[K("inv0_pu")] = float(max(1.0, round(inv0_pu, 2)))
             ss[K("comp1_u")] = comp1_u
             ss[K("comp1_pu")] = float(max(1.0, round(comp1_pu, 2)))
             ss[K("venta_u")] = venta_u
             ss[K("p_venta")] = float(p_venta)
-            ss[K("dev_comp_u")]  = dev_comp_u
-            ss[K("dev_vent_u")]  = dev_vent_u
-            ss[K("go_1_name")], ss[K("go_2_name")], ss[K("go_3_name")] = "Gasto A", "Gasto B", "Gasto C"
+            ss[K("dev_comp_u")] = dev_comp_u
+            ss[K("dev_vent_u")] = dev_vent_u
+            ss[K("go_1_name")], ss[K("go_2_name")], ss[K("go_3_name")] = (
+                "Gasto A",
+                "Gasto B",
+                "Gasto C",
+            )
             ss[K("go_1_val")], ss[K("go_2_val")], ss[K("go_3_val")] = go_vals
             ss[K("otros_ing")] = otros_ing
             ss[K("otros_egr")] = otros_egr
@@ -6679,16 +6695,20 @@ def page_level4(username):
 
         _n4_ensure_default_state()
 
-        # ====== CONTROLES SUPERIORES: Método + Aleatorio (ANTES del KARDEX) ======
+        # ====== CONTROLES SUPERIORES: Método + Aleatorio ======
         ctop1, ctop2 = st.columns([1.3, 1])
         with ctop1:
             st.selectbox(
                 "Método de valoración (afecta CMV y devoluciones de venta)",
                 ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
-                key=K("metodo")
+                key=K("metodo"),
             )
         with ctop2:
-            st.button("🎲 Generar escenario aleatorio", on_click=_n4_request_random, key=K("rand_btn"))
+            st.button(
+                "🎲 Generar escenario aleatorio",
+                on_click=_n4_request_random,
+                key=K("rand_btn"),
+            )
 
         if st.session_state.get(K("rand_req"), False):
             _n4_randomize_scenario()
@@ -6696,50 +6716,120 @@ def page_level4(username):
             st.rerun()
 
         # =========================
-        # Escenario visible (SOLO LECTURA, el estudiante no lo edita)
+        # Escenario visible (inputs)
         # =========================
         st.markdown("#### 🎯 Escenario del ejercicio")
-        ss = st.session_state
-
         colA, colB, colC = st.columns(3)
         with colA:
-            st.metric("Día 1: inventario inicial (u)", ss[K("inv0_u")])
-            st.metric("Día 1: costo unitario inicial", f"{ss[K('inv0_pu')]:.2f}")
+            st.number_input(
+                "Día 1: inventario inicial (u)",
+                min_value=0,
+                step=1,
+                key=K("inv0_u"),
+            )
+            st.number_input(
+                "Día 1: costo unitario inicial",
+                min_value=0.0,
+                step=0.1,
+                key=K("inv0_pu"),
+            )
         with colB:
-            st.metric("Día 2: compra (u)", ss[K("comp1_u")])
-            st.metric("Día 2: costo unitario compra", f"{ss[K('comp1_pu')]:.2f}")
+            st.number_input(
+                "Día 2: compra (u)",
+                min_value=0,
+                step=1,
+                key=K("comp1_u"),
+            )
+            st.number_input(
+                "Día 2: costo unitario compra",
+                min_value=0.0,
+                step=0.1,
+                key=K("comp1_pu"),
+            )
         with colC:
-            st.metric("Día 3: venta (u)", ss[K("venta_u")])
-            st.metric("Precio de venta ($/u)", f"{ss[K('p_venta')]:.2f}")
+            st.number_input(
+                "Día 3: venta (u)",
+                min_value=0,
+                step=1,
+                key=K("venta_u"),
+            )
+            st.number_input(
+                "Precio de venta ($/u)",
+                min_value=0.0,
+                step=0.5,
+                key=K("p_venta"),
+            )
 
         colD, colE, colF = st.columns(3)
         with colD:
-            st.metric("Día 4: devolución en compra (u)", ss[K("dev_comp_u")])
+            st.number_input(
+                "Día 4: devolución en compra (u)",
+                min_value=0,
+                step=1,
+                key=K("dev_comp_u"),
+            )
         with colE:
-            st.metric("Día 5: devolución en venta (u)", ss[K("dev_vent_u")])
+            st.number_input(
+                "Día 5: devolución en venta (u)",
+                min_value=0,
+                step=1,
+                key=K("dev_vent_u"),
+            )
         with colF:
-            tasa_pct = int(ss[K("tasa")] * 100)
-            st.metric("Tasa de impuesto (%)", f"{tasa_pct} %")
+            st.slider(
+                "Tasa de impuesto (%)",
+                min_value=0,
+                max_value=50,
+                value=int(st.session_state[K("tasa")] * 100),
+                step=1,
+                key=K("tasa_pct"),
+            )
+        st.session_state[K("tasa")] = float(
+            st.session_state[K("tasa_pct")]
+        ) / 100.0
 
-        st.markdown("##### Gastos operativos del período")
+        st.markdown("##### Gastos operativos (edita los tres ítems)")
         g1, g2, g3 = st.columns(3)
         with g1:
-            st.write(f"**{ss[K('go_1_name')] or 'Gasto 1'}**")
-            st.write(f"{ss[K('go_1_val')]:,.2f}")
+            st.text_input("Ítem 1", key=K("go_1_name"))
+            st.number_input(
+                "Valor 1",
+                min_value=0.0,
+                step=10.0,
+                key=K("go_1_val"),
+            )
         with g2:
-            st.write(f"**{ss[K('go_2_name')] or 'Gasto 2'}**")
-            st.write(f"{ss[K('go_2_val')]:,.2f}")
+            st.text_input("Ítem 2", key=K("go_2_name"))
+            st.number_input(
+                "Valor 2",
+                min_value=0.0,
+                step=10.0,
+                key=K("go_2_val"),
+            )
         with g3:
-            st.write(f"**{ss[K('go_3_name')] or 'Gasto 3'}**")
-            st.write(f"{ss[K('go_3_val')]:,.2f}")
+            st.text_input("Ítem 3", key=K("go_3_name"))
+            st.number_input(
+                "Valor 3",
+                min_value=0.0,
+                step=10.0,
+                key=K("go_3_val"),
+            )
 
         o1, o2 = st.columns(2)
         with o1:
-            st.write("**Otros ingresos (total)**")
-            st.write(f"{ss[K('otros_ing')]:,.2f}")
+            st.number_input(
+                "Otros ingresos (total)",
+                min_value=0.0,
+                step=10.0,
+                key=K("otros_ing"),
+            )
         with o2:
-            st.write("**Otros egresos (total)**")
-            st.write(f"{ss[K('otros_egr')]:,.2f}")
+            st.number_input(
+                "Otros egresos (total)",
+                min_value=0.0,
+                step=10.0,
+                key=K("otros_egr"),
+            )
 
         # =========================
         # Helpers comunes (inventario)
@@ -6779,29 +6869,42 @@ def page_level4(username):
             """
             ss = st.session_state
             esc_loc = {
-                "inv0_u":   ss[K("inv0_u")],
-                "inv0_pu":  ss[K("inv0_pu")],
-                "comp1_u":  ss[K("comp1_u")],
+                "inv0_u": ss[K("inv0_u")],
+                "inv0_pu": ss[K("inv0_pu")],
+                "comp1_u": ss[K("comp1_u")],
                 "comp1_pu": ss[K("comp1_pu")],
-                "venta_u":  ss[K("venta_u")],
-                "p_venta":  ss[K("p_venta")],
+                "venta_u": ss[K("venta_u")],
+                "p_venta": ss[K("p_venta")],
                 "dev_comp": ss[K("dev_comp_u")],
                 "dev_vent": ss[K("dev_vent_u")],
                 "gastos_operativos": [
-                    (ss[K("go_1_name")].strip() or "Gasto 1", float(ss[K("go_1_val")])),
-                    (ss[K("go_2_name")].strip() or "Gasto 2", float(ss[K("go_2_val")])),
-                    (ss[K("go_3_name")].strip() or "Gasto 3", float(ss[K("go_3_val")])),
+                    (
+                        ss[K("go_1_name")].strip() or "Gasto 1",
+                        float(ss[K("go_1_val")]),
+                    ),
+                    (
+                        ss[K("go_2_name")].strip() or "Gasto 2",
+                        float(ss[K("go_2_val")]),
+                    ),
+                    (
+                        ss[K("go_3_name")].strip() or "Gasto 3",
+                        float(ss[K("go_3_val")]),
+                    ),
                 ],
-                "otros_ingresos": [("Otros ingresos", float(ss[K("otros_ing")]))],
-                "otros_egresos": [("Otros egresos", float(ss[K("otros_egr")]))],
+                "otros_ingresos": [
+                    ("Otros ingresos", float(ss[K("otros_ing")]))
+                ],
+                "otros_egresos": [
+                    ("Otros egresos", float(ss[K("otros_egr")]))
+                ],
                 "tasa_impuesto": float(ss[K("tasa")]),
             }
 
             inv0_u, inv0_pu = esc_loc["inv0_u"], esc_loc["inv0_pu"]
-            c1_u, c1_pu     = esc_loc["comp1_u"], esc_loc["comp1_pu"]
-            v_u, p_venta    = esc_loc["venta_u"], esc_loc["p_venta"]
-            dcomp_u         = esc_loc["dev_comp"]
-            dvent_u         = esc_loc["dev_vent"]
+            c1_u, c1_pu = esc_loc["comp1_u"], esc_loc["comp1_pu"]
+            v_u, p_venta = esc_loc["venta_u"], esc_loc["p_venta"]
+            dcomp_u = esc_loc["dev_comp"]
+            dvent_u = esc_loc["dev_vent"]
 
             metodo = method_name
             fifo = True if "PEPS" in metodo else False if "UEPS" in metodo else None
@@ -6810,12 +6913,21 @@ def page_level4(username):
             rows = []
             layers = [[float(inv0_u), float(inv0_pu)]] if inv0_u > 0 else []
             s_q, s_pu, s_v = _sum_layers(layers)
-            rows.append({
-                "Fecha": "Día 1", "Descripción": "Saldo inicial",
-                "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-            })
+            rows.append(
+                {
+                    "Fecha": "Día 1",
+                    "Descripción": "Saldo inicial",
+                    "Entrada_cant": None,
+                    "Entrada_pu": None,
+                    "Entrada_total": None,
+                    "Salida_cant": None,
+                    "Salida_pu": None,
+                    "Salida_total": None,
+                    "Saldo_cant": int(s_q),
+                    "Saldo_pu": round(s_pu, 2),
+                    "Saldo_total": round(s_v, 2),
+                }
+            )
 
             # --- Día 2: compra
             if metodo == "Promedio Ponderado":
@@ -6825,89 +6937,147 @@ def page_level4(username):
                 p_new = (v_new / q_new) if q_new > 0 else 0.0
                 layers = [[q_new, p_new]]
                 s_q, s_pu, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 2", "Descripción": "Compra",
-                    "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu, 2), "Entrada_total": round(ent_tot, 2),
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                })
+                rows.append(
+                    {
+                        "Fecha": "Día 2",
+                        "Descripción": "Compra",
+                        "Entrada_cant": c1_u,
+                        "Entrada_pu": round(c1_pu, 2),
+                        "Entrada_total": round(ent_tot, 2),
+                        "Salida_cant": None,
+                        "Salida_pu": None,
+                        "Salida_total": None,
+                        "Saldo_cant": int(s_q),
+                        "Saldo_pu": round(s_pu, 2),
+                        "Saldo_total": round(s_v, 2),
+                    }
+                )
             else:
                 # PEPS / UEPS: nueva capa, manteniendo capas separadas
                 ent_tot = c1_u * c1_pu
-                layers.append([float(c1_u), float(c1_pu)])  # nueva capa
+                layers.append([float(c1_u), float(c1_pu)])
                 s_q, s_pu, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 2", "Descripción": "Compra",
-                    "Entrada_cant": c1_u, "Entrada_pu": round(c1_pu, 2), "Entrada_total": round(ent_tot, 2),
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                })
+                rows.append(
+                    {
+                        "Fecha": "Día 2",
+                        "Descripción": "Compra",
+                        "Entrada_cant": c1_u,
+                        "Entrada_pu": round(c1_pu, 2),
+                        "Entrada_total": round(ent_tot, 2),
+                        "Salida_cant": None,
+                        "Salida_pu": None,
+                        "Salida_total": None,
+                        "Saldo_cant": int(s_q),
+                        "Saldo_pu": round(s_pu, 2),
+                        "Saldo_total": round(s_v, 2),
+                    }
+                )
 
             # --- Día 3: venta
             if v_u > 0 and s_q > 0:
                 if metodo == "Promedio Ponderado":
-                    sale_q  = min(v_u, int(s_q))
+                    sale_q = min(v_u, int(s_q))
                     sale_pu = layers[0][1] if layers else 0.0
-                    sale_tot= sale_q * sale_pu
+                    sale_tot = sale_q * sale_pu
                     q2 = s_q - sale_q
                     v2 = s_v - sale_tot
-                    p2 = (v2/q2) if q2 > 0 else 0.0
+                    p2 = (v2 / q2) if q2 > 0 else 0.0
                     layers = [[q2, p2]] if q2 > 0 else []
                     s_q, s_pu, s_v = _sum_layers(layers)
-                    rows.append({
-                        "Fecha": "Día 3", "Descripción": "Venta",
-                        "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                        "Salida_cant": sale_q, "Salida_pu": round(sale_pu, 2), "Salida_total": round(sale_tot, 2),
-                        "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                    })
+                    rows.append(
+                        {
+                            "Fecha": "Día 3",
+                            "Descripción": "Venta",
+                            "Entrada_cant": None,
+                            "Entrada_pu": None,
+                            "Entrada_total": None,
+                            "Salida_cant": sale_q,
+                            "Salida_pu": round(sale_pu, 2),
+                            "Salida_total": round(sale_tot, 2),
+                            "Saldo_cant": int(s_q),
+                            "Saldo_pu": round(s_pu, 2),
+                            "Saldo_total": round(s_v, 2),
+                        }
+                    )
                     cmv_bruto = sale_tot
                     sale_details = [(sale_q, sale_pu, sale_tot)]
                 else:
-                    # PEPS / UEPS por tramos
-                    sale_details, layers_after = _consume_layers_detail(layers, v_u, fifo=(fifo is True))
+                    sale_details, layers_after = _consume_layers_detail(
+                        layers, v_u, fifo=(fifo is True)
+                    )
                     cmv_bruto = sum(t for _, _, t in sale_details)
                     running_layers = [l[:] for l in layers]
-                    tag = "PEPS" if fifo else "UEPS"
-                    for i, (q_take, pu_take, tot_take) in enumerate(sale_details, start=1):
-                        _, running_layers = _consume_layers_detail(running_layers, q_take, fifo=(fifo is True))
+                    for i, (q_take, pu_take, tot_take) in enumerate(
+                        sale_details, start=1
+                    ):
+                        _, running_layers = _consume_layers_detail(
+                            running_layers, q_take, fifo=(fifo is True)
+                        )
                         rq, rpu, rv = _sum_layers(running_layers)
-                        rows.append({
-                            "Fecha": "Día 3", "Descripción": f"Venta tramo {i} ({tag})",
-                            "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                            "Salida_cant": int(q_take), "Salida_pu": round(pu_take, 2), "Salida_total": round(tot_take, 2),
-                            "Saldo_cant": int(rq), "Saldo_pu": round(rpu, 2), "Saldo_total": round(rv, 2)
-                        })
+                        rows.append(
+                            {
+                                "Fecha": "Día 3",
+                                "Descripción": f"Venta tramo {i} ({'PEPS' if fifo else 'UEPS'})",
+                                "Entrada_cant": None,
+                                "Entrada_pu": None,
+                                "Entrada_total": None,
+                                "Salida_cant": int(q_take),
+                                "Salida_pu": round(pu_take, 2),
+                                "Salida_total": round(tot_take, 2),
+                                "Saldo_cant": int(rq),
+                                "Saldo_pu": round(rpu, 2),
+                                "Saldo_total": round(rv, 2),
+                            }
+                        )
                     layers = layers_after
                     s_q, s_pu, s_v = _sum_layers(layers)
             else:
                 cmv_bruto = 0.0
-                rows.append({
-                    "Fecha": "Día 3", "Descripción": "Venta",
-                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                })
+                rows.append(
+                    {
+                        "Fecha": "Día 3",
+                        "Descripción": "Venta",
+                        "Entrada_cant": None,
+                        "Entrada_pu": None,
+                        "Entrada_total": None,
+                        "Salida_cant": None,
+                        "Salida_pu": None,
+                        "Salida_total": None,
+                        "Saldo_cant": int(s_q),
+                        "Saldo_pu": round(s_pu, 2),
+                        "Saldo_total": round(s_v, 2),
+                    }
+                )
                 sale_details = []
 
             # --- Día 4: devolución en compra (salida a proveedor)
             if metodo == "Promedio Ponderado":
-                take_q  = min(esc_loc["dev_comp"], s_q)
+                take_q = min(dcomp_u, s_q)
                 take_pu = s_pu
-                take_val= take_q * take_pu
+                take_val = take_q * take_pu
                 q4 = s_q - take_q
                 v4 = s_v - take_val
-                p4 = (v4/q4) if q4 > 0 else 0.0
+                p4 = (v4 / q4) if q4 > 0 else 0.0
                 layers = [[q4, p4]] if q4 > 0 else []
                 s_q, s_pu, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 4", "Descripción": "Devolución de compra (a proveedor)",
-                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                    "Salida_cant": int(take_q), "Salida_pu": round(take_pu, 2), "Salida_total": round(take_val, 2),
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                })
+                rows.append(
+                    {
+                        "Fecha": "Día 4",
+                        "Descripción": "Devolución de compra (a proveedor)",
+                        "Entrada_cant": None,
+                        "Entrada_pu": None,
+                        "Entrada_total": None,
+                        "Salida_cant": int(take_q),
+                        "Salida_pu": round(take_pu, 2),
+                        "Salida_total": round(take_val, 2),
+                        "Saldo_cant": int(s_q),
+                        "Saldo_pu": round(s_pu, 2),
+                        "Saldo_total": round(s_v, 2),
+                    }
+                )
                 dev_comp_valor = take_val
             else:
-                send_back = esc_loc["dev_comp"]
+                send_back = dcomp_u
                 dev_comp_valor = 0.0
                 rev = layers[::-1]
                 new_rev = []
@@ -6923,33 +7093,51 @@ def page_level4(username):
                         new_rev.append([rest, pu])
                 layers = new_rev[::-1]
                 s_q, s_pu, s_v = _sum_layers(layers)
-                rows.append({
-                    "Fecha": "Día 4", "Descripción": "Devolución de compra (a proveedor)",
-                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                    "Salida_cant": esc_loc["dev_comp"], "Salida_pu": None, "Salida_total": round(dev_comp_valor, 2),
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                })
+                rows.append(
+                    {
+                        "Fecha": "Día 4",
+                        "Descripción": "Devolución de compra (a proveedor)",
+                        "Entrada_cant": None,
+                        "Entrada_pu": None,
+                        "Entrada_total": None,
+                        "Salida_cant": int(dcomp_u),
+                        "Salida_pu": None,
+                        "Salida_total": round(dev_comp_valor, 2),
+                        "Saldo_cant": int(s_q),
+                        "Saldo_pu": round(s_pu, 2),
+                        "Saldo_total": round(s_v, 2),
+                    }
+                )
 
             # --- Día 5: devolución en venta (reingreso)
-            if esc_loc["dev_vent"] > 0:
+            if dvent_u > 0:
                 if metodo == "Promedio Ponderado":
-                    in_q  = esc_loc["dev_vent"]
+                    in_q = dvent_u
                     in_pu = s_pu
-                    in_val= in_q * in_pu
+                    in_val = in_q * in_pu
                     q5 = s_q + in_q
                     v5 = s_v + in_val
-                    p5 = (v5/q5) if q5 > 0 else 0.0
+                    p5 = (v5 / q5) if q5 > 0 else 0.0
                     layers = [[q5, p5]]
                     s_q, s_pu, s_v = _sum_layers(layers)
-                    rows.append({
-                        "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
-                        "Entrada_cant": in_q, "Entrada_pu": round(in_pu, 2), "Entrada_total": round(in_val, 2),
-                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                        "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                    })
+                    rows.append(
+                        {
+                            "Fecha": "Día 5",
+                            "Descripción": "Devolución de venta (reingreso)",
+                            "Entrada_cant": in_q,
+                            "Entrada_pu": round(in_pu, 2),
+                            "Entrada_total": round(in_val, 2),
+                            "Salida_cant": None,
+                            "Salida_pu": None,
+                            "Salida_total": None,
+                            "Saldo_cant": int(s_q),
+                            "Saldo_pu": round(s_pu, 2),
+                            "Saldo_total": round(s_v, 2),
+                        }
+                    )
                     costo_dev_venta = in_val
                 else:
-                    devolver = esc_loc["dev_vent"]
+                    devolver = dvent_u
                     costo_dev_venta = 0.0
                     details = sale_details[:] if sale_details else []
                     if "PEPS" in metodo:
@@ -6972,34 +7160,59 @@ def page_level4(username):
                             it -= 1
 
                     s_q, s_pu, s_v = _sum_layers(layers)
-                    rows.append({
-                        "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
-                        "Entrada_cant": esc_loc["dev_vent"], "Entrada_pu": None, "Entrada_total": round(costo_dev_venta, 2),
-                        "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                        "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                    })
+                    rows.append(
+                        {
+                            "Fecha": "Día 5",
+                            "Descripción": "Devolución de venta (reingreso)",
+                            "Entrada_cant": dvent_u,
+                            "Entrada_pu": None,
+                            "Entrada_total": round(costo_dev_venta, 2),
+                            "Salida_cant": None,
+                            "Salida_pu": None,
+                            "Salida_total": None,
+                            "Saldo_cant": int(s_q),
+                            "Saldo_pu": round(s_pu, 2),
+                            "Saldo_total": round(s_v, 2),
+                        }
+                    )
             else:
                 costo_dev_venta = 0.0
-                rows.append({
-                    "Fecha": "Día 5", "Descripción": "Devolución de venta (reingreso)",
-                    "Entrada_cant": None, "Entrada_pu": None, "Entrada_total": None,
-                    "Salida_cant": None, "Salida_pu": None, "Salida_total": None,
-                    "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu, 2), "Saldo_total": round(s_v, 2)
-                })
+                rows.append(
+                    {
+                        "Fecha": "Día 5",
+                        "Descripción": "Devolución de venta (reingreso)",
+                        "Entrada_cant": None,
+                        "Entrada_pu": None,
+                        "Entrada_total": None,
+                        "Salida_cant": None,
+                        "Salida_pu": None,
+                        "Salida_total": None,
+                        "Saldo_cant": int(s_q),
+                        "Saldo_pu": round(s_pu, 2),
+                        "Saldo_total": round(s_v, 2),
+                    }
+                )
 
             # =========================
-            # Métricas PyG del periodo (MISMA ESTRUCTURA QUE EJEMPLO GUIADO)
+            # Métricas PyG del periodo
             # =========================
-            ventas_brutas       = esc_loc["venta_u"] * esc_loc["p_venta"]
-            dev_ventas_brutas   = esc_loc["dev_vent"] * esc_loc["p_venta"]
-            ventas_netas        = ventas_brutas - dev_ventas_brutas
+            ventas_brutas = esc_loc["venta_u"] * esc_loc["p_venta"]
+            dev_ventas_brutas = esc_loc["dev_vent"] * esc_loc["p_venta"]
+            ventas_netas = ventas_brutas - dev_ventas_brutas
 
-            compras_brutas      = esc_loc["comp1_u"] * esc_loc["comp1_pu"]
+            compras_brutas = esc_loc["comp1_u"] * esc_loc["comp1_pu"]
             if metodo == "Promedio Ponderado":
                 dev_compras_valor = 0.0
                 for r in rows:
-                    if r["Fecha"] == "Día 4" and "Devolución de compra" in r["Descripción"]:
-                        dev_compras_valor = r["Salida_total"] if r["Salida_total"] != "" else 0.0
+                    if (
+                        r["Fecha"] == "Día 4"
+                        and "Devolución de compra" in r["Descripción"]
+                    ):
+                        dev_compras_valor = (
+                            r["Salida_total"]
+                            if r["Salida_total"] not in (None, "")
+                            else 0.0
+                        )
                         break
             else:
                 try:
@@ -7008,20 +7221,20 @@ def page_level4(username):
                     dev_comp_valor = 0.0
                 dev_compras_valor = dev_comp_valor
 
-            compras_netas       = compras_brutas - dev_compras_valor
+            compras_netas = compras_brutas - dev_compras_valor
 
-            # CMV neto: se descuenta explícitamente el costo de la devolución en ventas
-            cmv_neto            = cmv_bruto - costo_dev_venta
-            utilidad_bruta      = ventas_netas - cmv_neto
+            # CMV neto = CMV bruto – costo de devolución de ventas
+            cmv_neto = cmv_bruto - costo_dev_venta
+            utilidad_bruta = ventas_netas - cmv_neto
 
-            gastos_op           = sum(v for _, v in esc_loc["gastos_operativos"])
+            gastos_op = sum(v for _, v in esc_loc["gastos_operativos"])
             resultado_operativo = utilidad_bruta - gastos_op
 
-            otros_ingresos      = sum(v for _, v in esc_loc["otros_ingresos"])
-            otros_egresos       = sum(v for _, v in esc_loc["otros_egresos"])
-            utilidad_ai         = resultado_operativo + otros_ingresos - otros_egresos
-            impuesto            = max(utilidad_ai, 0) * esc_loc["tasa_impuesto"]
-            utilidad_neta       = utilidad_ai - impuesto
+            otros_ingresos = sum(v for _, v in esc_loc["otros_ingresos"])
+            otros_egresos = sum(v for _, v in esc_loc["otros_egresos"])
+            utilidad_ai = resultado_operativo + otros_ingresos - otros_egresos
+            impuesto = max(utilidad_ai, 0) * esc_loc["tasa_impuesto"]
+            utilidad_neta = utilidad_ai - impuesto
 
             resumen = {
                 "ventas_brutas": ventas_brutas,
@@ -7074,21 +7287,21 @@ def page_level4(username):
                 "Otros egresos": resumen["otros_egresos"],
                 "Utilidad antes de impuesto": resumen["utilidad_ai"],
                 "Impuesto": resumen["impuesto"],
-                "Utilidad neta": resumen["utilidad_neta"]
+                "Utilidad neta": resumen["utilidad_neta"],
             }
 
         # =========================
-        # Mostrar KARDEX de referencia (desplegable por método)
+        # Mostrar KARDEX de referencia
         # =========================
         st.markdown("---")
         st.markdown("### 🧮 KARDEX de referencia")
-        st.caption("Este KARDEX se construye con la misma lógica del Ejemplo guiado, cambiando según el método seleccionado.")
-        st.selectbox(
-            "Visualizar KARDEX con método:",
-            ["Promedio Ponderado", "PEPS (FIFO)", "UEPS (LIFO)"],
-            key=K("kdx_view_metodo")
+        st.caption(
+            "Este KARDEX se construye con la misma lógica del Ejemplo guiado y "
+            "se actualiza con el método de valoración seleccionado arriba."
         )
-        df_kdx_ref = pd.DataFrame(_build_kardex_expected(st.session_state[K("kdx_view_metodo")]))
+
+        metodo_actual = st.session_state[K("metodo")]
+        df_kdx_ref = pd.DataFrame(_build_kardex_expected(metodo_actual))
         st.dataframe(df_kdx_ref, use_container_width=True)
 
         # =========================
@@ -7113,35 +7326,48 @@ def page_level4(username):
             "Otros egresos",
             "Utilidad antes de impuesto",
             "Impuesto",
-            "Utilidad neta"
+            "Utilidad neta",
         ]
-        df_blank_pyg = pd.DataFrame({"Rubro": order_rows, "Valor": [""]*len(order_rows)})
+        df_blank_pyg = pd.DataFrame(
+            {"Rubro": order_rows, "Valor": [""] * len(order_rows)}
+        )
 
-        st.caption("Ingresa los valores numéricos. El validador exige coherencia total con el escenario y el método seleccionado.")
+        st.caption(
+            "Ingresa los valores numéricos. El validador exige coherencia total con el escenario "
+            "y el método seleccionado (incluyendo CMV brutos, devoluciones y utilidad)."
+        )
         edited_pyg = st.data_editor(
             df_blank_pyg,
             use_container_width=True,
             hide_index=True,
             column_config={
                 "Rubro": st.column_config.TextColumn(disabled=True),
-                "Valor": st.column_config.NumberColumn(step=0.01, help="Valor monetario (usa números)"),
+                "Valor": st.column_config.NumberColumn(
+                    step=0.01, help="Valor monetario (usa números)"
+                ),
             },
             key=K("pyg_student_editor"),
             num_rows="fixed",
-            disabled=False
+            disabled=False,
         )
 
         with st.form(K("pyg_check_form")):
-            ask_ai = st.checkbox("💬 Retroalimentación de IA (opcional)", value=False, key=K("ai_cb"))
+            ask_ai = st.checkbox(
+                "💬 Retroalimentación de IA (opcional)",
+                value=False,
+                key=K("ai_cb"),
+            )
             submitted = st.form_submit_button("✅ Validar mi Estado de Resultados")
 
         if submitted:
             tol = 0.5
+
             def _to_float_or_none(x):
                 try:
-                    if x in (None,""): return None
+                    if x in (None, ""):
+                        return None
                     return float(x)
-                except:
+                except Exception:
                     return None
 
             def _near(a, b):
@@ -7159,44 +7385,69 @@ def page_level4(username):
                 if ok:
                     correct_rows += 1
 
-            st.metric("ER — renglones correctos", f"{correct_rows}/{len(order_rows)}")
+            st.metric(
+                "ER — renglones correctos",
+                f"{correct_rows}/{len(order_rows)}",
+            )
             for rubro, usr, exp, ok in checks:
                 badge = "✅" if ok else "❌"
+                usr_txt = "—" if usr is None else f"{usr:.2f}"
                 st.write(
-                    f"{badge} **{rubro}** — tu valor: "
-                    f"{('—' if usr is None else f'{usr:.2f}')} | esperado: {exp:.2f}"
+                    f"{badge} **{rubro}** — tu valor: {usr_txt} | esperado: {exp:.2f}"
                 )
 
             if correct_rows == len(order_rows):
-                st.success("¡Excelente! Tu Estado de Resultados es consistente con el escenario y el método.")
+                st.success(
+                    "¡Excelente! Tu Estado de Resultados es consistente con el escenario, "
+                    "el KARDEX y el método de valoración."
+                )
             else:
-                st.warning("Hay diferencias. Revisa la secuencia y los vínculos con el KARDEX (ventas, CMV brutos, devoluciones e impuesto).")
+                st.warning(
+                    "Hay diferencias. Revisa la secuencia y los vínculos con el KARDEX "
+                    "(ventas, CMV brutos, devoluciones y cálculo del impuesto)."
+                )
 
             if ask_ai:
                 try:
                     intento_txt = "\n".join(
-                        [f"{r}: {('—' if v is None else f'{v:.2f}')}" for r, v, _, _ in checks]
+                        [
+                            f"{r}: {('—' if v is None else f'{v:.2f}')}"
+                            for r, v, _, _ in checks
+                        ]
                     )
                     esperado_txt = "\n".join(
-                        [f"{r}: {float(pyg_expected[r]):.2f}" for r in order_rows]
+                        [
+                            f"{r}: {float(pyg_expected[r]):.2f}"
+                            for r in order_rows
+                        ]
                     )
-                    metodo = st.session_state[K("metodo")]
+                    metodo_fb = st.session_state[K("metodo")]
                     tasa_pct = int(st.session_state[K("tasa")] * 100)
                     prompt_fb = (
                         "Evalúa el Estado de Resultados diligenciado por el estudiante.\n"
-                        f"Método de valoración: {metodo}. Tasa de impuesto: {tasa_pct}%.\n"
-                        "Usa como base el KARDEX del período (saldo inicial, compra, venta, devoluciones) y los rubros del período.\n\n"
-                        "Valores del estudiante:\n" + intento_txt + "\n\n"
-                        "Valores esperados:\n" + esperado_txt + "\n\n"
+                        f"Método de valoración: {metodo_fb}. Tasa de impuesto: {tasa_pct}%.\n"
+                        "Usa como base el KARDEX del período (saldo inicial, compra, venta, devoluciones) "
+                        "y los rubros del período.\n\n"
+                        "Valores del estudiante:\n"
+                        + intento_txt
+                        + "\n\n"
+                        "Valores esperados:\n"
+                        + esperado_txt
+                        + "\n\n"
                         "Indica: (1) errores por renglón, (2) explicación paso a paso, "
-                        "(3) tips para no confundir ventas netas, CMV brutos, devoluciones en ventas, utilidad bruta y cálculo del impuesto."
+                        "(3) tips para no confundir ventas netas, CMV brutos, devoluciones en ventas, "
+                        "utilidad bruta y cálculo del impuesto."
                     )
                     with st.spinner("Generando retroalimentación de IA…"):
                         fb_text = ia_feedback(prompt_fb)
-                    with st.expander("💬 Retroalimentación de la IA (Estado de Resultados)"):
+                    with st.expander(
+                        "💬 Retroalimentación de la IA (Estado de Resultados)"
+                    ):
                         st.write(fb_text)
                 except Exception as e:
-                    st.info("La retroalimentación de IA no está disponible en este entorno.")
+                    st.info(
+                        "La retroalimentación de IA no está disponible en este entorno."
+                    )
                     st.caption(f"Detalle técnico: {e}")
 
     # =====================================================
