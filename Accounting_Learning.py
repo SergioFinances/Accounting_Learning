@@ -47,7 +47,16 @@ load_dotenv()
 from openai import OpenAI
 from openai import BadRequestError  # <-- agrega esto
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# Leer primero de las variables de entorno y, si no, directamente de st.secrets
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
+
+if not OPENROUTER_API_KEY:
+    # Mensaje claro si algo falla con los secrets
+    raise RuntimeError(
+        "No se encontró OPENROUTER_API_KEY. "
+        "Verifica que esté definido en los Secrets de Streamlit Cloud."
+    )
+
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
