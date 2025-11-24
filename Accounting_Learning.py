@@ -6670,14 +6670,15 @@ def page_level4(username):
                     delta = random.choice([-1.0, 1.0]) * random.uniform(0.5, 1.5)
                     comp1_pu = max(1.0, round(inv0_pu + delta, 2))
 
-            # Venta hasta existencia razonable
+            # Venta hasta existencia razonable (se vende algo, pero no todo)
             total_disp = inv0_u + comp1_u
             venta_u = random.choice([20, 40, 60, 80, 100])
             venta_u = min(venta_u, max(10, total_disp - 10))
-            venta_u = max(0, venta_u)
+            venta_u = max(10, venta_u)
 
-            # Precio de venta SIEMPRE mayor que el costo
-            p_venta = round(random.uniform(inv0_pu + 4, inv0_pu + 10), 2)
+            # Precio de venta SIEMPRE mayor que el costo (al menos 4 unidades más)
+            costo_max = max(inv0_pu, comp1_pu)
+            p_venta = round(random.uniform(costo_max + 4, costo_max + 10), 2)
 
             # Devoluciones coherentes
             dev_comp_u = random.choice([0, 2, 4, 6, 8, 10])
@@ -6720,7 +6721,7 @@ def page_level4(username):
         with ctop2:
             st.button(
                 "🎲 Generar escenario aleatorio",
-                on_click=_n4_randomize_scenario,   # ⬅️ ahora randomiza directo
+                on_click=_n4_randomize_scenario,
                 key=K("rand_btn"),
                 help="Genera cantidades, costos y devoluciones coherentes con el método elegido.",
             )
@@ -7092,6 +7093,7 @@ def page_level4(username):
             else:
                 send_back = dcomp_u
                 dev_comp_valor = 0.0
+                total_dev_units = 0
                 rev = layers[::-1]
                 new_rev = []
                 for q, pu in rev:
@@ -7099,13 +7101,21 @@ def page_level4(username):
                         new_rev.append([q, pu])
                         continue
                     take = min(q, send_back)
-                    dev_comp_valor += take * pu
-                    rest = q - take
-                    send_back -= take
-                    if rest > 0:
-                        new_rev.append([rest, pu])
+                    if take > 0:
+                        dev_comp_valor += take * pu
+                        total_dev_units += take
+                        rest = q - take
+                        send_back -= take
+                        if rest > 0:
+                            new_rev.append([rest, pu])
                 layers = new_rev[::-1]
                 s_q, s_pu, s_v = _sum_layers(layers)
+                salida_cant = int(total_dev_units)
+                salida_pu = (
+                    round(dev_comp_valor / total_dev_units, 2)
+                    if total_dev_units > 0
+                    else None
+                )
                 rows.append(
                     {
                         "Fecha": "Día 4",
@@ -7113,8 +7123,8 @@ def page_level4(username):
                         "Entrada_cant": None,
                         "Entrada_pu": None,
                         "Entrada_total": None,
-                        "Salida_cant": int(dcomp_u),
-                        "Salida_pu": None,
+                        "Salida_cant": salida_cant,
+                        "Salida_pu": salida_pu,
                         "Salida_total": round(dev_comp_valor, 2),
                         "Saldo_cant": int(s_q),
                         "Saldo_pu": round(s_pu, 2),
@@ -7158,27 +7168,34 @@ def page_level4(username):
                         while devolver > 0 and it < len(details):
                             q_take, pu_take, _ = details[it]
                             use = min(devolver, q_take)
-                            costo_dev_venta += use * pu_take
-                            layers.append([float(use), float(pu_take)])
-                            devolver -= use
+                            if use > 0:
+                                costo_dev_venta += use * pu_take
+                                layers.append([float(use), float(pu_take)])
+                                devolver -= use
                             it += 1
                     else:
                         it = len(details) - 1
                         while devolver > 0 and it >= 0:
                             q_take, pu_take, _ = details[it]
                             use = min(devolver, q_take)
-                            costo_dev_venta += use * pu_take
-                            layers.append([float(use), float(pu_take)])
-                            devolver -= use
+                            if use > 0:
+                                costo_dev_venta += use * pu_take
+                                layers.append([float(use), float(pu_take)])
+                                devolver -= use
                             it -= 1
 
                     s_q, s_pu, s_v = _sum_layers(layers)
+                    entrada_pu = (
+                        round(costo_dev_venta / dvent_u, 2)
+                        if dvent_u > 0
+                        else None
+                    )
                     rows.append(
                         {
                             "Fecha": "Día 5",
                             "Descripción": "Devolución de venta (reingreso)",
                             "Entrada_cant": dvent_u,
-                            "Entrada_pu": None,
+                            "Entrada_pu": entrada_pu,
                             "Entrada_total": round(costo_dev_venta, 2),
                             "Salida_cant": None,
                             "Salida_pu": None,
