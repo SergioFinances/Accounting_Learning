@@ -6016,7 +6016,7 @@ def page_level4(username):
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
             else:
-                # PEPS / UEPS: agregamos una nueva capa sin fila "Saldo (día 1)"
+                # PEPS / UEPS: agregamos una nueva capa
                 ent_tot = c1_u * c1_pu
                 layers.append([float(c1_u), float(c1_pu)])  # nueva capa
                 s_q, s_pu, s_v = _sum_layers(layers)
@@ -6093,21 +6093,26 @@ def page_level4(username):
                 dev_comp_valor = 0.0
                 rev = layers[::-1]
                 new_rev = []
+                take_q_total = 0
                 for q, pu in rev:
                     if send_back <= 0:
                         new_rev.append([q, pu]); continue
                     take = min(q, send_back)
                     dev_comp_valor += take * pu
+                    take_q_total += take
                     rest = q - take
                     send_back -= take
                     if rest > 0:
                         new_rev.append([rest, pu])
                 layers = new_rev[::-1]
                 s_q, s_pu, s_v = _sum_layers(layers)
+                avg_dev_comp_pu = (dev_comp_valor / take_q_total) if take_q_total > 0 else None
                 rows.append({
                     "Fecha":"Día 4", "Descripción":"Devolución de compra (a proveedor)",
                     "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
-                    "Salida_cant": esc["dev_comp"], "Salida_pu":None, "Salida_total": round(dev_comp_valor,2),
+                    "Salida_cant": int(take_q_total),
+                    "Salida_pu": round(avg_dev_comp_pu,2) if avg_dev_comp_pu is not None else None,
+                    "Salida_total": round(dev_comp_valor,2),
                     "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                 })
 
@@ -6153,9 +6158,12 @@ def page_level4(username):
                             it -= 1
 
                     s_q, s_pu, s_v = _sum_layers(layers)
+                    avg_dev_vent_pu = (costo_dev_venta / esc["dev_vent"]) if esc["dev_vent"] > 0 else None
                     rows.append({
                         "Fecha":"Día 5", "Descripción":"Devolución de venta (reingreso)",
-                        "Entrada_cant": esc["dev_vent"], "Entrada_pu":None, "Entrada_total": round(costo_dev_venta,2),
+                        "Entrada_cant": esc["dev_vent"],
+                        "Entrada_pu": round(avg_dev_vent_pu,2) if avg_dev_vent_pu is not None else None,
+                        "Entrada_total": round(costo_dev_venta,2),
                         "Salida_cant":None, "Salida_pu":None, "Salida_total":None,
                         "Saldo_cant": int(s_q), "Saldo_pu": round(s_pu,2), "Saldo_total": round(s_v,2)
                     })
@@ -6183,11 +6191,8 @@ def page_level4(username):
                         dev_compras_valor = r["Salida_total"] if r["Salida_total"] != "" else 0.0
                         break
             else:
-                # dev_comp_valor calculado en D4 para PEPS/UEPS
-                try:
-                    dev_compras_valor  # noqa
-                except NameError:
-                    dev_compras_valor = 0.0  # fallback (no debería ocurrir)
+                # Para PEPS/UEPS usamos el valor calculado en D4
+                dev_compras_valor = dev_comp_valor
 
             compras_netas       = compras_brutas - dev_compras_valor
 
@@ -6592,7 +6597,6 @@ def page_level4(username):
             "gastos_op": sum(v for _, v in esc["gastos_operativos"]),
             "otros_ingresos": sum(v for _, v in esc["otros_ingresos"]),
             "otros_egresos": sum(v for _, v in esc["otros_egresos"]),
-
             "tasa": esc["tasa_impuesto"],
         }, ensure_ascii=False)
 
