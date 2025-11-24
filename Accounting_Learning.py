@@ -47,7 +47,7 @@ load_dotenv()
 from openai import OpenAI
 from openai import BadRequestError  # <-- agrega esto
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY")
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
