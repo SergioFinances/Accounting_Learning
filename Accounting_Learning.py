@@ -6648,47 +6648,50 @@ def page_level4(username):
         def _n4_randomize_scenario():
             import random
 
-            inv0_u = random.choice([60, 80, 100, 120, 150])
-            inv0_pu = random.choice([8.0, 9.0, 10.0, 11.0, 12.0])
-            comp1_u = random.choice([30, 40, 50, 60, 70])
-            comp1_pu = random.choice(
-                [inv0_pu - 1, inv0_pu, inv0_pu + 1, inv0_pu + 2]
-            )
-            venta_u = random.choice([40, 60, 90, 110, 130])
-            p_venta = random.choice([16.0, 18.0, 20.0, 22.0, 24.0])
-            dev_comp_u = max(
-                0, min(comp1_u, random.choice([4, 6, 8, 10, 12, 15]))
-            )
-            dev_vent_u = max(
-                0, min(venta_u, random.choice([2, 4, 6, 8, 10, 12]))
-            )
-            go_vals = sorted(
-                random.sample(
-                    [80.0, 90.0, 100.0, 120.0, 140.0, 150.0], 3
-                )
-            )
+            # Inventario inicial coherente
+            inv0_u  = random.choice([50, 60, 80, 100, 120])
+            inv0_pu = round(random.uniform(8.0, 14.0), 2)
+
+            # Compra coherente (no menor que cero, precios correctos)
+            comp1_u  = random.choice([20, 30, 40, 50, 60])
+            comp1_pu = round(inv0_pu + random.uniform(-1.0, 2.0), 2)
+            comp1_pu = max(1.0, comp1_pu)
+
+            # Venta hasta existencia razonable
+            venta_u = random.choice([20, 40, 60, 80, 100])
+            venta_u = min(venta_u, inv0_u + comp1_u)  # no puede exceder inventario disponible
+
+            # Precio de venta SIEMPRE mayor que el costo
+            p_venta = round(random.uniform(inv0_pu + 4, inv0_pu + 10), 2)
+
+            # Devoluciones coherentes
+            dev_comp_u = random.choice([0, 2, 4, 6, 8, 10])
+            dev_comp_u = min(dev_comp_u, comp1_u)
+
+            dev_vent_u = random.choice([0, 2, 4, 6, 8])
+            dev_vent_u = min(dev_vent_u, venta_u)
+
+            # Gastos, ingresos y egresos
+            go_vals = sorted(random.sample([80.0, 100.0, 120.0, 150.0, 180.0], 3))
             otros_ing = random.choice([20.0, 30.0, 40.0, 50.0])
-            otros_egr = random.choice([10.0, 15.0, 20.0, 25.0])
+            otros_egr = random.choice([10.0, 15.0, 20.0])
+
             tasa = random.choice([0.19, 0.25, 0.30])
 
             ss = st.session_state
-            ss[K("inv0_u")] = inv0_u
-            ss[K("inv0_pu")] = float(max(1.0, round(inv0_pu, 2)))
+            ss[K("inv0_u")]  = inv0_u
+            ss[K("inv0_pu")] = inv0_pu
             ss[K("comp1_u")] = comp1_u
-            ss[K("comp1_pu")] = float(max(1.0, round(comp1_pu, 2)))
+            ss[K("comp1_pu")] = comp1_pu
             ss[K("venta_u")] = venta_u
-            ss[K("p_venta")] = float(p_venta)
-            ss[K("dev_comp_u")] = dev_comp_u
-            ss[K("dev_vent_u")] = dev_vent_u
-            ss[K("go_1_name")], ss[K("go_2_name")], ss[K("go_3_name")] = (
-                "Gasto A",
-                "Gasto B",
-                "Gasto C",
-            )
+            ss[K("p_venta")] = p_venta
+            ss[K("dev_comp_u")]  = dev_comp_u
+            ss[K("dev_vent_u")]  = dev_vent_u
+            ss[K("go_1_name")], ss[K("go_2_name")], ss[K("go_3_name")] = "Gasto A", "Gasto B", "Gasto C"
             ss[K("go_1_val")], ss[K("go_2_val")], ss[K("go_3_val")] = go_vals
             ss[K("otros_ing")] = otros_ing
             ss[K("otros_egr")] = otros_egr
-            ss[K("tasa")] = float(tasa)
+            ss[K("tasa")] = tasa
 
         def _n4_request_random():
             st.session_state[K("rand_req")] = True
@@ -7512,10 +7515,17 @@ def page_level4(username):
             layers = [[float(inv0_u), float(inv0_pu)]]
             s_q, s_p, s_v = _sum_layers(layers)
             rows.append({
-                "Fecha":"Día 1","Descripción":"Saldo inicial",
-                "Entrada_cant":None, "Entrada_pu":None, "Entrada_total":None,
-                "Salida_cant":None,  "Salida_pu":None,  "Salida_total":None,
-                "Saldo_cant": int(s_q), "Saldo_pu": round(s_p,2), "Saldo_total": round(s_v,2)
+                "Fecha":"Día 1",
+                "Descripción":"Saldo inicial",
+                "Entrada_cant": inv0_u,
+                "Entrada_pu": round(inv0_pu, 2),
+                "Entrada_total": round(inv0_u * inv0_pu, 2),
+                "Salida_cant": None,
+                "Salida_pu": None,
+                "Salida_total": None,
+                "Saldo_cant": inv0_u,
+                "Saldo_pu": round(inv0_pu,2),
+                "Saldo_total": round(inv0_u * inv0_pu,2)
             })
 
             # D2 compra (promediada)
