@@ -7555,6 +7555,7 @@ def page_level4(username):
             """
             Calcula el Estado de Resultados esperado (SOLO PP) a partir del escenario.
             Devuelve un dict con el orden EXACTO de los renglones que mostrará el editor.
+            Incluye la desagregación del CMV: brutos − devoluciones = netos.
             """
             inv0_u, inv0_pu = sc["inv0_u"], sc["inv0_pu"]
             c1_u, c1_pu     = sc["comp1_u"], sc["comp1_pu"]
@@ -7578,7 +7579,7 @@ def page_level4(username):
             layers = [[q2, p2]]
             s_q, s_p, s_v = _sum_layers(layers)
 
-            # D3 venta
+            # D3 venta → CMV brutos
             sale_q  = min(v_u, s_q)
             sale_pu = layers[0][1] if layers else 0.0
             sale_tot= sale_q * sale_pu
@@ -7619,6 +7620,7 @@ def page_level4(username):
             compras_brutas      = c1_u * c1_pu
             compras_netas       = compras_brutas - dev_compras_valor
 
+            # CMV neto: brutos − costo devolución en ventas
             cmv_neto            = cmv_bruto - costo_dev_venta
             utilidad_bruta      = ventas_netas - cmv_neto
 
@@ -7629,12 +7631,14 @@ def page_level4(username):
             impuesto            = max(utilidad_ai, 0.0) * tasa
             utilidad_neta       = utilidad_ai - impuesto
 
-            # Orden EXACTO que verá el editor
+            # Orden EXACTO que verá el editor (con desagregación de CMV)
             return {
                 "Ventas brutas": ventas_brutas,
                 "(-) Devoluciones en ventas": dev_ventas_brutas,
                 "Ventas netas": ventas_netas,
-                "CMV": cmv_neto,
+                "Costos de mercancía vendida brutos": cmv_bruto,
+                "(-) Costo devolución en ventas": costo_dev_venta,
+                "Costos de mercancía vendida netos": cmv_neto,
                 "Utilidad bruta": utilidad_bruta,
                 "Gastos operativos": gastos_op,
                 "Resultado operativo": resultado_operativo,
@@ -7736,7 +7740,7 @@ def page_level4(username):
             )
             ask_ai_open2 = st.checkbox("💬 Pedir feedback para la pregunta 4 (opcional)", key=K("ai_open2"), value=False)
 
-            # ---------- Q5: Estructura tipo PRÁCTICA ----------
+            # ---------- Q5: Ejercicio tipo PRÁCTICA ----------
             st.markdown("### Ejercicio tipo práctica — Estado de Resultados (Promedio Ponderado)")
             _sc = exam_scenario_q5()
             total_gastos = sum(v for _, v in _sc["gastos_operativos"])
@@ -7744,7 +7748,6 @@ def page_level4(username):
             # (1) Escenario — Solo variables clave visibles
             st.markdown("#### **Escenario — Empresa “Mercantil XYZ S.A.S.”**")
 
-            # Formateo con separador de miles y 2 decimales
             valores_escenario = {
                 "Cantidad vendida": f"{_sc['venta_u']} unidades",
                 "Precio de venta": f"${_sc['p_venta']:,.2f}",
@@ -7755,7 +7758,6 @@ def page_level4(username):
                 "Método": _sc["metodo"],
             }
 
-            # Mostrar como viñetas (markdown)
             st.markdown(
                 "\n".join([f"- **{k}:** {v}" for k, v in valores_escenario.items()])
             )
@@ -7770,7 +7772,9 @@ def page_level4(username):
                 "Ventas brutas",
                 "(-) Devoluciones en ventas",
                 "Ventas netas",
-                "CMV",
+                "Costos de mercancía vendida brutos",
+                "(-) Costo devolución en ventas",
+                "Costos de mercancía vendida netos",
                 "Utilidad bruta",
                 "Gastos operativos",
                 "Resultado operativo",
@@ -7783,7 +7787,7 @@ def page_level4(username):
             df_er_blank = _pd.DataFrame({"Rubro": order_rows, "Valor": [""]*len(order_rows)})
 
             st.markdown("#### ✍️ Completa el **Estado de Resultados**")
-            st.caption("Diligencia los valores numéricos. El validador verificará rubro por rubro con tolerancia ±0.5.")
+            st.caption("Diligencia los valores numéricos. El validador verificará rubro por rubro con tolerancia ±5.")
             edited_er = st.data_editor(
                 df_er_blank,
                 use_container_width=True,
@@ -7868,7 +7872,7 @@ def page_level4(username):
             # --- Q5: Validación del Estado de Resultados (rubro por rubro) ---
             expected_pyg = _pyg_expected_from_scenario_pp(exam_scenario_q5())
 
-            tol = 0.5
+            tol = 5.0   # margen de error ±5
             def _to_float_or_none(x):
                 try:
                     if x in (None, ""): return None
@@ -7917,8 +7921,8 @@ def page_level4(username):
 
                 prompt_q5 = (
                     "Evalúa el Estado de Resultados diligenciado por el estudiante. "
-                    "Centra el feedback en: coherencia con KARDEX PP (CMV y devoluciones), "
-                    "ventas netas, CMV, y derivación de utilidades e impuesto. "
+                    "Centra el feedback en: coherencia con KARDEX PP (CMV brutos y costo de devoluciones), "
+                    "ventas netas, CMV neto y derivación de utilidades e impuesto. "
                     "Primera línea EXACTA: 'SCORE: 1' si ≥80% de rubros están correctos y no hay errores conceptuales graves; "
                     "si no, 'SCORE: 0'. Luego 3–5 líneas con correcciones puntuales.\n\n"
                     f"INTENTO (valores del estudiante):\n{intento_txt}\n\n"
@@ -7931,7 +7935,6 @@ def page_level4(username):
             total_hits = int(q1_ok) + int(q2_ok) + int(q3_score1) + int(q4_score1) + int(q5_ok)
             passed = (total_hits == 5)
 
-            # Registro (si tienes estas funciones y 'username')
             try:
                 record_attempt(username, level=4, score=total_hits, passed=passed)  # noqa: F821
             except Exception:
@@ -7942,7 +7945,6 @@ def page_level4(username):
             with cA: st.metric("Aciertos", f"{total_hits}/5")
             with cB: st.metric("Estado", "APROBADO ✅" if passed else "NO APROBADO ❌")
 
-            # Detalle estilo PRÁCTICA
             with st.expander("Detalle de corrección"):
                 st.write(f"**Q1 (MCQ):** {'✅' if q1_ok else '❌'}")
                 st.write(f"**Q2 (MCQ):** {'✅' if q2_ok else '❌'}")
@@ -7968,12 +7970,12 @@ def page_level4(username):
                 if not q5_ok:
                     st.caption(
                         "Pistas: (1) Ventas netas = Ventas brutas − Dev. ventas; "
-                        "(2) El CMV que se presenta en el ER ya descuenta el costo de las unidades devueltas; "
-                        "(3) Utilidad bruta = Ventas netas − CMV; "
-                        "(4) Resultado operativo, UAI, Impuesto y UN en ese orden."
+                        "(2) El CMV se presenta desagregado: primero costos brutos, luego el costo de las unidades devueltas; "
+                        "(3) CMV neto = CMV brutos − costo de devoluciones en ventas; "
+                        "(4) Utilidad bruta = Ventas netas − CMV neto; "
+                        "(5) Resultado operativo, UAI, Impuesto y UN en ese orden."
                     )
 
-            # Celebración / avance (si tienes estas funciones)
             if passed:
                 try:
                     set_level_passed(st.session_state.get('progress_col'), username, "level4", total_hits)  # noqa: F821
@@ -7984,7 +7986,8 @@ def page_level4(username):
                     start_celebration(  # noqa: F821
                         message_md=(
                             "<b>¡Nivel 4 dominado!</b> 📑💼<br><br>"
-                            "Construiste y validaste el Estado de Resultados en sistema perpetuo con devoluciones."
+                            "Construiste y validaste el Estado de Resultados en sistema perpetuo con devoluciones, "
+                            "incluyendo la desagregación del CMV."
                         ),
                         next_label="Volver al menú",
                         next_key_value="🏠 Inicio"
@@ -7992,8 +7995,7 @@ def page_level4(username):
                 except Exception:
                     pass
             else:
-                st.error("No aprobado. Debes acertar 5/5. Repasa la integración KARDEX ↔ ER, el tratamiento de devoluciones y el CMV único del Estado de Resultados.")
-
+                st.error("No aprobado. Debes acertar 5/5. Repasa la integración KARDEX ↔ ER, el tratamiento de devoluciones y el CMV desagregado (brutos − devoluciones).")
 
 # ===========================
 # Página: Encuesta de satisfacción
