@@ -5740,9 +5740,9 @@ def page_level4(username):
     - **Costo de la mercadería vendida (CMV)** → *desde KARDEX (PP/PEPS/UEPS), con devoluciones*  
     - **Utilidad bruta** = Ventas netas − CMV  
     - **Gastos operativos** (administración y ventas)  
-    - **Resultado operativo** = Utilidad bruta − Gastos operativos  
+    - **Utilidad Operativa** = Utilidad bruta − Gastos operativos  
     - **Otros ingresos** y **Otros egresos**  
-    - **Utilidad antes de impuesto** = Resultado operativo + Otros ingresos − Otros egresos  
+    - **Utilidad antes de impuesto** = Utilidad Operativa + Otros ingresos − Otros egresos  
     - **Impuesto**  
     - **Utilidad neta** = Utilidad antes de impuesto − Impuesto
             """
@@ -5757,7 +5757,7 @@ def page_level4(username):
                 "CMV",
                 "Utilidad bruta",
                 "Gastos operativos",
-                "Resultado operativo",
+                "Utilidad Operativa",
                 "Otros ingresos",
                 "Otros egresos",
                 "Utilidad antes de impuesto",
@@ -5813,8 +5813,8 @@ def page_level4(username):
                 "Incluyen gastos de administración y ventas. No forman parte del CMV; se restan después para obtener el resultado operativo."
             )
 
-        elif rubro == "Resultado operativo":
-            st.markdown("**Resultado operativo**")
+        elif rubro == "Utilidad Operativa":
+            st.markdown("**Utilidad Operativa**")
             st.latex(r"\text{Resultado Operativo}=\text{Utilidad Bruta}-\text{Gastos Operativos}")
             st.caption("Mide el desempeño del giro del negocio antes de partidas no operativas e impuestos.")
 
@@ -6317,7 +6317,7 @@ def page_level4(username):
 
             <tr><td><b>Utilidad bruta</b></td><td id="pyg_ub" class="muted"></td></tr>
             <tr><td>Gastos operativos</td><td id="pyg_go" class="muted"></td></tr>
-            <tr><td><b>Resultado operativo</b></td><td id="pyg_ro" class="muted"></td></tr>
+            <tr><td><b>Utilidad Operativa</b></td><td id="pyg_ro" class="muted"></td></tr>
 
             <tr><td>Otros ingresos</td><td id="pyg_oi" class="muted"></td></tr>
             <tr><td>Otros egresos</td><td id="pyg_oe" class="muted"></td></tr>
@@ -7244,7 +7244,7 @@ def page_level4(username):
                 "Costos de mercancía vendida netos": resumen["cmv_neto"],
                 "Utilidad bruta": resumen["utilidad_bruta"],
                 "Gastos operativos": resumen["gastos_op"],
-                "Resultado operativo": resumen["resultado_operativo"],
+                "Utilidad Operativa": resumen["resultado_operativo"],
                 "Otros ingresos": resumen["otros_ingresos"],
                 "Otros egresos": resumen["otros_egresos"],
                 "Utilidad antes de impuesto": resumen["utilidad_ai"],
@@ -7641,7 +7641,7 @@ def page_level4(username):
                 "Costos de mercancía vendida netos": cmv_neto,
                 "Utilidad bruta": utilidad_bruta,
                 "Gastos operativos": gastos_op,
-                "Resultado operativo": resultado_operativo,
+                "Utilidad Operativa": resultado_operativo,
                 "Otros ingresos": otros_ing,
                 "Otros egresos": otros_egr,
                 "Utilidad antes de impuesto": utilidad_ai,
@@ -7777,7 +7777,7 @@ def page_level4(username):
                 "Costos de mercancía vendida netos",
                 "Utilidad bruta",
                 "Gastos operativos",
-                "Resultado operativo",
+                "Utilidad Operativa",
                 "Otros ingresos",
                 "Otros egresos",
                 "Utilidad antes de impuesto",
@@ -7973,7 +7973,7 @@ def page_level4(username):
                         "(2) El CMV se presenta desagregado: primero costos brutos, luego el costo de las unidades devueltas; "
                         "(3) CMV neto = CMV brutos − costo de devoluciones en ventas; "
                         "(4) Utilidad bruta = Ventas netas − CMV neto; "
-                        "(5) Resultado operativo, UAI, Impuesto y UN en ese orden."
+                        "(5) Utilidad Operativa, UAI, Impuesto y UN en ese orden."
                     )
 
             if passed:
