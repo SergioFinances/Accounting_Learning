@@ -7283,7 +7283,7 @@ def page_level4(username):
             "Costos de mercancía vendida netos",
             "Utilidad bruta",
             "Gastos operativos",
-            "Resultado operativo",
+            "Utilidad Operativa",
             "Otros ingresos",
             "Otros egresos",
             "Utilidad antes de impuesto",
