@@ -47,20 +47,24 @@ load_dotenv()
 from openai import OpenAI
 from openai import BadRequestError  # <-- agrega esto
 
-# Leer primero de las variables de entorno y, si no, directamente de st.secrets
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
+# Cargar la API Key desde secrets o variables de entorno
+OPENROUTER_API_KEY = (
+    st.secrets.get("OPENROUTER_API_KEY")  # Streamlit Cloud
+    or os.getenv("OPENROUTER_API_KEY")    # .env local
+)
 
 if not OPENROUTER_API_KEY:
-    # Mensaje claro si algo falla con los secrets
     raise RuntimeError(
         "No se encontró OPENROUTER_API_KEY. "
-        "Verifica que esté definido en los Secrets de Streamlit Cloud."
+        "Verifica los Secrets en Streamlit Cloud."
     )
 
+# Crear el cliente OpenRouter
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
 )
+
 
 PRIMARY_MODEL  = "deepseek/deepseek-chat-v3.1:free"
 FALLBACK_MODEL = "openai/gpt-oss-20b:free"
