@@ -6226,7 +6226,7 @@ def page_level4(username):
         kardex_rows, pyg = build_kardex_and_metrics(metodo)
 
         # =========================
-        # HTML con panel + KARDEX + PYG + NARRACIÓN TTS
+        # HTML con panel + KARDEX + PYG + NARRACIÓN TTS (con PAUSA)
         # =========================
         html_template = """
         <style>
@@ -6249,6 +6249,7 @@ def page_level4(username):
 
         <div class="controls">
         <button id="play" class="btn">▶️ Reproducir</button>
+        <button id="pause" class="btn">⏸️ Pausa</button>
         <button id="reset" class="btn">⏹️ Detener/Reiniciar</button>
         <span class="badge">__METODO__</span>
         <span class="ratewrap">
@@ -6317,6 +6318,7 @@ def page_level4(username):
         const narr = document.getElementById("narr");
         const tb = document.getElementById("kbody");
         const btnPlay = document.getElementById("play");
+        const btnPause = document.getElementById("pause");
         const btnReset = document.getElementById("reset");
         const chips = document.getElementById("chips");
         const rateCtl = document.getElementById("rate");
@@ -6383,33 +6385,35 @@ def page_level4(username):
             setTimeout(()=>el.parentElement.classList.remove("hi"),300);
         }
 
-        // --- Utilidades TTS ---
+        // --- Estado para pausa / reanudar ---
         let voices = [];
+        let isRunning = false;
+        let isPaused = false;
+        let shouldStop = false;
+
         function pickSpanishVoice(){
-            // Intenta es-CO, luego es-MX/es-ES, y si no, cualquiera española
             const prefer = v => v.lang && /^es(-CO)?/i.test(v.lang);
             const prefer2 = v => v.lang && /^es(-MX|-ES)?/i.test(v.lang);
             return voices.find(prefer) || voices.find(prefer2) || voices.find(v=>/^es/i.test(v.lang)) || null;
         }
+
         function speak(text, {rate=1}={}){
-            return new Promise((resolve,reject)=>{
+            return new Promise((resolve)=>{
             if(!('speechSynthesis' in window)){
                 console.warn("SpeechSynthesis no soportado");
                 resolve(); return;
             }
-            // Cancela cualquier cola previa
-            synth.cancel();
             const u = new SpeechSynthesisUtterance(text);
             const v = pickSpanishVoice();
             if(v) u.voice = v;
             u.lang = (v && v.lang) ? v.lang : "es-ES";
             u.rate = rate;
             u.onend = ()=>resolve();
-            u.onerror = (e)=>{ console.error(e); resolve(); };
+            u.onerror = ()=>resolve();
             synth.speak(u);
             });
         }
-        // Carga voces (algunos navegadores las cargan asíncronamente)
+
         function loadVoices(){
             voices = synth.getVoices() || [];
         }
@@ -6422,8 +6426,13 @@ def page_level4(username):
             try{ synth.cancel(); }catch(e){}
         }
 
+        async function waitWhilePaused(){
+            while(isPaused && !shouldStop){
+            await new Promise(res=>setTimeout(res,150));
+            }
+        }
+
         function stepTexts(p){
-            // Genera explicaciones con números ya formateados
             const vb = pesos(pyg.ventas_brutas);
             const dv = pesos(pyg.dev_ventas_brutas);
             const vn = pesos(pyg.ventas_netas);
@@ -6466,6 +6475,22 @@ def page_level4(username):
         }
 
         async function run(){
+            // Si ya está corriendo y está en pausa → reanudar
+            if (isRunning && isPaused){
+            isPaused = false;
+            btnPause.textContent = "⏸️ Pausa";
+            try{ synth.resume(); }catch(e){}
+            return;
+            }
+            // Si está corriendo y no está en pausa → ignorar
+            if (isRunning) return;
+
+            // Inicio de una nueva narración
+            shouldStop = false;
+            isPaused = false;
+            isRunning = true;
+            btnPause.textContent = "⏸️ Pausa";
+
             stopTTS();
             clearPYG();
             buildChips();
@@ -6473,20 +6498,55 @@ def page_level4(username):
             const steps = stepTexts(params);
 
             for(const [id,val,txt] of steps){
-            // Muestra texto, llena y habla el paso
+            if (shouldStop) break;
+            await waitWhilePaused();
+            if (shouldStop) break;
+
             narr.innerHTML = txt;
             fill(id, val);
-            await speak(txt, {rate});
-            await new Promise(r=>setTimeout(r,180)); // pequeño respiro entre pasos
+            const pVoice = speak(txt, {rate});
+            await pVoice;
+            if (shouldStop) break;
+            await waitWhilePaused();
+            if (shouldStop) break;
+            await new Promise(r=>setTimeout(r,180));
             }
+
+            if (!shouldStop){
             narr.innerHTML = "✅ Estado de Resultados completado a partir de los datos parametrizados y el KARDEX.";
+            }
+
+            isRunning = false;
+            isPaused = false;
+            btnPause.textContent = "⏸️ Pausa";
         }
 
         buildChips();
         buildKardex();
 
+        // Botón Reproducir / Reanudar
         btnPlay.onclick = run;
+
+        // Botón Pausa / Reanudar
+        btnPause.onclick = ()=>{
+            if (!isRunning) return;
+            if (!isPaused){
+            isPaused = true;
+            btnPause.textContent = "▶️ Reanudar";
+            try{ synth.pause(); }catch(e){}
+            } else {
+            isPaused = false;
+            btnPause.textContent = "⏸️ Pausa";
+            try{ synth.resume(); }catch(e){}
+            }
+        };
+
+        // Botón Reset (detener todo y limpiar)
         btnReset.onclick = ()=>{
+            shouldStop = true;
+            isPaused = false;
+            isRunning = false;
+            btnPause.textContent = "⏸️ Pausa";
             stopTTS();
             buildChips(); buildKardex(); clearPYG();
         };
@@ -6520,6 +6580,7 @@ def page_level4(username):
             "gastos_op": sum(v for _, v in esc["gastos_operativos"]),
             "otros_ingresos": sum(v for _, v in esc["otros_ingresos"]),
             "otros_egresos": sum(v for _, v in esc["otros_egresos"]),
+
             "tasa": esc["tasa_impuesto"],
         }, ensure_ascii=False)
 
