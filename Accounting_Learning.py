@@ -7290,9 +7290,7 @@ def page_level4(username):
             "Impuesto",
             "Utilidad neta",
         ]
-        df_blank_pyg = pd.DataFrame(
-            {"Rubro": order_rows, "Valor": [""] * len(order_rows)}
-        )
+        df_blank_pyg = pd.DataFrame({"Rubro": order_rows, "Valor": [None] * len(order_rows)})
 
         st.caption(
             "Ingresa los valores numéricos. El validador exige coherencia total con el escenario "
