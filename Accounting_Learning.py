@@ -8031,18 +8031,22 @@ def page_level4(username):
             else:
                 q4_fb = _sanitize_on_topic(q4_fb)
 
-            # --- Q5: Validación del Estado de Resultados (rubro por rubro) ---
-            expected_pyg = _pyg_expected_from_scenario_pp(exam_scenario_q5())
+            # ===== Q5: Validación detallada del Estado de Resultados =====
+            TOL = 0.5
 
-            tol = 5.0   # margen de error ±5
-            def _to_float_or_none(x):
+            def _to_float_safe(x):
                 try:
-                    if x in (None, ""): return None
+                    if x is None:
+                        return None
+                    x = str(x).strip()
+                    if x == "":
+                        return None
+                    x = x.replace("$", "").replace(" ", "").replace(",", ".")
                     return float(x)
                 except:
                     return None
 
-            def _near(a, b, tol=tol):
+            def _near(a, b, tol=TOL):
                 if a is None or b is None:
                     return False
                 try:
@@ -8050,26 +8054,28 @@ def page_level4(username):
                 except:
                     return False
 
-            order_rows = list(expected_pyg.keys())
             er_checks = []
-            er_correct_rows = 0
+            er_errors = []
+            er_ok_count = 0
 
-            try:
-                edited_er_df = st.session_state[K("er_editor")]
-            except Exception:
-                edited_er_df = None
+            for i, row in edited_er_df.iterrows():
+                rubro = str(row.get("Rubro", "")).strip()
+                usr_val = _to_float_safe(row.get("Valor", ""))
+                exp_val = er_expected_map.get(rubro, None)
 
-            if edited_er_df is None or not isinstance(edited_er_df, _pd.DataFrame):
-                q5_ok = False
-            else:
-                for i, rubro in enumerate(order_rows):
-                    usr_val = _to_float_or_none(edited_er_df.iloc[i]["Valor"])
-                    exp_val = float(expected_pyg[rubro])
-                    ok = _near(usr_val, exp_val)
-                    er_checks.append((rubro, usr_val, exp_val, ok))
-                    if ok:
-                        er_correct_rows += 1
-                q5_ok = (er_correct_rows == len(order_rows))
+                ok = _near(usr_val, exp_val)
+                er_checks.append((rubro, usr_val, exp_val, ok))
+
+                if ok:
+                    er_ok_count += 1
+                else:
+                    uv = "—" if usr_val is None else f"{usr_val:.2f}"
+                    ev = "—" if exp_val is None else f"{exp_val:.2f}"
+                    er_errors.append(
+                        f"{rubro}: registraste {uv} y el valor correcto era {ev}"
+                    )
+
+            q5_ok = (er_ok_count == len(order_rows))
 
             # --- Feedback IA específico Q5 (opcional) ---
             q5_fb = ""
@@ -8120,23 +8126,21 @@ def page_level4(username):
                     st.write(q4_fb)
 
                 st.write(f"**Q5 (Estado de Resultados PP):** {'✅' if q5_ok else '❌'}")
-                st.metric("Rubros correctos en Q5", f"{er_correct_rows}/{len(order_rows)}")
-                errores_er = []
+
+                st.markdown(f"**Rubros correctos en Q5:** {er_ok_count}/{len(order_rows)}")
 
                 for rubro, usr_val, exp_val, ok in er_checks:
                     uv = "—" if usr_val is None else f"{usr_val:.2f}"
+                    ev = "—" if exp_val is None else f"{exp_val:.2f}"
 
                     if ok:
-                        st.write(f"✅ **{rubro}** — tu valor: {uv} | esperado: {exp_val:.2f}")
+                        st.write(f"✅ **{rubro}** — tu valor: {uv} | esperado: {ev}")
                     else:
-                        st.write(f"❌ **{rubro}** — tu valor: {uv} | esperado: {exp_val:.2f}")
-                        errores_er.append(
-                            f"{rubro}: registraste {uv} y el valor correcto era {exp_val:.2f}"
-                        )
+                        st.write(f"❌ **{rubro}** — tu valor: {uv} | esperado: {ev}")
 
-                if errores_er:
+                if er_errors:
                     st.warning("Rubros con error en el Estado de Resultados:")
-                    for err in errores_er:
+                    for err in er_errors:
                         st.write("- " + err)
 
                 if q5_fb:
