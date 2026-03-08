@@ -629,6 +629,18 @@ def celebration_screen():
         unsafe_allow_html=True
     )
 
+    score_text = st.session_state.get("celebrate_score_text")
+    answers_title = st.session_state.get("celebrate_answers_title")
+    answers = st.session_state.get("celebrate_answers", [])
+
+    if score_text:
+        st.info(f"Resultado final: {score_text}")
+
+    if answers:
+        with st.expander(answers_title or "Ver respuestas correctas"):
+            for ans in answers:
+                st.write(ans)    
+
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         label = st.session_state.get("celebrate_next_label", "siguiente nivel")
@@ -640,8 +652,13 @@ def celebration_screen():
             st.session_state["celebrate_message"] = ""
             st.session_state["celebrate_next_label"] = ""
             st.session_state["celebrate_next_key"] = ""
+            st.session_state["celebrate_score_text"] = ""
+            st.session_state["celebrate_answers_title"] = ""
+            st.session_state["celebrate_answers"] = []
             st.rerun()
     return True
+
+
 
 # ===========================
 # --- REPO / MONGO HELPERS ---
@@ -1426,12 +1443,23 @@ def page_level1(username):
                     st.info(f"**Retroalimentación formativa:** {fb5_retro}")
 
             if passed:
-                # Guarda progreso y navega al Nivel 2
                 set_level_passed(st.session_state["progress_col"], username, "level1", score)
                 st.session_state["sidebar_next_select"] = "Nivel 2: Métodos (PP/PEPS/UEPS)"
+
+                st.session_state["celebrate_score_text"] = f"{score}/{TOTAL_ITEMS}"
+                st.session_state["celebrate_answers_title"] = "✅ Respuestas correctas del Nivel 1"
+                st.session_state["celebrate_answers"] = [
+                    f"1) Fórmula correcta: {P1_CORRECTA}",
+                    f"2) Afirmación verdadera: {P2_CORRECTA}",
+                    f"3) Cálculo directo: {money(P3_CORRECTO)}",
+                    f"4) Cálculo inverso (Inventario final): {money(P4_CORRECTO)}",
+                    "5) Respuesta abierta esperada: si el inventario final disminuye, el CMV aumenta."
+                ]
+
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 1 superado!</b> 🏆<br><br>"
+                        f"<b>Aciertos:</b> {score}/{TOTAL_ITEMS}<br><br>"
                         "Dominaste la fórmula del <b>costo de la mercancía vendida</b> y el sistema periódico. "
                         "Ahora sí: pasemos a los <b>métodos de valoración</b>."
                     ),
@@ -3531,13 +3559,23 @@ def page_level2(username):
             if passed:
                 set_level_passed(st.session_state["progress_col"], username, "level2", total_score)
                 st.session_state["sidebar_next_select"] = "Nivel 3: Devoluciones"
+                st.session_state["celebrate_score_text"] = f"{total_score}/5"
+                st.session_state["celebrate_answers_title"] = "✅ Respuestas correctas del Nivel 2"
+                st.session_state["celebrate_answers"] = [
+                    "1) Teoría 1: [pon aquí la opción correcta exacta]",
+                    "2) Teoría 2: [pon aquí la opción correcta exacta]",
+                    "3) Ejercicio PP: [pon aquí el resultado correcto o criterio correcto]",
+                    "4) Ejercicio UEPS: [pon aquí el resultado correcto o criterio correcto]",
+                    "5) Ejercicio PEPS: [pon aquí el resultado correcto o criterio correcto]"
+                ]
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 2 aprobado!</b> 🎉<br><br>"
+                        f"<b>Aciertos:</b> {total_score}/5<br><br>"
                         "Dominaste <b>PP / PEPS / UEPS</b> en teoría y práctica. "
-                        "Sigamos con el <b>Nivel 3</b>: <i>Devoluciones</i>."
+                        "Ahora continuemos con <b>devoluciones en compras y ventas</b>."
                     ),
-                    next_label="Ir al Nivel 3",
+                    next_label="Nivel 3",
                     next_key_value="Nivel 3: Devoluciones"
                 )
             else:
@@ -5695,13 +5733,28 @@ def page_level3(username):
                     set_level_passed(st.session_state.get('progress_col'), username, "level3", total_hits)
                 except Exception:
                     pass
+
                 st.success("🎉 ¡Aprobaste la Evaluación del Nivel 3! Avanzas al siguiente módulo.")
+
                 try:
                     st.session_state["sidebar_next_select"] = "Nivel 4: Estado de Resultados"
+
+                    # NUEVO: guardar puntaje y respuestas para la pantalla de celebración
+                    st.session_state["celebrate_score_text"] = f"{total_hits}/{TOTAL_ITEMS}"
+                    st.session_state["celebrate_answers_title"] = "✅ Respuestas correctas del Nivel 3"
+                    st.session_state["celebrate_answers"] = [
+                        "1) [respuesta correcta pregunta 1]",
+                        "2) [respuesta correcta pregunta 2]",
+                        "3) [respuesta correcta pregunta 3]",
+                        "4) [respuesta correcta pregunta 4]",
+                        "5) [respuesta correcta pregunta 5]"
+                    ]
+
                     start_celebration(
                         message_md=(
-                            "<b>¡Nivel 3 dominado!</b> 🔁📦<br><br>"
-                            "Manejaste devoluciones y su efecto en el KARDEX y CMV. "
+                            "<b>¡Nivel 3 aprobado!</b> 🎉<br><br>"
+                            f"<b>Aciertos:</b> {total_hits}/{TOTAL_ITEMS}<br><br>"
+                            "Ya comprendes el efecto de las <b>devoluciones</b>. "
                             "Ahora vamos al <b>Estado de Resultados</b>."
                         ),
                         next_label="Ir al Nivel 4",
@@ -7981,21 +8034,40 @@ def page_level4(username):
                     set_level_passed(st.session_state.get('progress_col'), username, "level4", total_hits)  # noqa: F821
                 except Exception:
                     pass
+
                 st.success("🎉 ¡Aprobaste la Evaluación del Nivel 4! Avanzas al siguiente módulo.")
+
                 try:
+                    # NUEVO: guardar resultado y respuestas para la pantalla de celebración
+                    st.session_state["celebrate_score_text"] = f"{total_hits}/5"
+                    st.session_state["celebrate_answers_title"] = "✅ Respuestas correctas del Nivel 4"
+                    st.session_state["celebrate_answers"] = [
+                        "1) [respuesta correcta del punto 1]",
+                        "2) [respuesta correcta del punto 2]",
+                        "3) [respuesta correcta del punto 3]",
+                        "4) [respuesta correcta del punto 4]",
+                        "5) [respuesta correcta del punto 5]"
+                    ]
+
                     start_celebration(  # noqa: F821
                         message_md=(
-                            "<b>¡Nivel 4 dominado!</b> 📑💼<br><br>"
-                            "Construiste y validaste el Estado de Resultados en sistema perpetuo con devoluciones, "
-                            "incluyendo la desagregación del CMV."
+                            "<b>¡Nivel 4 aprobado!</b> 🏆<br><br>"
+                            f"<b>Aciertos:</b> {total_hits}/5<br><br>"
+                            "Completaste el módulo de <b>Estado de Resultados</b>. "
+                            "Ya puedes regresar al menú principal."
                         ),
                         next_label="Volver al menú",
                         next_key_value="🏠 Inicio"
                     )
+
                 except Exception:
                     pass
+
             else:
-                st.error("No aprobado. Debes acertar 5/5. Repasa la integración KARDEX ↔ ER, el tratamiento de devoluciones y el CMV desagregado (brutos − devoluciones).")
+                st.error(
+                    "No aprobado. Debes acertar 5/5. Repasa la integración KARDEX ↔ ER, "
+                    "el tratamiento de devoluciones y el CMV desagregado (brutos − devoluciones)."
+                )
 
 # ===========================
 # Página: Encuesta de satisfacción
