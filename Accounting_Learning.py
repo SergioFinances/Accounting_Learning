@@ -3559,23 +3559,63 @@ def page_level2(username):
             if passed:
                 set_level_passed(st.session_state["progress_col"], username, "level2", total_score)
                 st.session_state["sidebar_next_select"] = "Nivel 3: Devoluciones"
+
                 st.session_state["celebrate_score_text"] = f"{total_score}/5"
                 st.session_state["celebrate_answers_title"] = "✅ Respuestas correctas del Nivel 2"
                 st.session_state["celebrate_answers"] = [
-                    "1) Teoría 1: [pon aquí la opción correcta exacta]",
-                    "2) Teoría 2: [pon aquí la opción correcta exacta]",
-                    "3) Ejercicio PP: [pon aquí el resultado correcto o criterio correcto]",
-                    "4) Ejercicio UEPS: [pon aquí el resultado correcto o criterio correcto]",
-                    "5) Ejercicio PEPS: [pon aquí el resultado correcto o criterio correcto]"
+                    "1) Selección múltiple: B) PEPS (Primero en Entrar, Primero en Salir).",
+                    "2) Pregunta abierta 1: era válida una respuesta que explicara que elegir bien el método afecta el CMV y la utilidad, influye en los estados financieros/comparabilidad y también puede impactar impuestos o decisiones de gestión.",
+                    "3) Pregunta abierta 2: era válida una respuesta que planteara un caso con compras frecuentes o costos variables, explicando que el Promedio Ponderado suaviza la volatilidad del CMV y simplifica el registro.",
+                    "4) Ejercicio PP: diligenciaste correctamente la tabla de Promedio Ponderado.",
+                    "5) Ejercicio PEPS: diligenciaste correctamente la tabla PEPS."
                 ]
+
+                df_pp_correct = pd.DataFrame([
+                    {
+                        "Fecha": "Día 1",
+                        "Descripción": "Saldo inicial",
+                        "Saldo_cant": pp_r1_q,
+                        "Saldo_pu": inv0_pu,
+                        "Saldo_total": pp_r1_tot
+                    },
+                    {
+                        "Fecha": "Día 2",
+                        "Descripción": "Compra 1",
+                        "Saldo_cant": pp_r2_q,
+                        "Saldo_pu": round(pp_r2_pu, 2),
+                        "Saldo_total": round(pp_r2_tot, 2)
+                    },
+                    {
+                        "Fecha": "Día 3",
+                        "Descripción": "Venta",
+                        "Saldo_cant": pp_r3_q,
+                        "Saldo_pu": round(pp_r3_pu, 2),
+                        "Saldo_total": round(pp_r3_tot, 2)
+                    },
+                    {
+                        "Fecha": "Día 4",
+                        "Descripción": "Compra 2",
+                        "Saldo_cant": pp_r4_q,
+                        "Saldo_pu": round(pp_r4_pu, 2),
+                        "Saldo_total": round(pp_r4_tot, 2)
+                    },
+                ])
+
+                df_peps_correct = pd.DataFrame(peps_rows_expected)
+
+                st.session_state["celebrate_tables"] = {
+                    "Promedio Ponderado": df_pp_correct,
+                    "PEPS": df_peps_correct
+                }
+
                 start_celebration(
                     message_md=(
                         "<b>¡Nivel 2 aprobado!</b> 🎉<br><br>"
                         f"<b>Aciertos:</b> {total_score}/5<br><br>"
                         "Dominaste <b>PP / PEPS / UEPS</b> en teoría y práctica. "
-                        "Ahora continuemos con <b>devoluciones en compras y ventas</b>."
+                        "Sigamos con el <b>Nivel 3</b>: <i>Devoluciones</i>."
                     ),
-                    next_label="Nivel 3",
+                    next_label="Ir al Nivel 3",
                     next_key_value="Nivel 3: Devoluciones"
                 )
             else:
