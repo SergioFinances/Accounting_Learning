@@ -8031,6 +8031,24 @@ def page_level4(username):
             else:
                 q4_fb = _sanitize_on_topic(q4_fb)
 
+
+            expected_pyg = {
+                "Ventas brutas": 2000.00,
+                "(-) Devoluciones en ventas": 160.00,
+                "Ventas netas": 1840.00,
+                "Costos de mercancía vendida brutos": 1071.43,
+                "(-) Costo devolución en ventas": 85.71,
+                "Costos de mercancía vendida netos": 985.71,
+                "Utilidad bruta": 854.29,
+                "Gastos operativos": 350.00,
+                "Utilidad Operativa": 504.29,
+                "Otros ingresos": 40.00,
+                "Otros egresos": 20.00,
+                "Utilidad antes de impuesto": 524.29,
+                "Impuesto": 157.29,
+                "Utilidad neta": 367.00
+            }
+
             # ===== Q5: Validación detallada del Estado de Resultados =====
             TOL = 0.5
 
@@ -8058,10 +8076,10 @@ def page_level4(username):
             er_errors = []
             er_ok_count = 0
 
-            for i, row in edited_er_df.iterrows():
+            for i, row in edited_er.iterrows():
                 rubro = str(row.get("Rubro", "")).strip()
                 usr_val = _to_float_safe(row.get("Valor", ""))
-                exp_val = er_expected_map.get(rubro, None)
+                exp_val = expected_pyg.get(rubro, None)
 
                 ok = _near(usr_val, exp_val)
                 er_checks.append((rubro, usr_val, exp_val, ok))
