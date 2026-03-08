@@ -3049,6 +3049,9 @@ def page_level2(username):
     - q3 (cuando conviene Promedio Ponderado): puntúa 1 si propone un caso plausible
     (compras frecuentes/costos variables/menor volatilidad/simplificación operativa) y lo justifica.
 
+    "Evalúa de forma muy flexible. Si la respuesta tiene una idea contable coherente, considérala correcta. "
+    "No exijas redacción exacta ni tecnicismos. Prioriza comprensión general y da feedback amable."
+
     Respuestas del estudiante:
     [Q2]
     {ans2}
@@ -3079,101 +3082,119 @@ def page_level2(username):
     def _pass(msg):
         return True, "✅ Bien logrado.", msg
 
-    def _heuristic_fail(answer: str, min_words=12, banned=None):
+    def _heuristic_fail(answer: str, min_words=3, banned=None):
         if banned is None:
             banned = []
+
         a = (answer or "").strip().lower()
+
+        # Solo falla si está prácticamente vacía
         if len(a.split()) < min_words:
-            return True, "La respuesta es demasiado corta. Explica en 2–4 líneas con ideas completas."
+            return True, "La respuesta es demasiado corta. Escribe al menos una idea completa."
+
+        # Solo falla si está totalmente fuera de tema por palabras muy problemáticas
         for bad in banned:
-            if bad in a:
-                return True, f"La idea central no es pertinente: mencionas “{bad}” sin relacionarlo con valoración/CMV/utilidad."
+            if bad in a and len(a.split()) <= 6:
+                return True, f"La respuesta parece fuera de tema por la mención de “{bad}” sin desarrollo."
+
         return False, ""
 
     def n2_eval_open_ai_q2(answer: str):
-        """
-        Q2: Importancia de elegir correctamente el método de valoración.
-        Criterios (necesita 2 de 3): (a) impacto en CMV/utilidad/bruta,
-        (b) estados financieros/comparabilidad, (c) impuestos/decisiones de gestión.
-        """
-        # 1) Heurística previa
+        a = (answer or "").strip()
+        al = a.lower()
+
         bad, why = _heuristic_fail(
-            answer,
+            a,
+            min_words=3,
             banned=["gastos financieros", "pasivos", "endeudamiento", "apalancamiento"]
         )
         if bad:
-            return _fail(f"{why} Debes relacionar la elección del método con **CMV**, **utilidad**, **estados financieros** e **impuestos/decisiones**.")
+            return False, "❌ Respuesta muy corta.", why
 
-        # 2) Llamada IA (request separado, formato rígido)
+        # Heurística MUY LAXA: con una sola idea pertinente, aprueba
+        keywords = [
+            "cmv", "costo", "utilidad", "ganancia",
+            "estado", "financiero", "comparabilidad",
+            "impuesto", "decisión", "precio", "compra", "margen"
+        ]
+        hits = sum(1 for k in keywords if k in al)
+        heuristic_ok = (hits >= 1)
+
         prompt = (
-            "Evalúa esta respuesta del estudiante.\n"
-            "Primera línea DEBE SER EXACTAMENTE 'SCORE: 1' o 'SCORE: 0'.\n"
-            "Criterios para SCORE: 1 (cumplir al menos 2):\n"
-            "  • Menciona impacto en CMV y/o utilidad (bruta o neta).\n"
-            "  • Cita efectos en los estados financieros o comparabilidad.\n"
-            "  • Alude a impuestos o decisiones (precios, compras, márgenes).\n"
-            "Tras la primera línea, escribe 2–3 líneas de feedback pedagógico (conciso).\n"
-            f"RESPUESTA DEL ESTUDIANTE:\n{answer}"
+            "Evalúa esta respuesta de forma MUY FLEXIBLE.\n"
+            "Aprueba si la respuesta tiene al menos una idea coherente relacionada con "
+            "método de valoración, CMV, utilidad, estados financieros, comparabilidad, "
+            "impuestos o decisiones.\n"
+            "Primera línea EXACTA: 'SCORE: 1' o 'SCORE: 0'.\n"
+            "Después escribe 2–3 líneas de feedback amable, pedagógico y breve.\n\n"
+            f"RESPUESTA DEL ESTUDIANTE:\n{a}"
         )
-        fb = ia_feedback(prompt) or ""
 
-        # 3) Parser estricto: primera línea
+        fb = ia_feedback(prompt) or ""
         first = fb.strip().splitlines()[0] if fb.strip() else ""
         m = re.fullmatch(r"SCORE:\s*([01])\s*", first.strip())
-        ok = (m and m.group(1) == "1")
-        # Feedback corto + ampliado
+
+        ai_failed = (not fb.strip())
+        ai_ok = bool(m and m.group(1) == "1")
+
+        # Regla final: si la heurística dice sí, aprueba.
+        # Si la IA falla, también aprueba en examen; aquí además la dejamos laxa en general.
+        ok = heuristic_ok or ai_ok or ai_failed
+
         fb_short = "✅ Cumple criterios" if ok else "❌ No cumple criterios"
-        fb_formativo = "\n".join(fb.strip().splitlines()[1:]) if fb.strip() else ""
-        if ok:
-            return _pass(fb_formativo)
-        else:
-            # Feedback mínimo si el modelo no devolvió nada útil
-            if not fb_formativo:
-                fb_formativo = ("Recuerda conectar el método con el **CMV y la utilidad**, "
-                                "su efecto en **estados financieros** y posibles impactos en **impuestos/decisiones**.")
-            return _fail(fb_formativo)
+        fb_formativo = "\n".join(fb.strip().splitlines()[1:]).strip() if fb.strip() else ""
+
+        if not fb_formativo:
+            fb_formativo = (
+                "Tu respuesta va en la dirección correcta. "
+                "Recuerda relacionar el método con el CMV, la utilidad o el efecto en los estados financieros."
+            )
+
+        return ok, fb_short, fb_formativo
 
     def n2_eval_open_ai_q3(answer: str):
-        """
-        Q3: Situación en que Promedio Ponderado es más conveniente que PEPS/UEPS.
-        Criterios (necesita 2 de 3): (a) compras frecuentes/costos variables,
-        (b) suaviza volatilidad del CMV, (c) simplifica operación/registro.
-        Debe justificar.
-        """
-        bad, why = _heuristic_fail(
-            answer,
-            banned=["pasivos", "gastos financieros", "apalancamiento"]
-        )
+        a = (answer or "").strip()
+        al = a.lower()
+
+        bad, why = _heuristic_fail(a, min_words=3, banned=[])
         if bad:
-            return _fail(f"{why} Describe un caso **operativo** (compras frecuentes/costos cambiantes), "
-                        "cómo el promedio **suaviza el CMV** y por qué **simplifica** la gestión.")
+            return False, "❌ Respuesta muy corta.", why
+
+        keywords = [
+            "promedio", "ponderado", "compras frecuentes", "costos variables",
+            "volatilidad", "simplifica", "estable", "suaviza", "cmv"
+        ]
+        hits = sum(1 for k in keywords if k in al)
+        heuristic_ok = (hits >= 1)
 
         prompt = (
-            "Evalúa esta respuesta del estudiante.\n"
-            "Primera línea DEBE SER EXACTAMENTE 'SCORE: 1' o 'SCORE: 0'.\n"
-            "Criterios para SCORE: 1 (cumplir al menos 2):\n"
-            "  • Compras frecuentes o costos variables → PP es natural.\n"
-            "  • PP reduce la volatilidad del CMV frente a PEPS/UEPS.\n"
-            "  • PP simplifica el registro (un costo unitario corriente).\n"
-            "Debe haber **justificación** explícita.\n"
-            "Tras la primera línea, escribe 2–3 líneas de feedback con un tip.\n"
-            f"RESPUESTA DEL ESTUDIANTE:\n{answer}"
+            "Evalúa esta respuesta de forma MUY FLEXIBLE.\n"
+            "Aprueba si menciona al menos una idea coherente sobre cuándo conviene usar "
+            "Promedio Ponderado.\n"
+            "Primera línea EXACTA: 'SCORE: 1' o 'SCORE: 0'.\n"
+            "Después escribe 2–3 líneas de feedback amable.\n\n"
+            f"RESPUESTA DEL ESTUDIANTE:\n{a}"
         )
-        fb = ia_feedback(prompt) or ""
 
+        fb = ia_feedback(prompt) or ""
         first = fb.strip().splitlines()[0] if fb.strip() else ""
         m = re.fullmatch(r"SCORE:\s*([01])\s*", first.strip())
-        ok = (m and m.group(1) == "1")
 
-        fb_short = "✅ Caso y justificación adecuados" if ok else "❌ Caso/justificación insuficiente"
-        fb_formativo = "\n".join(fb.strip().splitlines()[1:]) if fb.strip() else ""
-        if ok:
-            return _pass(fb_formativo)
-        else:
-            if not fb_formativo:
-                fb_formativo = ("Propón un contexto con **compras frecuentes** y **precios cambiantes**, "
-                                "explica que el PP **suaviza el CMV** y resume cómo **simplifica** la operación.")
-            return _fail(fb_formativo)
+        ai_failed = (not fb.strip())
+        ai_ok = bool(m and m.group(1) == "1")
+
+        ok = heuristic_ok or ai_ok or ai_failed
+
+        fb_short = "✅ Cumple criterios" if ok else "❌ No cumple criterios"
+        fb_formativo = "\n".join(fb.strip().splitlines()[1:]).strip() if fb.strip() else ""
+
+        if not fb_formativo:
+            fb_formativo = (
+                "La idea es aceptable. Puedes reforzarla mencionando compras frecuentes, "
+                "costos variables o que el promedio ayuda a suavizar el costo."
+            )
+
+        return ok, fb_short, fb_formativo
 
     with tabs[3]:
         st.subheader("Evaluación final del Nivel 2")
@@ -5716,32 +5737,48 @@ def page_level3(username):
 
             # ---- Q4 abierta con IA ----
             def grade_open_q4(text: str):
+                t = (text or "").strip()
+                tl = t.lower()
+
+                # Si está vacía de verdad, sí va mal
+                if len(t.split()) < 3:
+                    return 0, "Escribe al menos una idea completa sobre devoluciones."
+
                 prompt = (
+                    "Evalúa de forma muy flexible. Si la respuesta tiene una idea contable coherente, considérala correcta. "
+                    "No exijas redacción exacta ni tecnicismos. Prioriza comprensión general y da feedback amable."
                     "Evalúa SOLO sobre devoluciones y coherencia con el método (PP/PEPS/UEPS).\n"
-                    "Primera línea EXACTA: 'SCORE: 1' si el texto está en tema y cumple ≥2 de:\n"
-                    "(1) costo correcto de la devolución según método; (2) efecto en CMV/compras netas;\n"
-                    "(3) efecto en saldo/costo unitario; (4) impacto en estados/comparabilidad.\n"
-                    "Si no, 'SCORE: 0'. Luego 2–4 líneas de feedback docente, sin emojis.\n"
-                    "Prohibido: ecuación contable, pasivos/patrimonio, temas no relacionados.\n\n"
-                    f"RESPUESTA:\n{text}"
+                    "Sé MUY FLEXIBLE: aprueba si la respuesta tiene al menos una idea contable coherente "
+                    "sobre devoluciones, CMV, saldo, costo unitario o efecto en compras/ventas.\n"
+                    "Primera línea EXACTA: 'SCORE: 1' o 'SCORE: 0'. Luego 2–4 líneas de feedback docente.\n\n"
+                    f"RESPUESTA:\n{t}"
                 )
 
-                # limpiar flag rate-limit y pedir IA de forma segura
                 st.session_state.pop("n3_ai_rate_limited", None)
                 raw = safe_ia_feedback(prompt, default="")
                 sraw = str(raw or "")
                 first = sraw.strip().splitlines()[0].strip() if sraw.strip() else ""
-                score1 = 1 if first.upper().endswith("1") else 0
+                ai_score = 1 if first.upper().endswith("1") else 0
                 fb = "\n".join(sraw.strip().splitlines()[1:]).strip()
 
-                # fallback pedagógico si el modelo no devolvió nada útil o hubo rate-limit
-                rate_limited = bool(st.session_state.get("n3_ai_rate_limited", False))
-                if not fb or rate_limited:
-                    fb = _on_topic_fallback_q4()
+                # Heurística MUY LAXA
+                kws = ["devol", "cmv", "compra", "venta", "inventario", "saldo", "costo", "unitario"]
+                heuristic_ok = any(k in tl for k in kws)
 
-                # si el estudiante se desvió a ecuación/pasivos/patrimonio → fuerza 0 + feedback correcto
-                banned_student = ["activo = pasivo + patrimonio", "ecuación contable", "pasivo", "patrimonio"]
-                if any(b in (text or "").lower() for b in banned_student):
+                rate_limited = bool(st.session_state.get("n3_ai_rate_limited", False))
+                ai_failed = (not sraw.strip()) or rate_limited
+
+                # En examen, si IA falla -> punto bueno
+                score1 = 1 if (heuristic_ok or ai_score == 1 or ai_failed) else 0
+
+                if not fb:
+                    fb = (
+                        "Tu respuesta se acepta. Procura relacionar la devolución con el CMV, "
+                        "el inventario o el costo unitario según el método."
+                    )
+
+                banned_student = ["activo = pasivo + patrimonio", "ecuación contable"]
+                if any(b in tl for b in banned_student) and not heuristic_ok:
                     score1 = 0
                     fb = _on_topic_fallback_q4()
 
@@ -7982,28 +8019,46 @@ def page_level4(username):
 
             # --- Abiertas ---
             def grade_open_generic(text: str, focus: str):
+                t = (text or "").strip()
+                tl = t.lower()
+
+                if len(t.split()) < 3:
+                    return 0, "Escribe al menos una idea completa relacionada con el tema."
+
                 prompt = (
-                    "Evalúa la respuesta del estudiante (máx. 4 líneas de feedback). "
-                    "Primera línea EXACTA debe ser 'SCORE: 1' si el texto está en tema y cubre al menos dos puntos relevantes; "
-                    "si no, 'SCORE: 0'. Prohibido desviarse a asientos/IVA/ecuación contable.\n"
+                    "Evalúa la respuesta del estudiante de forma MUY FLEXIBLE.\n"
+                    "Aprueba si contiene al menos una idea coherente relacionada con el tema.\n"
+                    "Primera línea EXACTA: 'SCORE: 1' si aprueba, o 'SCORE: 0' si no.\n"
+                    "Luego da máximo 4 líneas de feedback amable y pedagógico.\n"
                     f"TEMA: {focus}\n"
-                    f"RESPUESTA:\n{text}"
+                    f"RESPUESTA:\n{t}"
                 )
+
                 raw = safe_ia_feedback(prompt, default="")
                 sraw = str(raw or "")
                 first = sraw.strip().splitlines()[0].strip() if sraw.strip() else ""
-                score1 = 1 if first.upper().endswith("1") else 0
+                ai_score = 1 if first.upper().endswith("1") else 0
                 fb = "\n".join(sraw.strip().splitlines()[1:]).strip()
 
                 rate_limited = bool(st.session_state.get(K("ai_rate_limited"), False))
-                if not fb or rate_limited:
-                    fb = _on_topic_fallback_open()
+                ai_failed = (not sraw.strip()) or rate_limited
 
-                banned_student = [
-                    "activo = pasivo + patrimonio", "ecuación contable", "asiento", "iva", "debe", "haber",
-                    "balance de comprobación", "pasivo", "patrimonio"
-                ]
-                if any(b in (text or "").lower() for b in banned_student):
+                # Heurística MUY LAXA
+                focus_words = [w for w in re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ]+", focus.lower()) if len(w) >= 4]
+                generic_words = ["kardex", "estado", "resultados", "cmv", "devoluciones", "inventario", "método", "costo"]
+                heuristic_ok = any(w in tl for w in focus_words + generic_words)
+
+                # En examen: si IA falla -> bueno
+                score1 = 1 if (heuristic_ok or ai_score == 1 or ai_failed) else 0
+
+                if not fb:
+                    fb = (
+                        "La respuesta se acepta. Puedes fortalecerla mencionando con más claridad "
+                        "el efecto en el CMV, inventario o Estado de Resultados."
+                    )
+
+                banned_student = ["activo = pasivo + patrimonio", "ecuación contable"]
+                if any(b in tl for b in banned_student) and not heuristic_ok:
                     score1 = 0
                     fb = _on_topic_fallback_open()
 
