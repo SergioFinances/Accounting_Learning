@@ -8121,9 +8121,23 @@ def page_level4(username):
 
                 st.write(f"**Q5 (Estado de Resultados PP):** {'✅' if q5_ok else '❌'}")
                 st.metric("Rubros correctos en Q5", f"{er_correct_rows}/{len(order_rows)}")
+                errores_er = []
+
                 for rubro, usr_val, exp_val, ok in er_checks:
                     uv = "—" if usr_val is None else f"{usr_val:.2f}"
-                    st.write(("✅ " if ok else "❌ ") + f"**{rubro}** — tu valor: {uv} | esperado: {exp_val:.2f}")
+
+                    if ok:
+                        st.write(f"✅ **{rubro}** — tu valor: {uv} | esperado: {exp_val:.2f}")
+                    else:
+                        st.write(f"❌ **{rubro}** — tu valor: {uv} | esperado: {exp_val:.2f}")
+                        errores_er.append(
+                            f"{rubro}: registraste {uv} y el valor correcto era {exp_val:.2f}"
+                        )
+
+                if errores_er:
+                    st.warning("Rubros con error en el Estado de Resultados:")
+                    for err in errores_er:
+                        st.write("- " + err)
 
                 if q5_fb:
                     st.write("**Feedback Q5 (IA):**")
@@ -8151,19 +8165,19 @@ def page_level4(username):
                     st.session_state["celebrate_score_text"] = f"{total_hits}/5"
                     st.session_state["celebrate_answers_title"] = "✅ Respuestas correctas del Nivel 4"
                     st.session_state["celebrate_answers"] = [
-                        "1) [respuesta correcta del punto 1]",
-                        "2) [respuesta correcta del punto 2]",
-                        "3) [respuesta correcta del punto 3]",
-                        "4) [respuesta correcta del punto 4]",
-                        "5) [respuesta correcta del punto 5]"
+                        "1) Selección múltiple: la opción correcta identificaba la estructura adecuada del Estado de Resultados en sistema perpetuo.",
+                        "2) Selección múltiple: la opción correcta explicaba el efecto de las devoluciones en ventas sobre las ventas netas y el CMV.",
+                        "3) Pregunta abierta: era válida una respuesta que explicara que el KARDEX alimenta directamente el CMV y que el método de inventario modifica el valor que pasa al Estado de Resultados.",
+                        "4) Pregunta abierta: era válida una respuesta que describiera paso a paso cómo impactan una devolución en compras y una devolución en ventas bajo Promedio Ponderado.",
+                        "5) Ejercicio final: diligenciaste correctamente el Estado de Resultados con base en el KARDEX y los rubros del período."
                     ]
 
-                    start_celebration(  # noqa: F821
+                    start_celebration(
                         message_md=(
                             "<b>¡Nivel 4 aprobado!</b> 🏆<br><br>"
                             f"<b>Aciertos:</b> {total_hits}/5<br><br>"
                             "Completaste el módulo de <b>Estado de Resultados</b>. "
-                            "Ya puedes regresar al menú principal."
+                            "Ya puedes volver al menú principal."
                         ),
                         next_label="Volver al menú",
                         next_key_value="🏠 Inicio"
