@@ -3482,7 +3482,12 @@ def page_level2(username):
             def _get_num_safe(row, key):
                 v = row.get(key, "")
                 try:
-                    if v in (None, ""): return None
+                    if v is None:
+                        return None
+                    v = str(v).strip()
+                    if v == "":
+                        return None
+                    v = v.replace("$", "").replace(" ", "").replace(",", ".")
                     return float(v)
                 except:
                     return None
@@ -3525,28 +3530,69 @@ def page_level2(username):
 
             # --- Ejercicio PEPS (validación por fila esperada, con tolerancia)
             ok_peps = True
+            peps_errors = []
+
             try:
                 for i, exp in enumerate(peps_rows_expected):
                     row = peps_edit.iloc[i].to_dict()
-                    # Entrada (si aplica)
+
+                    def check_num(col_ui, expected, label):
+                        nonlocal ok_peps
+                        val = _get_num_safe(row, col_ui)
+                        if not near(val, expected):
+                            ok_peps = False
+                            peps_errors.append(
+                                f"Fila {i+1} ({row.get('Fecha', '')} - {row.get('Descripción', '')}) | "
+                                f"{label}: ingresado={row.get(col_ui)} | esperado={expected}"
+                            )
+
+                    # Entrada
                     if exp["ent_q"] != "":
-                        ok_peps &= near(_get_num_safe(row,"Entrada_cant"), exp["ent_q"])
-                        ok_peps &= near(_get_num_safe(row,"Entrada_pu"), exp["ent_pu"])
-                        ok_peps &= near(_get_num_safe(row,"Entrada_total"), exp["ent_tot"])
-                    # Salida (si aplica)
+                        check_num("Entrada_cant", exp["ent_q"], "Entrada cantidad")
+                        check_num("Entrada_pu", exp["ent_pu"], "Entrada costo unitario")
+                        check_num("Entrada_total", exp["ent_tot"], "Entrada total")
+
+                    # Salida
                     if exp["sal_q"] != "":
-                        ok_peps &= near(_get_num_safe(row,"Salida_cant"), exp["sal_q"])
-                        ok_peps &= near(_get_num_safe(row,"Salida_pu"), exp["sal_pu"])
-                        ok_peps &= near(_get_num_safe(row,"Salida_total"), exp["sal_tot"])
+                        check_num("Salida_cant", exp["sal_q"], "Salida cantidad")
+                        check_num("Salida_pu", exp["sal_pu"], "Salida costo unitario")
+                        check_num("Salida_total", exp["sal_tot"], "Salida total")
+
                     # Saldo
-                    ok_peps &= ( (_get_num_safe(row,"Saldo_cant") is None) or near(_get_num_safe(row,"Saldo_cant"), exp["sdo_q"]) )
-                    ok_peps &= ( (_get_num_safe(row,"Saldo_pu")   is None) or near(_get_num_safe(row,"Saldo_pu"),   exp["sdo_pu"]) )
-                    ok_peps &= ( (_get_num_safe(row,"Saldo_total")is None) or near(_get_num_safe(row,"Saldo_total"),exp["sdo_tot"]) )
-            except Exception:
+                    saldo_cant = _get_num_safe(row, "Saldo_cant")
+                    saldo_pu   = _get_num_safe(row, "Saldo_pu")
+                    saldo_tot  = _get_num_safe(row, "Saldo_total")
+
+                    if saldo_cant is not None and not near(saldo_cant, exp["sdo_q"]):
+                        ok_peps = False
+                        peps_errors.append(
+                            f"Fila {i+1} | Saldo cantidad: ingresado={row.get('Saldo_cant')} | esperado={exp['sdo_q']}"
+                        )
+
+                    if saldo_pu is not None and not near(saldo_pu, exp["sdo_pu"]):
+                        ok_peps = False
+                        peps_errors.append(
+                            f"Fila {i+1} | Saldo costo unitario: ingresado={row.get('Saldo_pu')} | esperado={exp['sdo_pu']}"
+                        )
+
+                    if saldo_tot is not None and not near(saldo_tot, exp["sdo_tot"]):
+                        ok_peps = False
+                        peps_errors.append(
+                            f"Fila {i+1} | Saldo total: ingresado={row.get('Saldo_total')} | esperado={exp['sdo_tot']}"
+                        )
+
+            except Exception as e:
                 ok_peps = False
+                peps_errors.append(f"Error interno en validación PEPS: {e}")
 
             total_score += 1 if ok_peps else 0
             details_msgs.append(f"Ejercicio PEPS: {'✅' if ok_peps else '❌'}")
+
+            if not ok_peps:
+                st.warning("Detalle de errores encontrados en PEPS:")
+                for err in peps_errors:
+                    st.write("- " + err)
+
 
             # ===== Resultado final =====
             st.markdown("---")
@@ -5708,7 +5754,7 @@ def page_level3(username):
             else:
                 q4_fb = ""
 
-            # ---- Q5 validación ----
+            # ---- Q5 validación con detalle de errores ----
             TOL = 0.5
             num_keys = [
                 "Entrada_cant","Entrada_pu","Entrada_total",
@@ -5718,7 +5764,12 @@ def page_level3(username):
 
             def _to_float(x):
                 try:
-                    if x in ("", None): return None
+                    if x is None:
+                        return None
+                    x = str(x).strip()
+                    if x == "":
+                        return None
+                    x = x.replace("$", "").replace(" ", "").replace(",", ".")
                     return float(x)
                 except:
                     return None
@@ -5731,17 +5782,27 @@ def page_level3(username):
                 except:
                     return False
 
-            ok_rows = []
+            q5_ok = True
+            q5_errors = []
+
             for i in range(len(expected_rows_q5)):
                 user_row = edited_q5.iloc[i].to_dict()
                 exp_row  = expected_rows_q5[i]
-                ok_cells = []
+
                 for k in num_keys:
                     exp_val = exp_row[k]
                     usr_val = _to_float(user_row.get(k, ""))
-                    ok_cells.append(True if exp_val == "" else _near(usr_val, exp_val))
-                ok_rows.append(all(ok_cells))
-            q5_ok = all(ok_rows)
+
+                    # Si el valor esperado está vacío, no se exige
+                    if exp_val == "":
+                        continue
+
+                    if not _near(usr_val, exp_val):
+                        q5_ok = False
+                        q5_errors.append(
+                            f"Fila {i+1} ({user_row.get('Fecha', '')} - {user_row.get('Descripción', '')}) | "
+                            f"{k}: ingresado={user_row.get(k, '')} | esperado={exp_val}"
+                        )
 
             total_hits = int(q1_ok) + int(q2_ok) + int(q3_ok) + int(q4_score1) + int(q5_ok)
             passed = (total_hits == 5)
@@ -5765,8 +5826,16 @@ def page_level3(username):
                     st.write("**Feedback Q4 (IA):**")
                     st.write(q4_fb)
                 st.write(f"**Q5 (KARDEX PP):** {'✅' if q5_ok else '❌'}")
+
                 if not q5_ok:
-                    st.caption("Pistas: revisa el costo correcto en devoluciones y el saldo después de cada operación.")
+                    st.warning("Errores encontrados en la tabla del KARDEX:")
+                    for err in q5_errors:
+                        st.write("- " + err)
+
+                    st.caption(
+                        "Revisa especialmente el costo correcto de la devolución, "
+                        "el saldo después de cada operación y el valor total esperado en cada fila."
+                    )
 
             if passed:
                 try:
@@ -5779,21 +5848,21 @@ def page_level3(username):
                 try:
                     st.session_state["sidebar_next_select"] = "Nivel 4: Estado de Resultados"
 
-                    # NUEVO: guardar puntaje y respuestas para la pantalla de celebración
-                    st.session_state["celebrate_score_text"] = f"{total_hits}/{TOTAL_ITEMS}"
+                    # NUEVO: puntaje y respuestas correctas para la pantalla de celebración
+                    st.session_state["celebrate_score_text"] = f"{total_hits}/5"
                     st.session_state["celebrate_answers_title"] = "✅ Respuestas correctas del Nivel 3"
                     st.session_state["celebrate_answers"] = [
-                        "1) [respuesta correcta pregunta 1]",
-                        "2) [respuesta correcta pregunta 2]",
-                        "3) [respuesta correcta pregunta 3]",
-                        "4) [respuesta correcta pregunta 4]",
-                        "5) [respuesta correcta pregunta 5]"
+                        "1) Selección múltiple: la respuesta correcta explicaba que una devolución en compras reduce el valor de las compras y el costo de la mercancía disponible para la venta.",
+                        "2) Selección múltiple: la opción correcta indicaba que una devolución en ventas disminuye los ingresos por ventas del periodo.",
+                        "3) Selección múltiple: la opción correcta identificaba que las devoluciones afectan tanto el inventario como el resultado del periodo dependiendo de si son compras o ventas.",
+                        "4) Pregunta abierta: era válida una respuesta que explicara correctamente el efecto contable de las devoluciones en compras o en ventas sobre el inventario, el CMV o la utilidad.",
+                        "5) Ejercicio KARDEX (Promedio Ponderado): diligenciaste correctamente la tabla considerando la compra, la venta y las devoluciones en compras y ventas."
                     ]
 
                     start_celebration(
                         message_md=(
                             "<b>¡Nivel 3 aprobado!</b> 🎉<br><br>"
-                            f"<b>Aciertos:</b> {total_hits}/{TOTAL_ITEMS}<br><br>"
+                            f"<b>Aciertos:</b> {total_hits}/5<br><br>"
                             "Ya comprendes el efecto de las <b>devoluciones</b>. "
                             "Ahora vamos al <b>Estado de Resultados</b>."
                         ),
