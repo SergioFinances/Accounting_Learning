@@ -453,7 +453,7 @@ def speak_block(texto: str, key_prefix: str, lang_hint="es"):
 # ===========================
 # Config encuesta
 # ===========================
-SURVEY_URL = os.getenv("SURVEY_URL", "https://forms.gle/pSxXp78LR3gqRzeR6")
+SURVEY_URL = os.getenv("SURVEY_URL", "https://forms.cloud.microsoft/r/gjyYwHDxwh")
 
 # ===========================
 # Pantalla de Celebración (aparte) — liviana
