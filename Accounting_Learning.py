@@ -238,16 +238,21 @@ def eval_ia_explicacion(pregunta: str, criterios: str, respuesta_estudiante: str
         "role": "user",
         "content": (
             f"Pregunta de evaluación:\n«{pregunta}»\n\n"
-            f"Criterios de evaluación (deben cumplirse todos):\n{criterios}\n\n"
+            f"Criterios orientadores:\n{criterios}\n\n"
+            "Evalúa con máxima flexibilidad pedagógica.\n"
+            "La respuesta debe marcarse como APROBADA si expresa la idea central, "
+            "aunque use palabras distintas, sea breve, no sea técnica o no esté perfectamente redactada.\n"
+            "No exijas redacción textual, definiciones literales ni todos los criterios al mismo tiempo.\n"
+            "Solo marca como NO aprobada si:\n"
+            "1) contradice la idea contable principal,\n"
+            "2) afirma lo contrario,\n"
+            "3) no responde la pregunta,\n"
+            "4) es incoherente o totalmente ajena al tema.\n\n"
             "Responde EXCLUSIVAMENTE con este JSON (una sola línea, sin texto extra):\n"
             "{"
             "\"aprobado\": true|false, "
-            "\"comentario_corto\": \"≤ 20 palabras (síntesis amable pero siempre diciendo que está correcto o incorrecto, es decir"
-            "sin flexibilidad)\", "
-            "\"retroalimentacion\": "
-            "\"≤ 120 palabras, tono amable y pedagógico, inicia con refuerzo positivo, explica paso a paso, "
-            "incluye una analogía sencilla (p.ej. 'mochila de costos' o 'balanza'), y cierra con un consejo práctico. "
-            "Usa CMV (no COGS).\""
+            "\"comentario_corto\": \"máximo 20 palabras, amable y flexible\", "
+            "\"retroalimentacion\": \"máximo 120 palabras, pedagógica, amable, reconociendo aciertos parciales\""
             "}\n\n"
             f"Respuesta del estudiante: \"{respuesta_estudiante.strip()}\""
         )
@@ -297,17 +302,16 @@ def n1_eval_open_ai(respuesta_estudiante: str) -> tuple[bool, str, str]:
     )
 
     criterios = (
-        "Evalúa con AMPLIA FLEXIBILIDAD:\n"
-        "✔ La respuesta es CORRECTA si expresa la idea central, aunque sea muy corta:\n"
-        "   → Cuando el inventario final disminuye, el CMV AUMENTA.\n"
-        "✔ La justificación es DESEABLE pero NO obligatoria.\n"
-        "❌ Solo debe marcarse como INCORRECTO si:\n"
-        "   - Afirma que el CMV disminuye.\n"
-        "   - Dice que no cambia.\n"
-        "   - No tiene relación con el concepto contable.\n"
-        "   - La explicación es totalmente errónea.\n"
-        "\n"
-        "Permite respuestas cortas como: 'Aumenta', 'El CMV sube', 'CMV ↑'."
+        "Idea central esperada: cuando disminuye el inventario final, aumenta el CMV.\n"
+        "Aprueba cualquier respuesta que comunique esa relación, aunque sea breve, "
+        "informal, incompleta o con redacción no técnica.\n"
+        "También aprueba variantes como:\n"
+        "- 'Aumenta el CMV'\n"
+        "- 'El costo de venta sube'\n"
+        "- 'Si baja el inventario final, el CMV aumenta'\n"
+        "- 'Se resta menos al final, por eso sube el CMV'\n"
+        "No exijas explicación completa.\n"
+        "Solo reprueba si dice que disminuye, que no cambia, o si la respuesta no tiene relación."
     )
 
     # Llamamos a la misma función que usas en todo el proyecto
@@ -2125,7 +2129,7 @@ def page_level2(username):
 
         demo_rows, demo_script = compute_rows_and_script(metodo, inv0_u, inv0_pu, comp_u, comp_pu, venta_u)
 
-        html_demo_template = """
+        html_demo_template = r"""
         <style>
         .kx {border-collapse:collapse;width:100%;font-size:14px;margin-bottom:6px}
         .kx th,.kx td {border:1px solid #eaeaea;padding:6px 8px;text-align:center}
@@ -2787,28 +2791,56 @@ def page_level2(username):
         # =========================
         # Plantilla dinámica para edición
         # =========================
+
         def _blank_row(fecha, desc):
             return {
-                "Fecha": fecha, "Descripción": desc,
-                "Entrada_cant": "", "Entrada_pu": "", "Entrada_total": "",
-                "Salida_cant": "",  "Salida_pu": "",  "Salida_total": "",
-                "Saldo_cant": "",   "Saldo_pu": "",   "Saldo_total": ""
+                "Fecha": fecha,
+                "Descripción": desc,
+                "Entrada_cant": None,
+                "Entrada_pu": None,
+                "Entrada_total": None,
+                "Salida_cant": None,
+                "Salida_pu": None,
+                "Salida_total": None,
+                "Saldo_cant": None,
+                "Saldo_pu": None,
+                "Saldo_total": None,
             }
 
-        # Construye DataFrame con tantas filas como las esperadas (descripciones fijas)
-        plant_rows = []
-        for r in expected_rows:
-            plant_rows.append(_blank_row(r["Fecha"], r["Descripción"]))
-        plant = pd.DataFrame(plant_rows)
+        # Crear la tabla solo si no existe o si cambió el número de filas esperado
+        if (
+            "n2_kardex_student_table_df" not in st.session_state
+            or len(st.session_state["n2_kardex_student_table_df"]) != len(expected_rows)
+        ):
+            plant_rows = [_blank_row(r["Fecha"], r["Descripción"]) for r in expected_rows]
+            st.session_state["n2_kardex_student_table_df"] = pd.DataFrame(plant_rows)
 
-        st.markdown("#### ✍️ Completa la tabla (números)")
-        st.caption("Escribe **valores numéricos**. Puedes dejar celdas no aplicables en blanco.")
+        # Mantener actualizadas solo las columnas fijas
+        for i, r in enumerate(expected_rows):
+            st.session_state["n2_kardex_student_table_df"].loc[i, "Fecha"] = r["Fecha"]
+            st.session_state["n2_kardex_student_table_df"].loc[i, "Descripción"] = r["Descripción"]
+
         edited = st.data_editor(
-            plant,
+            st.session_state["n2_kardex_student_table_df"],
             use_container_width=True,
             num_rows="fixed",
-            key="n2_kardex_student_table_var"
+            hide_index=True,
+            disabled=["Fecha", "Descripción"],
+            key="n2_kardex_student_table_var",
+            column_config={
+                "Entrada_cant": st.column_config.NumberColumn("Entrada_cant", step=1),
+                "Entrada_pu": st.column_config.NumberColumn("Entrada_pu", step=0.01),
+                "Entrada_total": st.column_config.NumberColumn("Entrada_total", step=0.01),
+                "Salida_cant": st.column_config.NumberColumn("Salida_cant", step=1),
+                "Salida_pu": st.column_config.NumberColumn("Salida_pu", step=0.01),
+                "Salida_total": st.column_config.NumberColumn("Salida_total", step=0.01),
+                "Saldo_cant": st.column_config.NumberColumn("Saldo_cant", step=1),
+                "Saldo_pu": st.column_config.NumberColumn("Saldo_pu", step=0.01),
+                "Saldo_total": st.column_config.NumberColumn("Saldo_total", step=0.01),
+            }
         )
+
+        st.session_state["n2_kardex_student_table_df"] = edited.copy()
 
         # =========================
         # Validación y feedback
@@ -3435,12 +3467,30 @@ def page_level2(username):
                 "Salida_cant":None,"Salida_pu":None,"Salida_total":None,
                 "Saldo_cant":None,"Saldo_pu":None,"Saldo_total":None},
             ])
+            if "n2_eval_pp_df" not in st.session_state:
+                st.session_state["n2_eval_pp_df"] = pp_template.copy()
+
             pp_edit = st.data_editor(
-                pp_template.astype("string"),
+                st.session_state["n2_eval_pp_df"],
                 use_container_width=True,
                 num_rows="fixed",
-                key="n2_eval_pp_tbl"
+                hide_index=True,
+                disabled=["Fecha", "Descripción"],
+                key="n2_eval_pp_tbl",
+                column_config={
+                    "Entrada_cant": st.column_config.NumberColumn("Entrada_cant", step=1),
+                    "Entrada_pu": st.column_config.NumberColumn("Entrada_pu", step=0.01),
+                    "Entrada_total": st.column_config.NumberColumn("Entrada_total", step=0.01),
+                    "Salida_cant": st.column_config.NumberColumn("Salida_cant", step=1),
+                    "Salida_pu": st.column_config.NumberColumn("Salida_pu", step=0.01),
+                    "Salida_total": st.column_config.NumberColumn("Salida_total", step=0.01),
+                    "Saldo_cant": st.column_config.NumberColumn("Saldo_cant", step=1),
+                    "Saldo_pu": st.column_config.NumberColumn("Saldo_pu", step=0.01),
+                    "Saldo_total": st.column_config.NumberColumn("Saldo_total", step=0.01),
+                }
             )
+
+            st.session_state["n2_eval_pp_df"] = pp_edit.copy()
 
             st.markdown("---")
 
@@ -3471,12 +3521,35 @@ def page_level2(username):
                 peps_template.loc[i, "Fecha"] = r["fecha"]
                 peps_template.loc[i, "Descripción"] = r["desc"]
 
+            if "n2_eval_peps_df" not in st.session_state or len(st.session_state["n2_eval_peps_df"]) != len(peps_rows_expected):
+                st.session_state["n2_eval_peps_df"] = peps_template.copy()
+
+            pp_fixed_cols = ["Fecha", "Descripción"]
+            for i, r in enumerate(peps_rows_expected):
+                st.session_state["n2_eval_peps_df"].loc[i, "Fecha"] = r["fecha"]
+                st.session_state["n2_eval_peps_df"].loc[i, "Descripción"] = r["desc"]
+
             peps_edit = st.data_editor(
-                peps_template.astype("string"),
+                st.session_state["n2_eval_peps_df"],
                 use_container_width=True,
                 num_rows="fixed",
-                key="n2_eval_peps_tbl"
+                hide_index=True,
+                disabled=["Fecha", "Descripción"],
+                key="n2_eval_peps_tbl",
+                column_config={
+                    "Entrada_cant": st.column_config.NumberColumn("Entrada_cant", step=1),
+                    "Entrada_pu": st.column_config.NumberColumn("Entrada_pu", step=0.01),
+                    "Entrada_total": st.column_config.NumberColumn("Entrada_total", step=0.01),
+                    "Salida_cant": st.column_config.NumberColumn("Salida_cant", step=1),
+                    "Salida_pu": st.column_config.NumberColumn("Salida_pu", step=0.01),
+                    "Salida_total": st.column_config.NumberColumn("Salida_total", step=0.01),
+                    "Saldo_cant": st.column_config.NumberColumn("Saldo_cant", step=1),
+                    "Saldo_pu": st.column_config.NumberColumn("Saldo_pu", step=0.01),
+                    "Saldo_total": st.column_config.NumberColumn("Saldo_total", step=0.01),
+                }
             )
+
+            st.session_state["n2_eval_peps_df"] = peps_edit.copy()
 
             # ===== Submit único
             submitted_all = st.form_submit_button("🧪 Validar evaluación N2")
