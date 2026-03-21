@@ -766,6 +766,13 @@ def _default_progress_doc(username: str) -> dict:
             "level3": {"passed": False, "date": None, "score": None},
             "level4": {"passed": False, "date": None, "score": None},
         },
+        "current_level": None,
+        "drafts": {
+            "level1": {},
+            "level2": {},
+            "level3": {},
+            "level4": {}
+        },
         "completed_survey": False,
         "updated_at": datetime.now(timezone.utc),
         "created_at": datetime.now(timezone.utc),
@@ -790,6 +797,55 @@ def set_level_passed(progress_col, username: str, level_key: str, score: int | N
                 f"levels.{level_key}.passed": True,
                 f"levels.{level_key}.date": now,
                 f"levels.{level_key}.score": score,
+                "current_level": None,
+                "updated_at": now,
+            },
+            "$unset": {
+                f"drafts.{level_key}": ""
+            }
+        },
+        upsert=True
+    )
+
+def save_partial_progress(progress_col, username: str, level_key: str, payload: dict):
+    now = datetime.now(timezone.utc)
+    progress_col.update_one(
+        {"username": username},
+        {
+            "$set": {
+                f"drafts.{level_key}": payload,
+                "current_level": level_key,
+                "updated_at": now,
+            }
+        },
+        upsert=True
+    )
+
+def load_partial_progress(progress_col, username: str, level_key: str) -> dict:
+    doc = progress_col.find_one(
+        {"username": username},
+        {f"drafts.{level_key}": 1, "_id": 0}
+    ) or {}
+    return doc.get("drafts", {}).get(level_key, {})
+
+def clear_partial_progress(progress_col, username: str, level_key: str):
+    now = datetime.now(timezone.utc)
+    progress_col.update_one(
+        {"username": username},
+        {
+            "$unset": {f"drafts.{level_key}": ""},
+            "$set": {"updated_at": now}
+        },
+        upsert=True
+    )
+
+def set_current_level(progress_col, username: str, level_key: str | None):
+    now = datetime.now(timezone.utc)
+    progress_col.update_one(
+        {"username": username},
+        {
+            "$set": {
+                "current_level": level_key,
                 "updated_at": now,
             }
         },
@@ -896,8 +952,19 @@ def do_login():
         st.session_state.authenticated = True
         st.session_state.username = user
         st.session_state.login_error = ""
-        # 🔑 Asegura documento de progreso al iniciar sesión
-        ensure_progress(progress_col, user)
+
+        prog = ensure_progress(progress_col, user)
+
+        current_level = prog.get("current_level")
+        level_map = {
+            "level1": "Nivel 1: Introducción a Inventarios",
+            "level2": "Nivel 2: Métodos (PP/PEPS/UEPS)",
+            "level3": "Nivel 3: Devoluciones",
+            "level4": "Nivel 4: Estado de Resultados",
+        }
+
+        if current_level in level_map:
+            st.session_state["sidebar_next_select"] = level_map[current_level]
     else:
         st.session_state.login_error = "Credenciales incorrectas."
 
@@ -1479,6 +1546,9 @@ def page_level1(username):
 # ===========================
 def page_level2(username):
     st.title("Nivel 2 · Métodos de valoración: Promedio Ponderado, PEPS (FIFO) y UEPS")
+
+    progress_col = st.session_state.get("progress_col")
+    set_current_level(progress_col, username, "level2")
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplos guiados", "🎮 Práctica (IA)", "🏁 Evaluación para aprobar"])
 
@@ -3776,6 +3846,9 @@ def page_level2(username):
 def page_level3(username):
     st.title("Nivel 3 · Casos con Devoluciones (compras y ventas)")
 
+    progress_col = st.session_state.get("progress_col")
+    set_current_level(progress_col, username, "level3")
+
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplos guiados", "🎮 Práctica (IA)", "🏁 Evaluación para aprobar"])
 
     # =========================================
@@ -5989,6 +6062,9 @@ def page_level3(username):
 # ===========================
 def page_level4(username):
     st.title("Nivel 4 · Construcción del Estado de Resultados (simplificado)")
+
+    progress_col = st.session_state.get("progress_col")
+    set_current_level(progress_col, username, "level4")
 
     tabs = st.tabs(["🎧 Teoría", "🛠 Ejemplo guiado", "🎮 Práctica (IA)", "🏁 Evaluación final + Encuesta"])
 
